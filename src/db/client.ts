@@ -1,5 +1,5 @@
-import { parse } from 'pg-connection-string';
 import pg from 'pg';
+import { parse } from 'pg-connection-string';
 
 const { Pool } = pg;
 
@@ -47,7 +47,7 @@ export async function withPostgresTransaction<T>(
 ): Promise<T> {
   const pool = getPostgresClient();
   const client = await pool.connect();
-  
+
   try {
     await client.query('BEGIN');
     const result = await callback(client);

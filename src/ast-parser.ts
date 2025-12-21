@@ -57,7 +57,7 @@ export function parseWorkflowHandler(
     if (ts.isTemplateExpression(arg)) {
       let templateStr = arg.head.text;
       for (const span of arg.templateSpans) {
-        templateStr += '${...}';
+        templateStr += `\${...}`;
         templateStr += span.literal.text;
       }
       return { id: templateStr, isDynamic: true };

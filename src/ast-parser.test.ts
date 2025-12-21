@@ -112,7 +112,7 @@ describe('AST Parser for Workflow Steps', () => {
         isDynamic: false,
       },
       {
-        id: 'loop-step-${...}',
+        id: `loop-step-\${...}`,
         type: StepType.RUN,
         conditional: false,
         loop: true,

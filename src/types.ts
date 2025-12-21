@@ -1,5 +1,5 @@
-import type { WorkflowRun } from './db/types';
 import type { z } from 'zod';
+import type { WorkflowRun } from './db/types';
 
 export enum WorkflowStatus {
   PENDING = 'pending',

@@ -11,8 +11,6 @@ export async function runMigrations(sql: pg.Pool): Promise<void> {
   `);
 
   if (!tableExistsResult.rows[0]?.exists) {
-    console.log('[WorkflowEngine] Creating workflow_runs table...');
-
     await sql.query(`
       CREATE TABLE workflow_runs (
         id varchar(32) PRIMARY KEY NOT NULL,
@@ -47,9 +45,6 @@ export async function runMigrations(sql: pg.Pool): Promise<void> {
     await sql.query(`
       CREATE INDEX workflow_runs_resource_id_idx ON workflow_runs USING btree (resource_id);
     `);
-
-    console.log('[WorkflowEngine] workflow_runs table created successfully!');
   } else {
-    console.log('[WorkflowEngine] workflow_runs table already exists, skipping migration.');
   }
 }

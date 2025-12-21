@@ -1,9 +1,9 @@
 import type {
+  inferParameters,
   Parameters,
   WorkflowContext,
   WorkflowDefinition,
   WorkflowOptions,
-  inferParameters,
 } from './types';
 
 export function workflow<I extends Parameters>(

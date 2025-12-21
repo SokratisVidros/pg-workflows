@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
-import { migratePgboss } from './tests/pgboss-migration';
 import { WorkflowStatus } from './types';
 
 const testWorkflow = workflow(

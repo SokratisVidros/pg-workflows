@@ -18,6 +18,7 @@ import {
   type InternalWorkflowDefinition,
   type InternalWorkflowLogger,
   type InternalWorkflowLoggerContext,
+  type inferParameters,
   type Parameters,
   StepType,
   type WorkflowContext,
@@ -25,7 +26,6 @@ import {
   type WorkflowLogger,
   type WorkflowRunProgress,
   WorkflowStatus,
-  type inferParameters,
 } from './types';
 
 const PAUSE_EVENT_NAME = '__internal_pause';
@@ -65,7 +65,7 @@ type WorkflowRunJobParameters = {
 };
 
 const defaultLogger: WorkflowLogger = {
-  log: (message: string) => console.log(message),
+  log: (_message: string) => console.warn(_message),
   error: (message: string, error: Error) => console.error(message, error),
 };
 
@@ -834,8 +834,7 @@ export class WorkflowEngine {
     });
   }
 
-  // biome-ignore lint/correctness/noUnusedVariables: date parameter will be used when implemented
-  private async waitUntil(runId: string, date: Date): Promise<void> {
+  private async waitUntil(runId: string, _date: Date): Promise<void> {
     throw new WorkflowEngineError('Not implemented yet', undefined, runId);
   }
 

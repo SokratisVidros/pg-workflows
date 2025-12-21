@@ -41,7 +41,7 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
     updatedAt: new Date(row.updated_at),
     resourceId: row.resource_id,
     workflowId: row.workflow_id,
-    status: row.status, 
+    status: row.status,
     input: typeof row.input === 'string' ? JSON.parse(row.input) : row.input,
     output: row.output
       ? typeof row.output === 'string'
@@ -367,8 +367,8 @@ export async function getWorkflowRuns({
   const rawItems = hasMore ? rows.slice(0, limit) : rows;
   const items = rawItems.map((row) => mapRowToWorkflowRun(row));
   const hasPrev = !!endingBefore;
-  const nextCursor = hasMore && items.length > 0 ? items[items.length - 1]!.id : null;
-  const prevCursor = hasPrev && items.length > 0 ? items[0]!.id : null;
+  const nextCursor = hasMore && items.length > 0 ? items[items.length - 1]?.id : null;
+  const prevCursor = hasPrev && items.length > 0 ? items[0]?.id : null;
 
   return { items, nextCursor, prevCursor, hasMore, hasPrev };
 }
