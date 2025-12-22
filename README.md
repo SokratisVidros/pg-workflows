@@ -10,8 +10,28 @@ Durable execution built on pg-boss — like Temporal, Inngest, or Trigger, power
 - **Built-in Retries**: Configure automatic retries with exponential backoff
 - **Timeouts**: Set workflow-level and step-level timeouts
 - **Progress Tracking**: Monitor workflow completion percentage and step progress
-- **Type-Safe**: Full TypeScript support with Zod schema validation
-- **Powered by PostgreSQL**: Leverages pg-boss for reliable job queuing
+
+## Why pg-workflows?
+
+If you're looking for a **simple, zero-infrastructure** way to add durable workflows to your application, pg-workflows is a great starting point. Unlike other workflow platforms, there's no additional infrastructure to deploy or maintain—if you already have PostgreSQL, you're ready to go.
+
+**When to use pg-workflows:**
+- You're already using PostgreSQL and want to leverage it for workflows and durable executions
+- You need a lightweight solution to get started quickly
+- You value simplicity and minimal operational overhead
+
+**When to consider alternatives:**
+If you need enterprise-grade features like advanced observability, distributed tracing, complex scheduling, or plan to scale to millions of workflows, consider more fully-fledged platforms like [Temporal](https://temporal.io/), [Inngest](https://www.inngest.com/), [Trigger.dev](https://trigger.dev/), or [DBOS](https://www.dbos.dev/).
+
+### The PostgreSQL For Everything Manifesto
+
+As highlighted by [postgresforeverything.com](https://postgresforeverything.com/), PostgreSQL is arguably one of the best pieces of open-source technology ever created. It's:
+- **Battle-tested** and reliable for decades
+- **Incredibly cheap** to run and maintain
+- **Feature-rich** with excellent performance characteristics
+- **Widely supported** with a massive ecosystem
+
+By building on PostgreSQL, pg-workflows gives you production-ready durable execution with minimal cost and complexity. If you're already running Postgres (and you probably should be), adding workflows is as simple as `npm install pg-workflows`.
 
 ## Installation
 
@@ -315,6 +335,10 @@ console.log({
 - Node.js >= 18.0.0
 - PostgreSQL >= 10
 - pg-boss >= 10.0.0
+
+## Acknowledgments
+
+Special thanks to the teams behind [Temporal](https://temporal.io/), [Inngest](https://www.inngest.com/), [Trigger.dev](https://trigger.dev/), and [DBOS](https://www.dbos.dev/) for pioneering durable execution patterns and inspiring this project. Their work has shaped how we think about building reliable, event-driven applications.
 
 ## License
 
