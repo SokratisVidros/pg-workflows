@@ -27,6 +27,7 @@ bun add pg-workflows
 
 ```typescript
 import { WorkflowEngine, workflow } from 'pg-workflows';
+import PgBoss from 'pg-boss';
 import { z } from 'zod';
 
 // Define your workflow
@@ -60,8 +61,14 @@ const sendWelcomeEmail = workflow(
   }
 );
 
+// Initialize pg-boss
+const boss = new PgBoss({
+  connectionString: process.env.DATABASE_URL,
+});
+
 // Initialize the engine
 const engine = new WorkflowEngine({
+  boss,
   workflows: [sendWelcomeEmail],
 });
 
@@ -157,6 +164,7 @@ await engine.resumeWorkflow({
 
 ```typescript
 const engine = new WorkflowEngine({
+  boss: PgBoss,                     // Required: pg-boss instance
   workflows: WorkflowDefinition[], // Optional: register workflows on init
   logger: WorkflowLogger,           // Optional: custom logger
 });

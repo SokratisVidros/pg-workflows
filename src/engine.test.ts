@@ -1,9 +1,24 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
+import { getBoss } from './tests/pgboss';
+import { closeTestDatabase, createTestDatabase } from './tests/test-db';
 import { WorkflowStatus } from './types';
+
+import type PgBoss from 'pg-boss';
+
+let testBoss: PgBoss;
+
+beforeAll(async () => {
+  const testDb = await createTestDatabase();
+  testBoss = await getBoss(testDb);
+});
+
+afterAll(async () => {
+  await closeTestDatabase();
+});
 
 const testWorkflow = workflow(
   'test-workflow',
@@ -28,6 +43,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        boss: testBoss,
       });
     });
 
@@ -58,6 +74,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        boss: testBoss,
       });
       await engine.start(false);
     });
@@ -138,6 +155,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        boss: testBoss,
       });
       await engine.start(false);
     });
@@ -158,6 +176,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        boss: testBoss,
       });
       await engine.start(false);
     });
@@ -178,6 +197,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        boss: testBoss,
       });
       await engine.start();
     });
@@ -263,6 +283,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        boss: testBoss,
       });
       await engine.start();
     });
@@ -296,6 +317,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        boss: testBoss,
       });
       await engine.start();
     });
@@ -336,6 +358,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        boss: testBoss,
       });
       await engine.start(false);
     });
@@ -368,6 +391,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        boss: testBoss,
       });
       await engine.start();
     });
@@ -640,7 +664,10 @@ describe('WorkflowEngine', () => {
     let engine: WorkflowEngine;
 
     beforeEach(async () => {
-      engine = new WorkflowEngine({ workflows: [testWorkflow] });
+      engine = new WorkflowEngine({
+        workflows: [testWorkflow],
+        boss: testBoss,
+      });
       await engine.start(false);
     });
 

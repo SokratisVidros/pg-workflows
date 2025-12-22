@@ -1,7 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import type PgBoss from 'pg-boss';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
+import { getBoss } from './tests/pgboss';
+import { createTestDatabase } from './tests/test-db';
 import { StepType } from './types';
+
+let testBoss: PgBoss;
+
+// Setup test database and boss for all tests
+beforeAll(async () => {
+  const testDb = await createTestDatabase();
+  testBoss = await getBoss(testDb);
+});
 
 describe('AST Parser for Workflow Steps', () => {
   it('should parse simple workflow with static step names', async () => {
@@ -13,7 +24,7 @@ describe('AST Parser for Workflow Steps', () => {
       return 'completed';
     });
 
-    const engine = new WorkflowEngine();
+    const engine = new WorkflowEngine({ boss: testBoss });
     await engine.registerWorkflow(simpleWorkflow);
 
     expect(engine.workflows.get('simple-workflow')?.steps).toEqual([
@@ -60,7 +71,7 @@ describe('AST Parser for Workflow Steps', () => {
       return 'completed';
     });
 
-    const engine = new WorkflowEngine();
+    const engine = new WorkflowEngine({ boss: testBoss });
     await engine.registerWorkflow(conditionalWorkflow);
 
     expect(engine.workflows.get('conditional-workflow')?.steps).toEqual([
@@ -100,7 +111,7 @@ describe('AST Parser for Workflow Steps', () => {
       return 'completed';
     });
 
-    const engine = new WorkflowEngine();
+    const engine = new WorkflowEngine({ boss: testBoss });
     await engine.registerWorkflow(loopWorkflow);
 
     expect(engine.workflows.get('loop-workflow')?.steps).toEqual([
@@ -137,7 +148,7 @@ describe('AST Parser for Workflow Steps', () => {
       return 'completed';
     });
 
-    const engine = new WorkflowEngine();
+    const engine = new WorkflowEngine({ boss: testBoss });
     await engine.registerWorkflow(mixedStepWorkflow);
   });
 
@@ -161,7 +172,7 @@ describe('AST Parser for Workflow Steps', () => {
       return 'completed';
     });
 
-    const engine = new WorkflowEngine();
+    const engine = new WorkflowEngine({ boss: testBoss });
     await engine.registerWorkflow(nestedWorkflow);
   });
 
@@ -184,7 +195,7 @@ describe('AST Parser for Workflow Steps', () => {
       return 'completed';
     });
 
-    const engine = new WorkflowEngine();
+    const engine = new WorkflowEngine({ boss: testBoss });
     await engine.registerWorkflow(switchWorkflow);
   });
 
@@ -196,7 +207,7 @@ describe('AST Parser for Workflow Steps', () => {
       return 'completed';
     });
 
-    const engine = new WorkflowEngine();
+    const engine = new WorkflowEngine({ boss: testBoss });
 
     await expect(engine.registerWorkflow(duplicateWorkflow)).rejects.toThrow(
       "Duplicate step ID detected: 'step-1'. Step IDs must be unique within a workflow.",
@@ -215,7 +226,7 @@ describe('AST Parser for Workflow Steps', () => {
       return 'completed';
     });
 
-    const engine = new WorkflowEngine();
+    const engine = new WorkflowEngine({ boss: testBoss });
 
     await expect(engine.registerWorkflow(duplicateDynamicWorkflow)).rejects.toThrow(
       "Duplicate step ID detected: 'process-item'. Step IDs must be unique within a workflow.",

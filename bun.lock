@@ -14,11 +14,12 @@
       },
       "devDependencies": {
         "@biomejs/biome": "^2.3.10",
+        "@electric-sql/pglite": "^0.3.14",
         "@types/lodash": "^4.17.13",
         "@types/node": "^22.10.2",
         "@types/pg": "^8.11.10",
         "bunup": "^0.16.11",
-        "vitest": "4",
+        "vitest": "^4.0.14",
       },
     },
   },
@@ -52,6 +53,8 @@
     "@bunup/dts": ["@bunup/dts@0.14.43", "", { "dependencies": { "@babel/parser": "^7.28.4", "coffi": "^0.1.37", "oxc-minify": "^0.93.0", "oxc-resolver": "^11.9.0", "oxc-transform": "^0.93.0", "picocolors": "^1.1.1", "std-env": "^3.9.0", "ts-import-resolver": "^0.1.23" }, "peerDependencies": { "typescript": ">=4.5.0" }, "optionalPeers": ["typescript"] }, "sha512-ky/82sy2FLMvMTGxOhegB+EUvru5dH5xW+TkGpx4jmUlEa3IR8GxKOKlCgBmb5jmmcJitOagJrCh1LM6pguReQ=="],
 
     "@bunup/shared": ["@bunup/shared@0.16.10", "", { "peerDependencies": { "typescript": "latest" }, "optionalPeers": ["typescript"] }, "sha512-XDrhTdLS9OnXguHDGDTqrdcce17zlndBF3vOuuyQ5Vy6+T3b8waqMq9cAeYYlvhSTSkNTtDsDGiyWVji0KNPKQ=="],
+
+    "@electric-sql/pglite": ["@electric-sql/pglite@0.3.14", "", {}, "sha512-3DB258dhqdsArOI1fIt7cb9RpUOgcDg5hXWVgVHAeqVQ/qxtFy605QKs4gx6mFq3jWsSPqDN8TgSEsqC3OfV9Q=="],
 
     "@emnapi/core": ["@emnapi/core@1.7.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.1.0", "tslib": "^2.4.0" } }, "sha512-o1uhUASyo921r2XtHYOHy7gdkGLge8ghBEQHMWmyJFoXlpU58kIrhhN3w26lpQb6dspetweapMn2CSNwQ8I4wg=="],
 

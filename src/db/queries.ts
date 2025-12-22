@@ -1,15 +1,12 @@
+import type PgBoss from 'pg-boss';
 import ksuid from 'ksuid';
-import type { PostgresTransaction } from './client';
-import { getPostgresClient } from './client';
 import type { WorkflowRun } from './types';
+
 
 export function generateKSUID(prefix?: string): string {
   return `${prefix ? `${prefix}_` : ''}${ksuid.randomSync().string}`;
 }
 
-/**
- * Database row type from workflow_runs table
- */
 type WorkflowRunRow = {
   id: string;
   created_at: string | Date;
@@ -31,9 +28,6 @@ type WorkflowRunRow = {
   job_id: string | null;
 };
 
-/**
- * Maps a database row to a WorkflowRun object
- */
 function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
   return {
     id: row.id,
@@ -43,11 +37,11 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
     workflowId: row.workflow_id,
     status: row.status,
     input: typeof row.input === 'string' ? JSON.parse(row.input) : row.input,
-    output: row.output
-      ? typeof row.output === 'string'
+    output: typeof row.output === 'string'
+      ? row.output.trim().startsWith('{') || row.output.trim().startsWith('[')
         ? JSON.parse(row.output)
         : row.output
-      : null,
+      : row.output ?? null,
     error: row.error,
     currentStepId: row.current_step_id,
     timeline: typeof row.timeline === 'string' ? JSON.parse(row.timeline) : row.timeline,
@@ -61,9 +55,6 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
   };
 }
 
-/**
- * Insert a new workflow run
- */
 export async function insertWorkflowRun(
   {
     resourceId,
@@ -82,13 +73,12 @@ export async function insertWorkflowRun(
     maxRetries: number;
     timeoutAt: Date | null;
   },
-  tx?: PostgresTransaction,
+  db: PgBoss.Db,
 ): Promise<WorkflowRun> {
-  const sql = tx ?? getPostgresClient();
   const runId = generateKSUID('run');
   const now = new Date();
 
-  const result = await sql.query<WorkflowRunRow>(
+  const result = await db.executeSql(
     `INSERT INTO workflow_runs (
       id, 
       resource_id, 
@@ -130,9 +120,6 @@ export async function insertWorkflowRun(
   return mapRowToWorkflowRun(insertedRun);
 }
 
-/**
- * Get a single workflow run by ID
- */
 export async function getWorkflowRun(
   {
     runId,
@@ -141,20 +128,18 @@ export async function getWorkflowRun(
     runId: string;
     resourceId?: string;
   },
-  { exclusiveLock = false, tx }: { exclusiveLock?: boolean; tx?: PostgresTransaction } = {},
+  { exclusiveLock = false, db }: { exclusiveLock?: boolean; db: PgBoss.Db },
 ): Promise<WorkflowRun | null> {
-  const sql = tx ?? getPostgresClient();
-
   const lockSuffix = exclusiveLock ? 'FOR UPDATE' : '';
 
   const result = resourceId
-    ? await sql.query<WorkflowRunRow>(
+    ? await db.executeSql(
         `SELECT * FROM workflow_runs 
         WHERE id = $1 AND resource_id = $2
         ${lockSuffix}`,
         [runId, resourceId],
       )
-    : await sql.query<WorkflowRunRow>(
+    : await db.executeSql(
         `SELECT * FROM workflow_runs 
         WHERE id = $1
         ${lockSuffix}`,
@@ -170,9 +155,6 @@ export async function getWorkflowRun(
   return mapRowToWorkflowRun(run);
 }
 
-/**
- * Update a workflow run
- */
 export async function updateWorkflowRun(
   {
     runId,
@@ -183,12 +165,10 @@ export async function updateWorkflowRun(
     resourceId?: string;
     data: Partial<WorkflowRun>;
   },
-  tx?: PostgresTransaction,
+  db: PgBoss.Db,
 ): Promise<WorkflowRun | null> {
-  const sql = tx ?? getPostgresClient();
   const now = new Date();
 
-  // Build SET clause dynamically based on provided data
   const updates: string[] = ['updated_at = $1'];
   const values: (string | number | Date | null)[] = [now];
   let paramIndex = 2;
@@ -260,7 +240,7 @@ export async function updateWorkflowRun(
     RETURNING *
   `;
 
-  const result = await sql.query<WorkflowRunRow>(query, values);
+  const result = await db.executeSql(query, values);
   const run = result.rows[0];
 
   if (!run) {
@@ -270,31 +250,30 @@ export async function updateWorkflowRun(
   return mapRowToWorkflowRun(run);
 }
 
-/**
- * Get multiple workflow runs with pagination
- */
-export async function getWorkflowRuns({
-  resourceId,
-  startingAfter,
-  endingBefore,
-  limit = 20,
-  statuses,
-  workflowId,
-}: {
-  resourceId?: string;
-  startingAfter?: string | null;
-  endingBefore?: string | null;
-  limit?: number;
-  statuses?: string[];
-  workflowId?: string;
-}): Promise<{
+export async function getWorkflowRuns(
+  {
+    resourceId,
+    startingAfter,
+    endingBefore,
+    limit = 20,
+    statuses,
+    workflowId,
+  }: {
+    resourceId?: string;
+    startingAfter?: string | null;
+    endingBefore?: string | null;
+    limit?: number;
+    statuses?: string[];
+    workflowId?: string;
+  },
+  db: PgBoss.Db,
+): Promise<{
   items: WorkflowRun[];
   nextCursor: string | null;
   prevCursor: string | null;
   hasMore: boolean;
   hasPrev: boolean;
 }> {
-  const sql = getPostgresClient();
   const conditions: string[] = [];
   const values: (string | number | string[] | Date)[] = [];
   let paramIndex = 1;
@@ -318,7 +297,7 @@ export async function getWorkflowRuns({
   }
 
   if (startingAfter) {
-    const cursorResult = await sql.query<{ created_at: string | Date }>(
+    const cursorResult = await db.executeSql(
       'SELECT created_at FROM workflow_runs WHERE id = $1 LIMIT 1',
       [startingAfter],
     );
@@ -334,7 +313,7 @@ export async function getWorkflowRuns({
   }
 
   if (endingBefore) {
-    const cursorResult = await sql.query<{ created_at: string | Date }>(
+    const cursorResult = await db.executeSql(
       'SELECT created_at FROM workflow_runs WHERE id = $1 LIMIT 1',
       [endingBefore],
     );
@@ -360,15 +339,30 @@ export async function getWorkflowRuns({
   `;
   values.push(actualLimit);
 
-  const result = await sql.query<WorkflowRunRow>(query, values);
+  const result = await db.executeSql(query, values);
   const rows = result.rows;
 
   const hasMore = rows.length > (limit ?? 20);
   const rawItems = hasMore ? rows.slice(0, limit) : rows;
   const items = rawItems.map((row) => mapRowToWorkflowRun(row));
   const hasPrev = !!endingBefore;
-  const nextCursor = hasMore && items.length > 0 ? items[items.length - 1]?.id : null;
-  const prevCursor = hasPrev && items.length > 0 ? items[0]?.id : null;
+  const nextCursor = hasMore && items.length > 0 ? items[items.length - 1]?.id ?? null : null;
+  const prevCursor = hasPrev && items.length > 0 ? items[0]?.id ?? null : null;
 
   return { items, nextCursor, prevCursor, hasMore, hasPrev };
+}
+
+export async function withPostgresTransaction<T>(
+  db: PgBoss.Db,
+  callback: (db: PgBoss.Db) => Promise<T>,
+): Promise<T> {
+  try {
+    await db.executeSql('BEGIN', []);
+    const result = await callback(db);
+    await db.executeSql('COMMIT', []);
+    return result;
+  } catch (error) {
+    await db.executeSql('ROLLBACK', []);
+    throw error;
+  }
 }

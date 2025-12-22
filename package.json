@@ -67,11 +67,12 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.10",
+    "@electric-sql/pglite": "^0.3.14",
     "@types/lodash": "^4.17.13",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
     "bunup": "^0.16.11",
-    "vitest": "4"
+    "vitest": "^4.0.14"
   },
   "engines": {
     "node": ">=18.0.0"

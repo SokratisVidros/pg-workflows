@@ -2,18 +2,16 @@ import merge from 'lodash/merge';
 import type PgBoss from 'pg-boss';
 import type { z } from 'zod';
 import { parseWorkflowHandler } from './ast-parser';
-import type { PostgresTransaction } from './db/client';
-import { closePostgresClient, getPostgresClient, withPostgresTransaction } from './db/client';
 import { runMigrations } from './db/migration';
 import {
   getWorkflowRun,
   getWorkflowRuns,
   insertWorkflowRun,
   updateWorkflowRun,
+  withPostgresTransaction,
 } from './db/queries';
 import type { WorkflowRun } from './db/types';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
-import { getBoss } from './pgboss';
 import {
   type InternalWorkflowDefinition,
   type InternalWorkflowLogger,
@@ -69,8 +67,13 @@ const defaultLogger: WorkflowLogger = {
   error: (message: string, error: Error) => console.error(message, error),
 };
 
+const defaultExpireInSeconds = process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS
+  ? Number.parseInt(process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS, 10)
+  : 5 * 60; // 5 minutes
+
 export class WorkflowEngine {
-  private boss!: PgBoss;
+  private boss: PgBoss;
+  private db: PgBoss.Db;
   private unregisteredWorkflows = new Map<string, WorkflowDefinition>();
   private _started = false;
 
@@ -83,15 +86,23 @@ export class WorkflowEngine {
   constructor({
     workflows,
     logger,
+    boss,
   }: Partial<{
     workflows: WorkflowDefinition[];
     logger: WorkflowLogger;
+    boss: PgBoss;
   }> = {}) {
     this.logger = this.buildLogger(logger ?? defaultLogger);
 
     if (workflows) {
       this.unregisteredWorkflows = new Map(workflows.map((workflow) => [workflow.id, workflow]));
     }
+
+    if (!boss) {
+      throw new WorkflowEngineError('PgBoss instance is required in constructor');
+    }
+    this.boss = boss;
+    this.db = boss.getDb();
   }
 
   async start(
@@ -102,9 +113,10 @@ export class WorkflowEngine {
       return;
     }
 
-    // Run migrations to ensure workflow_runs table exists
-    const sql = getPostgresClient();
-    await runMigrations(sql);
+    // Start boss first to get the database connection
+    await this.boss.start();
+
+    await runMigrations(this.boss.getDb());
 
     if (this.unregisteredWorkflows.size > 0) {
       for (const workflow of this.unregisteredWorkflows.values()) {
@@ -112,8 +124,6 @@ export class WorkflowEngine {
       }
     }
 
-    this.boss = await getBoss();
-    await this.boss.start();
     await this.boss.createQueue(WORKFLOW_RUN_QUEUE_NAME);
 
     const numWorkers: number = +(process.env.WORKFLOW_RUN_WORKERS ?? 3);
@@ -138,7 +148,6 @@ export class WorkflowEngine {
 
   async stop(): Promise<void> {
     await this.boss.stop();
-    await closePostgresClient();
 
     this._started = false;
 
@@ -212,7 +221,7 @@ export class WorkflowEngine {
     }
     const initialStepId = workflow.steps[0]?.id;
 
-    const run = await withPostgresTransaction(async (tx) => {
+    const run = await withPostgresTransaction(this.boss.getDb(), async (db) => {
       const timeoutAt = options?.timeout
         ? new Date(Date.now() + options.timeout)
         : workflow.timeout
@@ -229,7 +238,7 @@ export class WorkflowEngine {
           maxRetries: options?.retries ?? workflow.retries ?? 0,
           timeoutAt,
         },
-        tx,
+        this.boss.getDb(),
       );
 
       const job: WorkflowRunJobParameters = {
@@ -239,13 +248,8 @@ export class WorkflowEngine {
         input,
       };
 
-      const defaultExpireInSeconds = process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS
-        ? Number.parseInt(process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS, 10)
-        : 5 * 60; // 5 minutes
-
-      const { enqueueWithPostgres } = await import('./db/enqueue-wrapper.js');
-      await enqueueWithPostgres(this.boss, WORKFLOW_RUN_QUEUE_NAME, job, {
-        tx,
+      await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+        startAfter: new Date(),
         expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
       });
 
@@ -346,39 +350,32 @@ export class WorkflowEngine {
   }): Promise<WorkflowRun> {
     await this.checkIfHasStarted();
 
-    const run = await withPostgresTransaction(async (tx) => {
-      const run = await this.getRun({ runId, resourceId }, { tx });
+    const run = await this.getRun({ runId, resourceId });
 
-      const job: WorkflowRunJobParameters = {
-        runId: run.id,
-        resourceId,
-        workflowId: run.workflowId,
-        input: run.input,
-        event: {
-          name: eventName,
-          data,
-        },
-      };
+    const job: WorkflowRunJobParameters = {
+      runId: run.id,
+      resourceId,
+      workflowId: run.workflowId,
+      input: run.input,
+      event: {
+        name: eventName,
+        data,
+      },
+    };
 
-      const { enqueueWithPostgres } = await import('./db/enqueue-wrapper.js');
-      await enqueueWithPostgres(this.boss, WORKFLOW_RUN_QUEUE_NAME, job, {
-        tx,
-        expireInSeconds: options?.expireInSeconds,
-      });
-
-      return run;
+    this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+      expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
     });
 
     this.logger.log(`event ${eventName} sent for workflow run with id ${runId}`);
-
     return run;
   }
 
   async getRun(
     { runId, resourceId }: { runId: string; resourceId?: string },
-    { exclusiveLock = false, tx }: { exclusiveLock?: boolean; tx?: PostgresTransaction } = {},
+    { exclusiveLock = false, db }: { exclusiveLock?: boolean; db?: PgBoss.Db } = {},
   ): Promise<WorkflowRun> {
-    const run = await getWorkflowRun({ runId, resourceId }, { exclusiveLock, tx });
+    const run = await getWorkflowRun({ runId, resourceId }, { exclusiveLock, db: db ?? this.db });
 
     if (!run) {
       throw new WorkflowRunNotFoundError(runId);
@@ -397,9 +394,9 @@ export class WorkflowEngine {
       resourceId?: string;
       data: Partial<WorkflowRun>;
     },
-    { tx }: { tx?: PostgresTransaction } = {},
+    { db }: { db?: PgBoss.Db } = {},
   ): Promise<WorkflowRun> {
-    const run = await updateWorkflowRun({ runId, resourceId, data }, tx);
+    const run = await updateWorkflowRun({ runId, resourceId, data }, db ?? this.db);
 
     if (!run) {
       throw new WorkflowRunNotFoundError(runId);
@@ -408,11 +405,14 @@ export class WorkflowEngine {
     return run;
   }
 
-  async checkProgress(
-    { runId, resourceId }: { runId: string; resourceId?: string },
-    { tx }: { tx?: PostgresTransaction } = {},
-  ): Promise<WorkflowRunProgress> {
-    const run = await this.getRun({ runId, resourceId }, { tx });
+  async checkProgress({
+    runId,
+    resourceId,
+  }: {
+    runId: string;
+    resourceId?: string;
+  }): Promise<WorkflowRunProgress> {
+    const run = await this.getRun({ runId, resourceId });
     const workflow = this.workflows.get(run.workflowId);
 
     if (!workflow) {
@@ -420,7 +420,6 @@ export class WorkflowEngine {
     }
     const steps = workflow?.steps ?? [];
 
-    // Calculate completion percentage
     let completionPercentage = 0;
     let completedSteps = 0;
 
@@ -665,12 +664,12 @@ export class WorkflowEngine {
     run: WorkflowRun;
     handler: () => Promise<unknown>;
   }) {
-    return withPostgresTransaction(async (tx) => {
+    return withPostgresTransaction(this.db, async (db) => {
       const persistedRun = await this.getRun(
         { runId: run.id, resourceId: run.resourceId ?? undefined },
         {
           exclusiveLock: true,
-          tx,
+          db,
         },
       );
 
@@ -709,7 +708,7 @@ export class WorkflowEngine {
                 currentStepId: stepId,
               },
             },
-            { tx },
+            { db },
           );
 
           this.logger.log(`Running step ${stepId}...`, {
@@ -732,7 +731,7 @@ export class WorkflowEngine {
                 }),
               },
             },
-            { tx },
+            { db },
           );
         }
 
@@ -753,7 +752,7 @@ export class WorkflowEngine {
               error: error instanceof Error ? `${error.message}\n${error.stack}` : String(error),
             },
           },
-          { tx },
+          { db },
         );
 
         throw error;
@@ -880,13 +879,16 @@ export class WorkflowEngine {
     hasMore: boolean;
     hasPrev: boolean;
   }> {
-    return getWorkflowRuns({
-      resourceId,
-      startingAfter,
-      endingBefore,
-      limit,
-      statuses,
-      workflowId,
-    });
+    return getWorkflowRuns(
+      {
+        resourceId,
+        startingAfter,
+        endingBefore,
+        limit,
+        statuses,
+        workflowId,
+      },
+      this.db,
+    );
   }
 }
