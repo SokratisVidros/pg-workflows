@@ -1,6 +1,6 @@
 {
   "name": "pg-workflows",
-  "description": "A workflow engine built on PostgreSQL with pg-boss",
+  "description": "The simplest Postgres workflow engine for TypeScript — durable execution, event-driven orchestration, and automatic retries powered entirely by PostgreSQL",
   "version": "0.1.0",
   "type": "module",
   "files": [
@@ -35,13 +35,21 @@
     "prepublishOnly": "npm run clean && npm run build"
   },
   "keywords": [
+    "postgres-workflow",
+    "postgresql-workflow-engine",
     "workflow",
-    "postgresql",
-    "pg-boss",
-    "pg",
     "workflow-engine",
     "durable-execution",
-    "orchestration"
+    "postgresql",
+    "postgres",
+    "pg-boss",
+    "orchestration",
+    "event-driven",
+    "background-jobs",
+    "job-queue",
+    "typescript-workflow",
+    "workflow-orchestration",
+    "step-functions"
   ],
   "author": "sokratisvidros<sokratis.vidros@gmail.com>",
   "license": "MIT",
@@ -61,7 +69,7 @@
     "ksuid": "^3.0.0",
     "lodash": "^4.17.21",
     "pg": "^8.13.1",
-    "pg-boss": ">=10.0.0 <11.0.0",
+    "pg-boss": ">=12.0.0",
     "pg-connection-string": "^2.7.0",
     "typescript": "^5.9.3"
   },

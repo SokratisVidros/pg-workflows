@@ -1,5 +1,5 @@
 import merge from 'lodash/merge';
-import type PgBoss from 'pg-boss';
+import type { Db, Job, PgBoss } from 'pg-boss';
 import type { z } from 'zod';
 import { parseWorkflowHandler } from './ast-parser';
 import { runMigrations } from './db/migration';
@@ -73,7 +73,7 @@ const defaultExpireInSeconds = process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS
 
 export class WorkflowEngine {
   private boss: PgBoss;
-  private db: PgBoss.Db;
+  private db: Db;
   private unregisteredWorkflows = new Map<string, WorkflowDefinition>();
   private _started = false;
 
@@ -373,7 +373,7 @@ export class WorkflowEngine {
 
   async getRun(
     { runId, resourceId }: { runId: string; resourceId?: string },
-    { exclusiveLock = false, db }: { exclusiveLock?: boolean; db?: PgBoss.Db } = {},
+    { exclusiveLock = false, db }: { exclusiveLock?: boolean; db?: Db } = {},
   ): Promise<WorkflowRun> {
     const run = await getWorkflowRun({ runId, resourceId }, { exclusiveLock, db: db ?? this.db });
 
@@ -394,7 +394,7 @@ export class WorkflowEngine {
       resourceId?: string;
       data: Partial<WorkflowRun>;
     },
-    { db }: { db?: PgBoss.Db } = {},
+    { db }: { db?: Db } = {},
   ): Promise<WorkflowRun> {
     const run = await updateWorkflowRun({ runId, resourceId, data }, db ?? this.db);
 
@@ -456,7 +456,7 @@ export class WorkflowEngine {
     };
   }
 
-  private async handleWorkflowRun([job]: PgBoss.Job<WorkflowRunJobParameters>[]) {
+  private async handleWorkflowRun([job]: Job<WorkflowRunJobParameters>[]) {
     const { runId, resourceId, workflowId, input, event } = job?.data ?? {};
 
     if (!runId) {

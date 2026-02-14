@@ -1,7 +1,6 @@
-import type PgBoss from 'pg-boss';
 import ksuid from 'ksuid';
+import type { Db } from 'pg-boss';
 import type { WorkflowRun } from './types';
-
 
 export function generateKSUID(prefix?: string): string {
   return `${prefix ? `${prefix}_` : ''}${ksuid.randomSync().string}`;
@@ -37,11 +36,12 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
     workflowId: row.workflow_id,
     status: row.status,
     input: typeof row.input === 'string' ? JSON.parse(row.input) : row.input,
-    output: typeof row.output === 'string'
-      ? row.output.trim().startsWith('{') || row.output.trim().startsWith('[')
-        ? JSON.parse(row.output)
-        : row.output
-      : row.output ?? null,
+    output:
+      typeof row.output === 'string'
+        ? row.output.trim().startsWith('{') || row.output.trim().startsWith('[')
+          ? JSON.parse(row.output)
+          : row.output
+        : (row.output ?? null),
     error: row.error,
     currentStepId: row.current_step_id,
     timeline: typeof row.timeline === 'string' ? JSON.parse(row.timeline) : row.timeline,
@@ -73,7 +73,7 @@ export async function insertWorkflowRun(
     maxRetries: number;
     timeoutAt: Date | null;
   },
-  db: PgBoss.Db,
+  db: Db,
 ): Promise<WorkflowRun> {
   const runId = generateKSUID('run');
   const now = new Date();
@@ -128,7 +128,7 @@ export async function getWorkflowRun(
     runId: string;
     resourceId?: string;
   },
-  { exclusiveLock = false, db }: { exclusiveLock?: boolean; db: PgBoss.Db },
+  { exclusiveLock = false, db }: { exclusiveLock?: boolean; db: Db },
 ): Promise<WorkflowRun | null> {
   const lockSuffix = exclusiveLock ? 'FOR UPDATE' : '';
 
@@ -165,7 +165,7 @@ export async function updateWorkflowRun(
     resourceId?: string;
     data: Partial<WorkflowRun>;
   },
-  db: PgBoss.Db,
+  db: Db,
 ): Promise<WorkflowRun | null> {
   const now = new Date();
 
@@ -266,7 +266,7 @@ export async function getWorkflowRuns(
     statuses?: string[];
     workflowId?: string;
   },
-  db: PgBoss.Db,
+  db: Db,
 ): Promise<{
   items: WorkflowRun[];
   nextCursor: string | null;
@@ -346,15 +346,15 @@ export async function getWorkflowRuns(
   const rawItems = hasMore ? rows.slice(0, limit) : rows;
   const items = rawItems.map((row) => mapRowToWorkflowRun(row));
   const hasPrev = !!endingBefore;
-  const nextCursor = hasMore && items.length > 0 ? items[items.length - 1]?.id ?? null : null;
-  const prevCursor = hasPrev && items.length > 0 ? items[0]?.id ?? null : null;
+  const nextCursor = hasMore && items.length > 0 ? (items[items.length - 1]?.id ?? null) : null;
+  const prevCursor = hasPrev && items.length > 0 ? (items[0]?.id ?? null) : null;
 
   return { items, nextCursor, prevCursor, hasMore, hasPrev };
 }
 
 export async function withPostgresTransaction<T>(
-  db: PgBoss.Db,
-  callback: (db: PgBoss.Db) => Promise<T>,
+  db: Db,
+  callback: (db: Db) => Promise<T>,
 ): Promise<T> {
   try {
     await db.executeSql('BEGIN', []);

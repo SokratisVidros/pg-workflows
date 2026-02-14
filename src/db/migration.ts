@@ -1,16 +1,20 @@
-import type PgBoss from 'pg-boss';
+import type { Db } from 'pg-boss';
 
-export async function runMigrations(db: PgBoss.Db): Promise<void> {
-  const tableExistsResult = await db.executeSql(`
+export async function runMigrations(db: Db): Promise<void> {
+  const tableExistsResult = await db.executeSql(
+    `
     SELECT EXISTS (
       SELECT FROM information_schema.tables 
       WHERE table_schema = 'public' 
       AND table_name = 'workflow_runs'
     );
-  `, []);
+  `,
+    [],
+  );
 
   if (!tableExistsResult.rows[0]?.exists) {
-    await db.executeSql(`
+    await db.executeSql(
+      `
       CREATE TABLE workflow_runs (
         id varchar(32) PRIMARY KEY NOT NULL,
         created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -31,18 +35,29 @@ export async function runMigrations(db: PgBoss.Db): Promise<void> {
         max_retries integer DEFAULT 0 NOT NULL,
         job_id varchar(256)
       );
-    `, []);
+    `,
+      [],
+    );
 
-    await db.executeSql(`
+    await db.executeSql(
+      `
       CREATE INDEX workflow_runs_workflow_id_idx ON workflow_runs USING btree (workflow_id);
-    `, []);
+    `,
+      [],
+    );
 
-    await db.executeSql(`
+    await db.executeSql(
+      `
       CREATE INDEX workflow_runs_created_at_idx ON workflow_runs USING btree (created_at);
-    `, []);
+    `,
+      [],
+    );
 
-    await db.executeSql(`
+    await db.executeSql(
+      `
       CREATE INDEX workflow_runs_resource_id_idx ON workflow_runs USING btree (resource_id);
-    `, []);
+    `,
+      [],
+    );
   }
 }

@@ -1,11 +1,11 @@
 import type pg from 'pg';
-import PgBoss from 'pg-boss';
+import { type Db, PgBoss } from 'pg-boss';
 
 let bossInstance: PgBoss | null = null;
 
-function wrapPool(pool: pg.Pool): PgBoss.Db {
+function wrapPool(pool: pg.Pool): Db {
   return {
-    executeSql: async (text: string, values?: unknown[]) => pool.query(text, values)
+    executeSql: async (text: string, values?: unknown[]) => pool.query(text, values),
   };
 }
 
@@ -20,6 +20,7 @@ export async function getBoss(db?: pg.Pool): Promise<PgBoss> {
 
   const boss = new PgBoss({
     db: wrapPool(db),
+    migrate: false,
   });
 
   bossInstance = boss;

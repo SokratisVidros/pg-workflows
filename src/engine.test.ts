@@ -1,3 +1,4 @@
+import type { PgBoss } from 'pg-boss';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { workflow } from './definition';
@@ -6,8 +7,6 @@ import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
 import { getBoss } from './tests/pgboss';
 import { closeTestDatabase, createTestDatabase } from './tests/test-db';
 import { WorkflowStatus } from './types';
-
-import type PgBoss from 'pg-boss';
 
 let testBoss: PgBoss;
 

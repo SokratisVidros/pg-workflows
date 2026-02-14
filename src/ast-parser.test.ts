@@ -1,4 +1,4 @@
-import type PgBoss from 'pg-boss';
+import type { PgBoss } from 'pg-boss';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
