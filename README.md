@@ -254,13 +254,13 @@ const conditionalWorkflow = workflow('conditional', async ({ step }) => {
 ### Batch Processing with Loops
 
 ```typescript
-const batchWorkflow = workflow('batch-process', async (ctx) => {
-  const items = await ctx.step.run('get-items', async () => {
+const batchWorkflow = workflow('batch-process', async ({ step }) => {
+  const items = await step.run('get-items', async () => {
     return [1, 2, 3, 4, 5];
   });
 
   for (const item of items) {
-    await ctx.step.run(`process-${item}`, async () => {
+    await step.run(`process-${item}`, async () => {
       // Each item is processed durably
       return processItem(item);
     });
@@ -271,8 +271,8 @@ const batchWorkflow = workflow('batch-process', async (ctx) => {
 ### Error Handling with Retries
 
 ```typescript
-const resilientWorkflow = workflow('resilient', async (ctx) => {
-  await ctx.step.run('risky-operation', async () => {
+const resilientWorkflow = workflow('resilient', async ({ step }) => {
+  await step.run('risky-operation', async () => {
     // Retries up to 3 times with exponential backoff
     return await riskyApiCall();
   });
