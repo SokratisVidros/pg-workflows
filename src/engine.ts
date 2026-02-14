@@ -221,7 +221,7 @@ export class WorkflowEngine {
     }
     const initialStepId = workflow.steps[0]?.id;
 
-    const run = await withPostgresTransaction(this.boss.getDb(), async (db) => {
+    const run = await withPostgresTransaction(this.boss.getDb(), async (_db) => {
       const timeoutAt = options?.timeout
         ? new Date(Date.now() + options.timeout)
         : workflow.timeout

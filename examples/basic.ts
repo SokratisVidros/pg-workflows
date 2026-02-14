@@ -50,7 +50,9 @@ let progress = await engine.checkProgress({ runId: run.id, resourceId: 'tenant_1
 while (progress.status === 'running') {
   await new Promise((r) => setTimeout(r, 1000));
   progress = await engine.checkProgress({ runId: run.id, resourceId: 'tenant_1' });
-  console.log(`Progress: ${progress.completionPercentage}% (${progress.completedSteps}/${progress.totalSteps} steps)`);
+  console.log(
+    `Progress: ${progress.completionPercentage}% (${progress.completedSteps}/${progress.totalSteps} steps)`,
+  );
 }
 
 console.log('Workflow finished:', progress.status, progress.output);

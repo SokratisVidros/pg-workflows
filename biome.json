@@ -63,6 +63,16 @@
       }
     },
     {
+      "includes": ["examples/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["dist/**"],
       "linter": {
         "enabled": false
