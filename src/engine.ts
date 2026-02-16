@@ -219,6 +219,10 @@ export class WorkflowEngine {
     if (workflow.steps.length === 0 || !workflow.steps[0]) {
       throw new WorkflowEngineError(`Workflow ${workflowId} has no steps`, workflowId);
     }
+    if (workflow.inputSchema) {
+      workflow.inputSchema.parse(input);
+    }
+
     const initialStepId = workflow.steps[0]?.id;
 
     const run = await withPostgresTransaction(this.boss.getDb(), async (_db) => {

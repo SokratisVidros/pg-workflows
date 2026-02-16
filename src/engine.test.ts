@@ -262,6 +262,24 @@ describe('WorkflowEngine', () => {
       ).rejects.toThrow(WorkflowEngineError);
     });
 
+    it('should throw ZodError when input does not match schema', async () => {
+      await expect(
+        engine.startWorkflow({
+          resourceId,
+          workflowId: 'test-workflow',
+          input: { data: 123 },
+        }),
+      ).rejects.toThrow();
+
+      await expect(
+        engine.startWorkflow({
+          resourceId,
+          workflowId: 'test-workflow',
+          input: {},
+        }),
+      ).rejects.toThrow();
+    });
+
     it('should throw error for workflow without steps', async () => {
       const emptyWorkflow = workflow('empty-workflow', async () => {});
 
@@ -682,7 +700,7 @@ describe('WorkflowEngine', () => {
       const run = await engine.startWorkflow({
         resourceId,
         workflowId: 'test-workflow',
-        input: {},
+        input: { data: 'test' },
       });
       expect(run.id).toBeDefined();
 
