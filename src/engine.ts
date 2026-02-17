@@ -220,7 +220,10 @@ export class WorkflowEngine {
       throw new WorkflowEngineError(`Workflow ${workflowId} has no steps`, workflowId);
     }
     if (workflow.inputSchema) {
-      workflow.inputSchema.parse(input);
+      const result = workflow.inputSchema.safeParse(input);
+      if (!result.success) {
+        throw new WorkflowEngineError(result.error.message, workflowId);
+      }
     }
 
     const initialStepId = workflow.steps[0]?.id;

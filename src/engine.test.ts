@@ -262,14 +262,14 @@ describe('WorkflowEngine', () => {
       ).rejects.toThrow(WorkflowEngineError);
     });
 
-    it('should throw ZodError when input does not match schema', async () => {
+    it('should throw WorkflowEngineError when input does not match schema', async () => {
       await expect(
         engine.startWorkflow({
           resourceId,
           workflowId: 'test-workflow',
           input: { data: 123 },
         }),
-      ).rejects.toThrow();
+      ).rejects.toThrow(WorkflowEngineError);
 
       await expect(
         engine.startWorkflow({
@@ -277,7 +277,7 @@ describe('WorkflowEngine', () => {
           workflowId: 'test-workflow',
           input: {},
         }),
-      ).rejects.toThrow();
+      ).rejects.toThrow(WorkflowEngineError);
     });
 
     it('should throw error for workflow without steps', async () => {
