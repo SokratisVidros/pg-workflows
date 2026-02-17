@@ -31,6 +31,7 @@ Most workflow engines ask you to adopt an entirely new platform - a new runtime,
 - You already run **PostgreSQL** and want to add durable workflows without new services
 - You need a **lightweight, self-hosted** workflow engine with zero operational overhead
 - You want **event-driven orchestration** (pause, resume, wait for external signals)
+- You're building **AI agents or LLM pipelines** that need durable execution, retries, and human-in-the-loop
 - You're building with **TypeScript/Node.js** and want a native developer experience
 
 ### When to consider alternatives
@@ -165,12 +166,173 @@ console.log(`Progress: ${progress.completionPercentage}%`);
 
 ## What Can You Build?
 
+- **AI Agents & LLM Pipelines** - Build durable AI agents that survive crashes, retry on flaky LLM APIs, and pause for human-in-the-loop review. [See examples below.](#ai--agent-workflows)
 - **User Onboarding Flows** - Multi-step signup sequences with email verification, waiting for user actions, and conditional paths.
 - **Payment & Checkout Pipelines** - Durable payment processing that survives failures, with automatic retries and event-driven confirmations.
-- **AI & LLM Pipelines** - Chain LLM calls with built-in retries for flaky APIs. Persist intermediate results across steps.
 - **Background Job Orchestration** - Replace fragile cron jobs with durable, observable workflows that track progress.
 - **Approval Workflows** - Pause execution and wait for human approval events before proceeding.
 - **Data Processing Pipelines** - ETL workflows with step-by-step execution, error handling, and progress monitoring.
+
+---
+
+## AI & Agent Workflows
+
+AI agents and LLM pipelines are one of the best use cases for durable execution. LLM calls are **slow**, **expensive**, and **unreliable** - exactly the kind of work that should never be repeated unnecessarily. pg-workflows gives you:
+
+- **Cached step results** - If your process crashes after a $0.50 GPT-4 call, the result is already persisted. On retry, it skips the LLM call and picks up where it left off.
+- **Automatic retries** - LLM APIs return 429s and 500s. Built-in exponential backoff handles transient failures without custom retry logic.
+- **Human-in-the-loop** - Pause an AI pipeline with `step.waitFor()` to wait for human review, approval, or feedback before continuing.
+- **Observable progress** - Track which step your agent is on, how far along it is, and inspect intermediate results with `checkProgress()`.
+- **Long-running agents** - Multi-step agents that run for minutes or hours don't need to hold a connection open. They persist state and resume.
+
+### Example: Multi-Step AI Agent
+
+```typescript
+const researchAgent = workflow(
+  'research-agent',
+  async ({ step, input }) => {
+    // Step 1: Plan the research (persisted - never re-runs on retry)
+    const plan = await step.run('create-plan', async () => {
+      return await llm.chat({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: `Create a research plan for: ${input.topic}` }],
+      });
+    });
+
+    // Step 2: Execute each research task durably
+    const findings = [];
+    for (const task of plan.tasks) {
+      const result = await step.run(`research-${task.id}`, async () => {
+        return await llm.chat({
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: `Research: ${task.description}` }],
+        });
+      });
+      findings.push(result);
+    }
+
+    // Step 3: Synthesize results
+    const report = await step.run('synthesize', async () => {
+      return await llm.chat({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: `Synthesize these findings: ${JSON.stringify(findings)}` }],
+      });
+    });
+
+    return { plan, findings, report };
+  },
+  {
+    retries: 3,
+    timeout: 30 * 60 * 1000, // 30 minutes
+  }
+);
+```
+
+If the process crashes after completing 3 of 5 research tasks, the agent **resumes from task 4** - no LLM calls are wasted.
+
+### Example: Human-in-the-Loop AI Pipeline
+
+```typescript
+const contentPipeline = workflow(
+  'ai-content-pipeline',
+  async ({ step, input }) => {
+    // Step 1: Generate draft with AI
+    const draft = await step.run('generate-draft', async () => {
+      return await llm.chat({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: `Write a blog post about: ${input.topic}` }],
+      });
+    });
+
+    // Step 2: Pause for human review - costs nothing while waiting
+    const review = await step.waitFor('human-review', {
+      eventName: 'content-reviewed',
+      timeout: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    // Step 3: Revise based on feedback
+    if (review.approved) {
+      return { status: 'published', content: draft };
+    }
+
+    const revision = await step.run('revise-draft', async () => {
+      return await llm.chat({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'user', content: `Revise this draft based on feedback:\n\nDraft: ${draft}\n\nFeedback: ${review.feedback}` },
+        ],
+      });
+    });
+
+    return { status: 'revised', content: revision };
+  },
+  { retries: 3 }
+);
+
+// A reviewer approves or requests changes via your API
+await engine.triggerEvent({
+  runId: run.id,
+  eventName: 'content-reviewed',
+  data: { approved: false, feedback: 'Make the intro more engaging' },
+});
+```
+
+### Example: RAG Pipeline with Tool Use
+
+```typescript
+const ragAgent = workflow(
+  'rag-agent',
+  async ({ step, input }) => {
+    // Step 1: Generate embeddings (cached on retry)
+    const embedding = await step.run('embed-query', async () => {
+      return await openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: input.query,
+      });
+    });
+
+    // Step 2: Search vector store
+    const documents = await step.run('search-docs', async () => {
+      return await vectorStore.search(embedding, { topK: 10 });
+    });
+
+    // Step 3: Generate answer with context
+    const answer = await step.run('generate-answer', async () => {
+      return await llm.chat({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: `Answer using these documents:\n${documents.map(d => d.text).join('\n')}` },
+          { role: 'user', content: input.query },
+        ],
+      });
+    });
+
+    // Step 4: Validate and fact-check
+    const validation = await step.run('fact-check', async () => {
+      return await llm.chat({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'user', content: `Fact-check this answer against the source documents. Answer: ${answer}` },
+        ],
+      });
+    });
+
+    return { answer, validation, sources: documents };
+  },
+  { retries: 3, timeout: 5 * 60 * 1000 }
+);
+```
+
+### Why Durable Execution Matters for AI
+
+| Problem | Without pg-workflows | With pg-workflows |
+|---------|---------------------|-------------------|
+| Process crashes mid-pipeline | All LLM calls re-run from scratch | Resumes from the last completed step |
+| LLM API returns 429/500 | Manual retry logic everywhere | Automatic retries with exponential backoff |
+| Human review needed | Custom polling/webhook infrastructure | `step.waitFor()` - zero resource consumption while waiting |
+| Debugging failed agents | Lost intermediate state | Full timeline of every step's input/output in PostgreSQL |
+| Cost control | Repeated expensive LLM calls on failure | Each LLM call runs exactly once, result cached |
+| Long-running pipelines | Timeout or lost connections | Runs for hours/days, state persisted in Postgres |
 
 ---
 
@@ -218,10 +380,10 @@ const eventData = await step.waitFor('wait-step', {
 
 ### Resource ID
 
-The optional `resourceId` associates a workflow run with an external entity in your application — a user, an order, a subscription, or any domain object the workflow operates on. It serves two purposes:
+The optional `resourceId` associates a workflow run with an external entity in your application - a user, an order, a subscription, or any domain object the workflow operates on. It serves two purposes:
 
-1. **Association** — Links each workflow run to the business entity it belongs to, so you can query all runs for a given resource.
-2. **Scoping** — When provided, all read and write operations (get, update, pause, resume, cancel, trigger events) include `resource_id` in their database queries, ensuring you only access workflow runs that belong to that resource. This is useful for enforcing tenant isolation or ownership checks.
+1. **Association** - Links each workflow run to the business entity it belongs to, so you can query all runs for a given resource.
+2. **Scoping** - When provided, all read and write operations (get, update, pause, resume, cancel, trigger events) include `resource_id` in their database queries, ensuring you only access workflow runs that belong to that resource. This is useful for enforcing tenant isolation or ownership checks.
 
 `resourceId` is optional on every API method. If you don't need to group or scope runs by an external entity, you can omit it entirely and use `runId` alone.
 
