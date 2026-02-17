@@ -1,7 +1,7 @@
 {
   "name": "pg-workflows",
   "description": "The simplest Postgres workflow engine for TypeScript - durable execution, event-driven orchestration, and automatic retries powered entirely by PostgreSQL",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "files": [
     "dist"
