@@ -581,9 +581,15 @@ export class WorkflowEngine {
               timeout,
             }) as Promise<inferParameters<T>>;
           },
-          // @ts-expect-error TODO: Implement waitUntil
-          waitUntil: async ({ date }: { date: Date }) => {
-            return this.waitUntil(runId, date);
+          waitUntil: async (stepId: string, { date }: { date: Date }) => {
+            if (!run) {
+              throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
+            }
+            await this.waitUntilDate({
+              run,
+              stepId,
+              date,
+            });
           },
           pause: async (stepId: string) => {
             if (!run) {
@@ -843,8 +849,43 @@ export class WorkflowEngine {
     });
   }
 
-  private async waitUntil(runId: string, _date: Date): Promise<void> {
-    throw new WorkflowEngineError('Not implemented yet', undefined, runId);
+  private async waitUntilDate({
+    run,
+    stepId,
+    date,
+  }: {
+    run: WorkflowRun;
+    stepId: string;
+    date: Date;
+  }) {
+    const eventName = `__wait_until_${stepId}`;
+
+    await this.waitForEvent({
+      run,
+      stepId,
+      eventName,
+    });
+
+    const job: WorkflowRunJobParameters = {
+      runId: run.id,
+      resourceId: run.resourceId ?? undefined,
+      workflowId: run.workflowId,
+      input: run.input,
+      event: {
+        name: eventName,
+        data: { date: date.toISOString() },
+      },
+    };
+
+    await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+      startAfter: date,
+      expireInSeconds: defaultExpireInSeconds,
+    });
+
+    this.logger.log(`Running step ${stepId}, waiting until ${date.toISOString()}...`, {
+      runId: run.id,
+      workflowId: run.workflowId,
+    });
   }
 
   private async checkIfHasStarted(): Promise<void> {

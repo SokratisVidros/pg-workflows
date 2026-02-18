@@ -114,7 +114,7 @@ await step.pause('approval-gate');
 // Workflow pauses here until engine.resumeWorkflow() is called
 ```
 
-#### `step.waitUntil(stepId, { date })` - Wait until a specific date *(not yet implemented)*
+#### `step.waitUntil(stepId, { date })` - Wait until a specific date
 ```typescript
 await step.waitUntil('scheduled-step', { date: new Date('2025-01-01') });
 ```

@@ -74,7 +74,10 @@ export function parseWorkflowHandler(
 
       if (
         objectName === 'step' &&
-        (methodName === 'run' || methodName === 'waitFor' || methodName === 'pause')
+        (methodName === 'run' ||
+          methodName === 'waitFor' ||
+          methodName === 'pause' ||
+          methodName === 'waitUntil')
       ) {
         const firstArg = node.arguments[0];
         if (firstArg) {

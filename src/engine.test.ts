@@ -762,6 +762,51 @@ describe('WorkflowEngine', () => {
       sendSpy.mockRestore();
     });
 
+    it('should handle workflow with waitUntil step', async () => {
+      const waitUntilWorkflow = workflow('wait-until-workflow', async ({ step }) => {
+        await step.run('step-1', async () => 'result-1');
+        await step.waitUntil('step-2', { date: new Date(Date.now() + 500) });
+        await step.run('step-3', async () => 'result-3');
+        return 'completed';
+      });
+
+      await engine.registerWorkflow(waitUntilWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'wait-until-workflow',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      const pausedRun = await engine.getRun({ runId: run.id, resourceId });
+      expect(pausedRun.timeline).toMatchObject({
+        'step-1': { output: 'result-1' },
+        'step-2-wait-for': {
+          waitFor: { eventName: '__wait_until_step-2' },
+        },
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 5000,
+        })
+        .toBe(WorkflowStatus.COMPLETED);
+
+      const completed = await engine.getRun({ runId: run.id, resourceId });
+      expect(completed.output).toBe('completed');
+      expect(completed.timeline).toMatchObject({
+        'step-1': { output: 'result-1' },
+        'step-2-wait-for': {
+          waitFor: { eventName: '__wait_until_step-2' },
+        },
+        'step-2': { output: { date: expect.any(String) } },
+        'step-3': { output: 'result-3' },
+      });
+    });
+
     it.todo('should handle workflow timeout', async () => {});
 
     it('should handle workflow with conditionals and for loops', async () => {
