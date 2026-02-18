@@ -27,7 +27,6 @@ import {
 } from './types';
 
 const PAUSE_EVENT_NAME = '__internal_pause';
-const WAIT_UNTIL_EVENT_NAME = '__internal_wait_until';
 const WORKFLOW_RUN_QUEUE_NAME = 'workflow-run';
 const LOG_PREFIX = '[WorkflowEngine]';
 
@@ -48,13 +47,6 @@ type TimelineWaitForEntry = {
   waitFor: {
     eventName: string;
     timeout?: number;
-  };
-  timestamp: Date;
-};
-
-type TimelineWaitUntilEntry = {
-  waitUntil: {
-    date: string;
   };
   timestamp: Date;
 };
@@ -526,14 +518,6 @@ export class WorkflowEngine {
         const waitFor = waitForStep?.waitFor;
         const hasCurrentStepOutput = currentStep?.output !== undefined;
 
-        const waitUntilStepEntry = run.timeline[`${run.currentStepId}-wait-until`];
-        const waitUntilStep =
-          waitUntilStepEntry &&
-          typeof waitUntilStepEntry === 'object' &&
-          'waitUntil' in waitUntilStepEntry
-            ? (waitUntilStepEntry as TimelineWaitUntilEntry)
-            : null;
-
         if (waitFor && waitFor.eventName === event?.name && !hasCurrentStepOutput) {
           run = await this.updateRun({
             runId,
@@ -545,27 +529,6 @@ export class WorkflowEngine {
               timeline: merge(run.timeline, {
                 [run.currentStepId]: {
                   output: event?.data ?? {},
-                  timestamp: new Date(),
-                },
-              }),
-              jobId: job?.id,
-            },
-          });
-        } else if (
-          waitUntilStep &&
-          event?.name === WAIT_UNTIL_EVENT_NAME &&
-          !hasCurrentStepOutput
-        ) {
-          run = await this.updateRun({
-            runId,
-            resourceId,
-            data: {
-              status: WorkflowStatus.RUNNING,
-              pausedAt: null,
-              resumedAt: new Date(),
-              timeline: merge(run.timeline, {
-                [run.currentStepId]: {
-                  output: {},
                   timestamp: new Date(),
                 },
               }),
@@ -895,46 +858,12 @@ export class WorkflowEngine {
     stepId: string;
     date: Date;
   }) {
-    const persistedRun = await this.getRun({
-      runId: run.id,
-      resourceId: run.resourceId ?? undefined,
-    });
+    const eventName = `__wait_until_${stepId}`;
 
-    if (
-      persistedRun.status === WorkflowStatus.CANCELLED ||
-      persistedRun.status === WorkflowStatus.PAUSED ||
-      persistedRun.status === WorkflowStatus.FAILED
-    ) {
-      return;
-    }
-
-    const timelineStepCheckEntry = persistedRun.timeline[stepId];
-    const timelineStepCheck =
-      timelineStepCheckEntry &&
-      typeof timelineStepCheckEntry === 'object' &&
-      'output' in timelineStepCheckEntry
-        ? (timelineStepCheckEntry as TimelineStepEntry)
-        : null;
-    if (timelineStepCheck?.output !== undefined) {
-      return timelineStepCheck.output;
-    }
-
-    await this.updateRun({
-      runId: run.id,
-      resourceId: run.resourceId ?? undefined,
-      data: {
-        status: WorkflowStatus.PAUSED,
-        currentStepId: stepId,
-        timeline: merge(run.timeline, {
-          [`${stepId}-wait-until`]: {
-            waitUntil: {
-              date: date.toISOString(),
-            },
-            timestamp: new Date(),
-          },
-        }),
-        pausedAt: new Date(),
-      },
+    await this.waitForEvent({
+      run,
+      stepId,
+      eventName,
     });
 
     const job: WorkflowRunJobParameters = {
@@ -943,8 +872,8 @@ export class WorkflowEngine {
       workflowId: run.workflowId,
       input: run.input,
       event: {
-        name: WAIT_UNTIL_EVENT_NAME,
-        data: { stepId },
+        name: eventName,
+        data: { date: date.toISOString() },
       },
     };
 

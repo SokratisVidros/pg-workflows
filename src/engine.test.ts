@@ -781,6 +781,14 @@ describe('WorkflowEngine', () => {
         .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
         .toBe(WorkflowStatus.PAUSED);
 
+      const pausedRun = await engine.getRun({ runId: run.id, resourceId });
+      expect(pausedRun.timeline).toMatchObject({
+        'step-1': { output: 'result-1' },
+        'step-2-wait-for': {
+          waitFor: { eventName: '__wait_until_step-2' },
+        },
+      });
+
       await expect
         .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
           timeout: 5000,
@@ -791,6 +799,10 @@ describe('WorkflowEngine', () => {
       expect(completed.output).toBe('completed');
       expect(completed.timeline).toMatchObject({
         'step-1': { output: 'result-1' },
+        'step-2-wait-for': {
+          waitFor: { eventName: '__wait_until_step-2' },
+        },
+        'step-2': { output: { date: expect.any(String) } },
         'step-3': { output: 'result-3' },
       });
     });
