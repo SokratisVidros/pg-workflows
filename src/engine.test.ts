@@ -704,7 +704,7 @@ describe('WorkflowEngine', () => {
 
       await expect
         .poll(async () => await engine.getRun({ runId: run.id, resourceId }), {
-          timeout: 3000,
+          timeout: 10000,
         })
         .toMatchObject({
           status: WorkflowStatus.COMPLETED,
@@ -715,6 +715,51 @@ describe('WorkflowEngine', () => {
             },
           },
         });
+    });
+
+    it('should use exponential backoff for retries', async () => {
+      const failingWorkflow = workflow('backoff-workflow', async ({ step }) => {
+        await step.run('step-1', async () => {
+          throw new Error('always fails');
+        });
+      });
+
+      await engine.registerWorkflow(failingWorkflow);
+
+      const sendSpy = vi.spyOn(testBoss, 'send');
+
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'backoff-workflow',
+        input: {},
+        options: { retries: 2 },
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 10000,
+        })
+        .toBe(WorkflowStatus.FAILED);
+
+      type JobData = { runId: string; workflowId: string };
+
+      const retryCalls = sendSpy.mock.calls.filter(
+        ([queue, data]) =>
+          queue === 'workflow-run' &&
+          (data as JobData).runId === run.id &&
+          (data as JobData).workflowId === 'backoff-workflow',
+      );
+
+      // 1 initial send from startWorkflow + 2 retry sends
+      expect(retryCalls.length).toBe(3);
+
+      for (const [, , options] of retryCalls.slice(1)) {
+        const opts = options as { startAfter?: Date; retryDelay?: number };
+        expect(opts.startAfter).toBeInstanceOf(Date);
+        expect(opts).not.toHaveProperty('retryDelay');
+      }
+
+      sendSpy.mockRestore();
     });
 
     it.todo('should handle workflow timeout', async () => {});

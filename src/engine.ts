@@ -642,7 +642,10 @@ export class WorkflowEngine {
           workflowId,
           input,
         };
-        await this.boss?.send('workflow-run', pgBossJob, { retryDelay });
+        await this.boss?.send('workflow-run', pgBossJob, {
+          startAfter: new Date(Date.now() + retryDelay),
+          expireInSeconds: defaultExpireInSeconds,
+        });
 
         return;
       }
