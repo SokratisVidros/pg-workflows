@@ -5,6 +5,7 @@
     "": {
       "name": "pg-workflows",
       "dependencies": {
+        "cron-parser": "^5.5.0",
         "es-toolkit": "^1.44.0",
         "ksuid": "^3.0.0",
         "pg": "^8.13.1",

@@ -20,10 +20,22 @@ export enum StepType {
 export type Parameters = z.ZodTypeAny;
 export type inferParameters<P extends Parameters> = P extends z.ZodTypeAny ? z.infer<P> : never;
 
+export type ScheduleContext = {
+  timestamp: Date;
+  lastTimestamp: Date | undefined;
+  timezone: string;
+};
+
+export type CronConfig = {
+  expression: string;
+  timezone?: string;
+};
+
 export type WorkflowOptions<I extends Parameters> = {
   timeout?: number;
   retries?: number;
   inputSchema?: I;
+  cron?: CronConfig;
 };
 
 export interface WorkflowLogger {
@@ -57,6 +69,7 @@ export type WorkflowContext<T extends Parameters = Parameters> = {
   runId: string;
   timeline: Record<string, unknown>;
   logger: WorkflowLogger;
+  schedule?: ScheduleContext;
 };
 
 export type WorkflowDefinition<T extends Parameters = Parameters> = {
@@ -65,6 +78,7 @@ export type WorkflowDefinition<T extends Parameters = Parameters> = {
   inputSchema?: T;
   timeout?: number; // milliseconds
   retries?: number;
+  cron?: CronConfig;
 };
 
 export type InternalStepDefinition = {

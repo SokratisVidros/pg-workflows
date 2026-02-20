@@ -25,6 +25,8 @@ type WorkflowRunRow = {
   retry_count: number;
   max_retries: number;
   job_id: string | null;
+  trigger_source: 'api' | 'cron';
+  schedule_context: string | { timestamp: string; lastTimestamp?: string; timezone: string } | null;
 };
 
 function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
@@ -52,6 +54,20 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
     retryCount: row.retry_count,
     maxRetries: row.max_retries,
     jobId: row.job_id,
+    triggerSource: row.trigger_source,
+    scheduleContext: row.schedule_context
+      ? (() => {
+          const sc =
+            typeof row.schedule_context === 'string'
+              ? JSON.parse(row.schedule_context)
+              : row.schedule_context;
+          return {
+            timestamp: new Date(sc.timestamp),
+            lastTimestamp: sc.lastTimestamp ? new Date(sc.lastTimestamp) : undefined,
+            timezone: sc.timezone,
+          };
+        })()
+      : null,
   };
 }
 
@@ -64,6 +80,8 @@ export async function insertWorkflowRun(
     input,
     maxRetries,
     timeoutAt,
+    triggerSource,
+    scheduleContext,
   }: {
     resourceId?: string;
     workflowId: string;
@@ -72,6 +90,8 @@ export async function insertWorkflowRun(
     input: unknown;
     maxRetries: number;
     timeoutAt: Date | null;
+    triggerSource?: 'api' | 'cron';
+    scheduleContext?: { timestamp: Date; lastTimestamp: Date | undefined; timezone: string };
   },
   db: Db,
 ): Promise<WorkflowRun> {
@@ -91,9 +111,11 @@ export async function insertWorkflowRun(
       created_at,
       updated_at,
       timeline,
-      retry_count
+      retry_count,
+      trigger_source,
+      schedule_context
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     RETURNING *`,
     [
       runId,
@@ -108,6 +130,8 @@ export async function insertWorkflowRun(
       now,
       '{}',
       0,
+      triggerSource ?? 'api',
+      scheduleContext ? JSON.stringify(scheduleContext) : null,
     ],
   );
 
@@ -153,6 +177,26 @@ export async function getWorkflowRun(
   }
 
   return mapRowToWorkflowRun(run);
+}
+
+export async function getLastCronCompletedAt(
+  workflowId: string,
+  db: Db,
+): Promise<Date | undefined> {
+  const result = await db.executeSql(
+    `SELECT completed_at FROM workflow_runs
+     WHERE workflow_id = $1 AND status = 'completed' AND trigger_source = 'cron'
+     ORDER BY completed_at DESC
+     LIMIT 1`,
+    [workflowId],
+  );
+
+  const row = result.rows[0];
+  if (!row?.completed_at) {
+    return undefined;
+  }
+
+  return typeof row.completed_at === 'string' ? new Date(row.completed_at) : row.completed_at;
 }
 
 export async function updateWorkflowRun(
@@ -258,6 +302,7 @@ export async function getWorkflowRuns(
     limit = 20,
     statuses,
     workflowId,
+    triggerSource,
   }: {
     resourceId?: string;
     startingAfter?: string | null;
@@ -265,6 +310,7 @@ export async function getWorkflowRuns(
     limit?: number;
     statuses?: string[];
     workflowId?: string;
+    triggerSource?: 'api' | 'cron';
   },
   db: Db,
 ): Promise<{
@@ -293,6 +339,12 @@ export async function getWorkflowRuns(
   if (workflowId) {
     conditions.push(`workflow_id = $${paramIndex}`);
     values.push(workflowId);
+    paramIndex++;
+  }
+
+  if (triggerSource) {
+    conditions.push(`trigger_source = $${paramIndex}`);
+    values.push(triggerSource);
     paramIndex++;
   }
 
