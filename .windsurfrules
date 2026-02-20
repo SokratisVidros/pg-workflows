@@ -35,7 +35,7 @@ import { z } from 'zod';
 
 const myWorkflow = workflow(
   'workflow-id',
-  async ({ step, input, runId, workflowId, timeline, logger }) => {
+  async ({ step, input, runId, workflowId, timeline, logger, schedule }) => {
     const result = await step.run('step-1', async () => {
       return { processed: input.data };
     });
@@ -45,6 +45,10 @@ const myWorkflow = workflow(
     inputSchema: z.object({ data: z.string() }),
     timeout: 60000,
     retries: 3,
+    cron: {                                    // optional, cron scheduling
+      expression: '*/15 * * * *',
+      timezone: 'America/New_York',           // optional, defaults to UTC
+    },
   }
 );
 ```
@@ -67,7 +71,7 @@ await engine.start();
 - `step.run(stepId, handler)` - Durable step, runs exactly once, result persisted in PostgreSQL
 - `step.waitFor(stepId, { eventName, timeout?, schema? })` - Pause and wait for an external event
 - `step.pause(stepId)` - Manual pause; resume with `engine.resumeWorkflow()`
-- `step.waitUntil(stepId, { date })` - Wait until a date (not yet implemented)
+- `step.waitUntil(stepId, { date })` - Wait until a specific date
 
 ### Engine methods
 
@@ -78,7 +82,7 @@ await engine.start();
 - `engine.triggerEvent({ runId, resourceId?, eventName, data? })` - Send event to waiting workflow
 - `engine.getRun({ runId, resourceId? })` - Get run details
 - `engine.checkProgress({ runId, resourceId? })` - Get progress percentage
-- `engine.getRuns({ resourceId?, statuses?, workflowId?, limit? })` - List runs (cursor pagination)
+- `engine.getRuns({ resourceId?, statuses?, workflowId?, triggerSource?, limit? })` - List runs (cursor pagination)
 - `engine.registerWorkflow(definition)` - Register a workflow dynamically
 - `engine.unregisterWorkflow(workflowId)` - Unregister a workflow
 
@@ -93,6 +97,16 @@ enum StepType { PAUSE = 'pause', RUN = 'run', WAIT_FOR = 'waitFor', WAIT_UNTIL =
 
 - `WorkflowEngineError(message, workflowId?, runId?, cause?)` - Base error
 - `WorkflowRunNotFoundError(runId?, workflowId?)` - Run not found
+
+## Cron Workflows
+
+Workflows can run on a cron schedule via the `cron` option on `workflow()`. Uses pg-boss `schedule()` under the hood.
+
+- `CronConfig`: `{ expression: string, timezone?: string }`
+- `ScheduleContext`: `{ timestamp: Date, lastTimestamp: Date | undefined, timezone: string }` — available as `schedule` on workflow context for cron-triggered runs
+- `triggerSource`: `'api' | 'cron'` field on `WorkflowRun` distinguishes how a run was triggered
+- `scheduleContext`: persisted on `WorkflowRun` for cron runs (survives retries)
+- Post-start registration: `registerWorkflow()` after `start()` automatically sets up cron schedule
 
 ## AI & Agent Workflows
 
