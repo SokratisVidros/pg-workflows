@@ -1,9 +1,11 @@
+import { CronExpressionParser } from 'cron-parser';
 import { merge } from 'es-toolkit';
-import type { Db, Job, PgBoss } from 'pg-boss';
+import type { Db, Job, JobWithMetadata, PgBoss } from 'pg-boss';
 import type { z } from 'zod';
 import { parseWorkflowHandler } from './ast-parser';
 import { runMigrations } from './db/migration';
 import {
+  getWorkflowLastRun,
   getWorkflowRun,
   getWorkflowRuns,
   insertWorkflowRun,
@@ -18,6 +20,7 @@ import {
   type InternalWorkflowLoggerContext,
   type inferParameters,
   type Parameters,
+  type ScheduleContext,
   StepType,
   type WorkflowContext,
   type WorkflowDefinition,
@@ -139,6 +142,19 @@ export class WorkflowEngine {
           `Worker ${i + 1}/${numWorkers} started for queue ${WORKFLOW_RUN_QUEUE_NAME}`,
         );
       }
+
+      for (const wf of this.workflows.values()) {
+        if (wf.cron) {
+          try {
+            await this.scheduleCronWorkflow(wf);
+          } catch (error) {
+            this.logger.error(
+              `Failed to set up cron schedule for "${wf.id}", skipping`,
+              error instanceof Error ? error : new Error(String(error)),
+            );
+          }
+        }
+      }
     }
 
     this._started = true;
@@ -147,6 +163,12 @@ export class WorkflowEngine {
   }
 
   async stop(): Promise<void> {
+    for (const wf of this.workflows.values()) {
+      if (wf.cron) {
+        await this.boss.unschedule(wf.id);
+      }
+    }
+
     await this.boss.stop();
 
     this._started = false;
@@ -164,6 +186,27 @@ export class WorkflowEngine {
 
     const { steps } = parseWorkflowHandler(definition.handler);
 
+    if (definition.cron) {
+      try {
+        CronExpressionParser.parse(definition.cron.expression, { tz: definition.cron.timezone });
+      } catch (e) {
+        throw new WorkflowEngineError(
+          `Invalid cron expression "${definition.cron.expression}" for workflow "${definition.id}": ${e instanceof Error ? e.message : String(e)}`,
+          definition.id,
+        );
+      }
+
+      if (definition.inputSchema) {
+        const result = definition.inputSchema.safeParse({});
+        if (!result.success) {
+          throw new WorkflowEngineError(
+            `Cron workflow "${definition.id}" has an inputSchema that rejects empty input. Cron-triggered runs always use {} as input.`,
+            definition.id,
+          );
+        }
+      }
+    }
+
     this.workflows.set(definition.id, {
       ...definition,
       steps,
@@ -176,6 +219,13 @@ export class WorkflowEngine {
       if (step.loop) tags.push('[loop]');
       if (step.isDynamic) tags.push('[dynamic]');
       this.logger.log(`  └─ (${StepTypeToIcon[step.type]}) ${step.id} ${tags.join(' ')}`);
+    }
+
+    if (this._started && definition.cron) {
+      const internalDef = this.workflows.get(definition.id);
+      if (internalDef) {
+        await this.scheduleCronWorkflow(internalDef);
+      }
     }
 
     return this;
@@ -191,6 +241,41 @@ export class WorkflowEngine {
     return this;
   }
 
+  private async buildScheduleContext(run: WorkflowRun): Promise<ScheduleContext> {
+    const lastRun = await getWorkflowLastRun(run.workflowId, this.boss.getDb());
+    return {
+      timestamp: run.createdAt,
+      lastTimestamp: lastRun?.completedAt ?? undefined,
+      timezone: run.timezone ?? 'UTC',
+    };
+  }
+
+  private async scheduleCronWorkflow(wf: InternalWorkflowDefinition): Promise<void> {
+    if (!wf.cron) return;
+
+    await this.boss.createQueue(wf.id);
+    await this.boss.schedule(wf.id, wf.cron.expression, null, {
+      tz: wf.cron.timezone ?? 'UTC',
+    });
+    await this.boss.work(wf.id, { includeMetadata: true }, async ([_job]: JobWithMetadata[]) => {
+      try {
+        await this._createWorkflowRun({
+          workflowId: wf.id,
+          input: {},
+          cron: wf.cron?.expression,
+          timezone: wf.cron?.timezone,
+        });
+      } catch (error) {
+        this.logger.error(
+          `Cron trigger failed for workflow "${wf.id}"`,
+          error instanceof Error ? error : new Error(String(error)),
+        );
+        throw error;
+      }
+    });
+    this.logger.log(`Cron schedule registered for ${wf.id}: ${wf.cron.expression}`);
+  }
+
   async startWorkflow({
     resourceId,
     workflowId,
@@ -200,6 +285,34 @@ export class WorkflowEngine {
     resourceId?: string;
     workflowId: string;
     input: unknown;
+    options?: {
+      timeout?: number;
+      retries?: number;
+      expireInSeconds?: number;
+      batchSize?: number;
+    };
+  }): Promise<WorkflowRun> {
+    return this._createWorkflowRun({
+      resourceId,
+      workflowId,
+      input,
+      options,
+    });
+  }
+
+  private async _createWorkflowRun({
+    resourceId,
+    workflowId,
+    input,
+    options,
+    cron,
+    timezone,
+  }: {
+    resourceId?: string;
+    workflowId: string;
+    input: unknown;
+    cron?: string;
+    timezone?: string;
     options?: {
       timeout?: number;
       retries?: number;
@@ -244,6 +357,8 @@ export class WorkflowEngine {
           input,
           maxRetries: options?.retries ?? workflow.retries ?? 0,
           timeoutAt,
+          cron,
+          timezone,
         },
         this.boss.getDb(),
       );
@@ -370,7 +485,7 @@ export class WorkflowEngine {
       },
     };
 
-    this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+    await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
       expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
     });
 
@@ -470,10 +585,6 @@ export class WorkflowEngine {
       throw new WorkflowEngineError('Invalid workflow run job, missing runId', workflowId);
     }
 
-    if (!resourceId) {
-      throw new WorkflowEngineError('Invalid workflow run job, missing resourceId', workflowId);
-    }
-
     if (!workflowId) {
       throw new WorkflowEngineError(
         'Invalid workflow run job, missing workflowId',
@@ -493,6 +604,10 @@ export class WorkflowEngine {
     });
 
     let run = await this.getRun({ runId, resourceId });
+
+    const schedule: ScheduleContext | undefined = run.cron
+      ? await this.buildScheduleContext(run)
+      : undefined;
 
     try {
       if (run.status === WorkflowStatus.CANCELLED) {
@@ -555,6 +670,7 @@ export class WorkflowEngine {
         runId: run.id,
         timeline: run.timeline,
         logger: this.logger,
+        schedule,
         step: {
           run: async <T>(stepId: string, handler: () => Promise<T>) => {
             if (!run) {

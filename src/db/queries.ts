@@ -25,6 +25,8 @@ type WorkflowRunRow = {
   retry_count: number;
   max_retries: number;
   job_id: string | null;
+  cron: string | null;
+  timezone: string | null;
 };
 
 function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
@@ -52,6 +54,8 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
     retryCount: row.retry_count,
     maxRetries: row.max_retries,
     jobId: row.job_id,
+    cron: row.cron,
+    timezone: row.timezone,
   };
 }
 
@@ -64,6 +68,8 @@ export async function insertWorkflowRun(
     input,
     maxRetries,
     timeoutAt,
+    cron,
+    timezone,
   }: {
     resourceId?: string;
     workflowId: string;
@@ -72,6 +78,8 @@ export async function insertWorkflowRun(
     input: unknown;
     maxRetries: number;
     timeoutAt: Date | null;
+    cron?: string;
+    timezone?: string;
   },
   db: Db,
 ): Promise<WorkflowRun> {
@@ -80,20 +88,22 @@ export async function insertWorkflowRun(
 
   const result = await db.executeSql(
     `INSERT INTO workflow_runs (
-      id, 
-      resource_id, 
-      workflow_id, 
-      current_step_id, 
-      status, 
-      input, 
-      max_retries, 
+      id,
+      resource_id,
+      workflow_id,
+      current_step_id,
+      status,
+      input,
+      max_retries,
       timeout_at,
       created_at,
       updated_at,
       timeline,
-      retry_count
+      retry_count,
+      cron,
+      timezone
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     RETURNING *`,
     [
       runId,
@@ -108,6 +118,8 @@ export async function insertWorkflowRun(
       now,
       '{}',
       0,
+      cron ?? null,
+      timezone ?? null,
     ],
   );
 
@@ -153,6 +165,26 @@ export async function getWorkflowRun(
   }
 
   return mapRowToWorkflowRun(run);
+}
+
+export async function getWorkflowLastRun(
+  workflowId: string,
+  db: Db,
+): Promise<WorkflowRun | undefined> {
+  const result = await db.executeSql(
+    `SELECT * FROM workflow_runs
+     WHERE workflow_id = $1 AND status = 'completed'
+     ORDER BY completed_at DESC
+     LIMIT 1`,
+    [workflowId],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return undefined;
+  }
+
+  return mapRowToWorkflowRun(row);
 }
 
 export async function updateWorkflowRun(

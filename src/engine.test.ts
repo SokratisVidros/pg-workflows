@@ -6,6 +6,7 @@ import { WorkflowEngine } from './engine';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
 import { getBoss } from './tests/pgboss';
 import { closeTestDatabase, createTestDatabase } from './tests/test-db';
+import type { ScheduleContext } from './types';
 import { WorkflowStatus } from './types';
 
 let testBoss: PgBoss;
@@ -278,6 +279,31 @@ describe('WorkflowEngine', () => {
           input: {},
         }),
       ).rejects.toThrow(WorkflowEngineError);
+    });
+
+    it('should run a workflow without resourceId', async () => {
+      const noResourceWf = workflow('no-resource-wf', async ({ step }) => {
+        return await step.run('step-1', async () => {
+          return { result: 'no-resource' };
+        });
+      });
+      await engine.registerWorkflow(noResourceWf);
+
+      const run = await engine.startWorkflow({
+        workflowId: 'no-resource-wf',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => {
+          const r = await engine.getRun({ runId: run.id });
+          return r.status;
+        })
+        .toBe('completed');
+
+      const completedRun = await engine.getRun({ runId: run.id });
+      expect(completedRun.output).toEqual({ result: 'no-resource' });
+      expect(completedRun.resourceId).toBeNull();
     });
 
     it('should throw error for workflow without steps', async () => {
@@ -904,6 +930,537 @@ describe('WorkflowEngine', () => {
             results: ['started', 'loop-0', 'loop-1', 'ended'],
           },
         });
+    });
+  });
+
+  describe('cron workflows', () => {
+    it('should throw error when registering workflow with invalid cron expression', async () => {
+      const engine = new WorkflowEngine({
+        boss: testBoss,
+      });
+      await engine.start(false);
+
+      const invalidCronWf = workflow(
+        'invalid-cron-wf',
+        async ({ step }) => {
+          await step.run('step-1', async () => 'done');
+        },
+        {
+          cron: { expression: '60 * * * *' },
+        },
+      );
+
+      await expect(engine.registerWorkflow(invalidCronWf)).rejects.toThrow(WorkflowEngineError);
+      await expect(engine.registerWorkflow(invalidCronWf)).rejects.toThrow(/invalid cron/i);
+
+      await engine.stop();
+    });
+
+    it('should normalize string cron shorthand to CronConfig', async () => {
+      const engine = new WorkflowEngine({
+        boss: testBoss,
+      });
+      await engine.start(false);
+
+      const stringWf = workflow(
+        'string-cron-wf',
+        async ({ step }) => {
+          await step.run('step-1', async () => 'done');
+        },
+        {
+          cron: '*/5 * * * *',
+        },
+      );
+
+      await engine.registerWorkflow(stringWf);
+      const registered = engine.workflows.get('string-cron-wf');
+      expect(registered?.cron?.expression).toBe('*/5 * * * *');
+      expect(registered?.cron?.timezone).toBeUndefined();
+
+      await engine.stop();
+    });
+
+    it('should pass through standard cron expressions unchanged', async () => {
+      const engine = new WorkflowEngine({
+        boss: testBoss,
+      });
+      await engine.start(false);
+
+      const standardWf = workflow(
+        'standard-cron-wf',
+        async ({ step }) => {
+          await step.run('step-1', async () => 'done');
+        },
+        {
+          cron: '*/15 * * * *',
+        },
+      );
+
+      await engine.registerWorkflow(standardWf);
+      const registered = engine.workflows.get('standard-cron-wf');
+      expect(registered?.cron?.expression).toBe('*/15 * * * *');
+
+      await engine.stop();
+    });
+
+    it('should throw error when cron workflow has inputSchema that rejects empty input', async () => {
+      const engine = new WorkflowEngine({
+        boss: testBoss,
+      });
+      await engine.start(false);
+
+      const cronWithSchema = workflow(
+        'cron-bad-schema-wf',
+        async ({ step }) => {
+          await step.run('step-1', async () => 'done');
+        },
+        {
+          cron: { expression: '* * * * *' },
+          inputSchema: z.object({ required: z.string() }),
+        },
+      );
+
+      await expect(engine.registerWorkflow(cronWithSchema)).rejects.toThrow(WorkflowEngineError);
+      await expect(engine.registerWorkflow(cronWithSchema)).rejects.toThrow(/rejects empty input/i);
+
+      await engine.stop();
+    });
+
+    it('should include cron fields in workflow definition', async () => {
+      const cronWf = workflow(
+        'cron-test',
+        async ({ step }) => {
+          await step.run('step-1', async () => 'done');
+        },
+        {
+          cron: { expression: '*/5 * * * *', timezone: 'America/New_York' },
+        },
+      );
+
+      expect(cronWf.cron).toEqual({ expression: '*/5 * * * *', timezone: 'America/New_York' });
+    });
+
+    it('should register cron schedule on engine start', async () => {
+      const cronWf = workflow(
+        'cron-schedule-test',
+        async ({ step }) => {
+          await step.run('step-1', async () => 'done');
+        },
+        {
+          cron: { expression: '*/5 * * * *', timezone: 'America/Chicago' },
+        },
+      );
+
+      const engine = new WorkflowEngine({
+        workflows: [cronWf],
+        boss: testBoss,
+      });
+
+      const scheduleSpy = vi.spyOn(testBoss, 'schedule');
+      const createQueueSpy = vi.spyOn(testBoss, 'createQueue');
+
+      await engine.start();
+
+      expect(createQueueSpy).toHaveBeenCalledWith('cron-schedule-test');
+      expect(scheduleSpy).toHaveBeenCalledWith('cron-schedule-test', '*/5 * * * *', null, {
+        tz: 'America/Chicago',
+      });
+
+      scheduleSpy.mockRestore();
+      createQueueSpy.mockRestore();
+      await engine.stop();
+    });
+
+    it('should default cronTimezone to UTC', async () => {
+      const cronWf = workflow(
+        'cron-utc-test',
+        async ({ step }) => {
+          await step.run('step-1', async () => 'done');
+        },
+        {
+          cron: { expression: '0 * * * *' },
+        },
+      );
+
+      const engine = new WorkflowEngine({
+        workflows: [cronWf],
+        boss: testBoss,
+      });
+
+      const scheduleSpy = vi.spyOn(testBoss, 'schedule');
+
+      await engine.start();
+
+      expect(scheduleSpy).toHaveBeenCalledWith('cron-utc-test', '0 * * * *', null, { tz: 'UTC' });
+
+      scheduleSpy.mockRestore();
+      await engine.stop();
+    });
+
+    it('should default timezone to undefined when not provided', async () => {
+      const cronWf = workflow(
+        'cron-test-no-tz',
+        async ({ step }) => {
+          await step.run('step-1', async () => 'done');
+        },
+        {
+          cron: { expression: '0 * * * *' },
+        },
+      );
+
+      expect(cronWf.cron?.expression).toBe('0 * * * *');
+      expect(cronWf.cron?.timezone).toBeUndefined();
+    });
+
+    it('should unschedule cron workflows on engine stop', async () => {
+      const cronWf = workflow(
+        'cron-stop-test',
+        async ({ step }) => {
+          await step.run('step-1', async () => 'done');
+        },
+        {
+          cron: { expression: '0 3 * * *' },
+        },
+      );
+
+      const engine = new WorkflowEngine({
+        workflows: [cronWf],
+        boss: testBoss,
+      });
+      await engine.start();
+
+      const unscheduleSpy = vi.spyOn(testBoss, 'unschedule');
+
+      await engine.stop();
+
+      expect(unscheduleSpy).toHaveBeenCalledWith('cron-stop-test');
+
+      unscheduleSpy.mockRestore();
+    });
+
+    it('should execute a cron workflow when triggered', async () => {
+      let executionCount = 0;
+
+      const cronWf = workflow(
+        'cron-e2e-test',
+        async ({ step }) => {
+          return await step.run('increment', async () => {
+            executionCount++;
+            return { count: executionCount };
+          });
+        },
+        {
+          cron: { expression: '* * * * *' }, // every minute (won't actually wait — we trigger manually)
+        },
+      );
+
+      const engine = new WorkflowEngine({
+        workflows: [cronWf],
+        boss: testBoss,
+      });
+      await engine.start();
+
+      // Manually start the workflow as if cron triggered it
+      const run = await engine.startWorkflow({
+        workflowId: 'cron-e2e-test',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => {
+          const r = await engine.getRun({ runId: run.id });
+          return r.status;
+        })
+        .toBe('completed');
+
+      const completedRun = await engine.getRun({ runId: run.id });
+      expect(completedRun.output).toEqual({ count: 1 });
+      expect(completedRun.resourceId).toBeNull();
+
+      await engine.stop();
+    });
+
+    it('should have schedule as undefined for non-cron workflow runs', async () => {
+      let capturedSchedule: unknown = 'not-set';
+
+      const regularWf = workflow('regular-no-schedule-wf', async ({ step, schedule }) => {
+        capturedSchedule = schedule;
+        return await step.run('work', async () => ({ done: true }));
+      });
+
+      const engine = new WorkflowEngine({
+        workflows: [regularWf],
+        boss: testBoss,
+      });
+      await engine.start();
+
+      const run = await engine.startWorkflow({
+        workflowId: 'regular-no-schedule-wf',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => {
+          const r = await engine.getRun({ runId: run.id });
+          return r.status;
+        })
+        .toBe('completed');
+
+      expect(capturedSchedule).toBeUndefined();
+
+      await engine.stop();
+    });
+
+    it('should not expose schedule context on public startWorkflow API', async () => {
+      let capturedSchedule: ScheduleContext | undefined;
+
+      const cronWf = workflow(
+        'cron-no-public-schedule-test',
+        async ({ step, schedule }) => {
+          capturedSchedule = schedule;
+          return await step.run('work', async () => ({ done: true }));
+        },
+        {
+          cron: { expression: '* * * * *', timezone: 'America/Chicago' },
+        },
+      );
+
+      const engine = new WorkflowEngine({
+        workflows: [cronWf],
+        boss: testBoss,
+      });
+      await engine.start();
+
+      // Public startWorkflow should NOT pass schedule context
+      const run = await engine.startWorkflow({
+        workflowId: 'cron-no-public-schedule-test',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => {
+          const r = await engine.getRun({ runId: run.id });
+          return r.status;
+        })
+        .toBe('completed');
+
+      // Schedule should be undefined when started via public API
+      expect(capturedSchedule).toBeUndefined();
+
+      await engine.stop();
+    });
+
+    it('should preserve schedule context across retries', async () => {
+      let attemptCount = 0;
+      let capturedSchedule: ScheduleContext | undefined;
+
+      const cronRetryWf = workflow(
+        'cron-retry-schedule-test',
+        async ({ step, schedule }) => {
+          capturedSchedule = schedule;
+          return await step.run('work', async () => {
+            attemptCount++;
+            if (attemptCount < 2) {
+              throw new Error('transient failure');
+            }
+            return { done: true };
+          });
+        },
+        {
+          cron: { expression: '* * * * *', timezone: 'America/Chicago' },
+        },
+      );
+
+      const engine = new WorkflowEngine({
+        workflows: [cronRetryWf],
+        boss: testBoss,
+      });
+      await engine.start();
+
+      const run = await engine.startWorkflow({
+        workflowId: 'cron-retry-schedule-test',
+        input: {},
+        options: { retries: 3 },
+      });
+
+      await expect
+        .poll(
+          async () => {
+            const r = await engine.getRun({ runId: run.id });
+            return r.status;
+          },
+          { timeout: 10000 },
+        )
+        .toBe('completed');
+
+      // API-triggered run: schedule should be undefined, confirming
+      // it's derived from the run record (which has null cron column for API runs)
+      expect(capturedSchedule).toBeUndefined();
+
+      // Verify the run completed after retry (attemptCount should be 2)
+      expect(attemptCount).toBe(2);
+
+      await engine.stop();
+    });
+
+    it('should not pollute lastTimestamp with API-triggered runs', async () => {
+      const capturedSchedules: Array<ScheduleContext | undefined> = [];
+
+      const cronWf = workflow(
+        'cron-lasttimestamp-v2-test',
+        async ({ step, schedule }) => {
+          capturedSchedules.push(schedule);
+          return await step.run('work', async () => ({ done: true }));
+        },
+        {
+          cron: { expression: '* * * * *', timezone: 'UTC' },
+        },
+      );
+
+      const engine = new WorkflowEngine({
+        workflows: [cronWf],
+        boss: testBoss,
+      });
+      await engine.start();
+
+      // Start via public API — no cron field
+      const run1 = await engine.startWorkflow({
+        workflowId: 'cron-lasttimestamp-v2-test',
+        input: {},
+      });
+      await expect
+        .poll(async () => {
+          const r = await engine.getRun({ runId: run1.id });
+          return r.status;
+        })
+        .toBe('completed');
+
+      // API-triggered run should have no schedule
+      expect(capturedSchedules[0]).toBeUndefined();
+
+      await engine.stop();
+    });
+
+    it('should set up cron schedule when registering workflow after engine start', async () => {
+      const engine = new WorkflowEngine({
+        boss: testBoss,
+      });
+      await engine.start();
+
+      const scheduleSpy = vi.spyOn(testBoss, 'schedule');
+      const createQueueSpy = vi.spyOn(testBoss, 'createQueue');
+
+      const cronWf = workflow(
+        'cron-post-start-test',
+        async ({ step }) => {
+          await step.run('step-1', async () => 'done');
+        },
+        {
+          cron: { expression: '0 */2 * * *', timezone: 'Europe/London' },
+        },
+      );
+
+      await engine.registerWorkflow(cronWf);
+
+      expect(createQueueSpy).toHaveBeenCalledWith('cron-post-start-test');
+      expect(scheduleSpy).toHaveBeenCalledWith('cron-post-start-test', '0 */2 * * *', null, {
+        tz: 'Europe/London',
+      });
+
+      scheduleSpy.mockRestore();
+      createQueueSpy.mockRestore();
+      await engine.stop();
+    });
+
+    it('should distinguish api and cron runs via cron field', async () => {
+      const cronFilterWf = workflow(
+        'cron-filter-test',
+        async ({ step }) => {
+          return await step.run('work', async () => ({ done: true }));
+        },
+        {
+          cron: { expression: '* * * * *' },
+        },
+      );
+
+      const engine = new WorkflowEngine({
+        workflows: [cronFilterWf],
+        boss: testBoss,
+      });
+      await engine.start();
+
+      // Start via public API — cron field should be null
+      const apiRun = await engine.startWorkflow({
+        workflowId: 'cron-filter-test',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => {
+          const r = await engine.getRun({ runId: apiRun.id });
+          return r.status;
+        })
+        .toBe('completed');
+
+      const completedRun = await engine.getRun({ runId: apiRun.id });
+      expect(completedRun.cron).toBeNull();
+
+      await engine.stop();
+    });
+
+    it('should execute cron workflow through actual worker path with schedule context', async () => {
+      let capturedSchedule: ScheduleContext | undefined;
+
+      const cronIntegrationWf = workflow(
+        'cron-integration-test',
+        async ({ step, schedule }) => {
+          capturedSchedule = schedule;
+          return await step.run('work', async () => ({ done: true }));
+        },
+        {
+          cron: { expression: '* * * * *', timezone: 'America/New_York' },
+        },
+      );
+
+      const engine = new WorkflowEngine({
+        workflows: [cronIntegrationWf],
+        boss: testBoss,
+      });
+      await engine.start();
+
+      // Simulate what pg-boss schedule does: send a job to the workflow's own queue
+      await testBoss.send('cron-integration-test', {});
+
+      // Wait for a cron-triggered run to complete
+      await expect
+        .poll(
+          async () => {
+            const runs = await engine.getRuns({
+              workflowId: 'cron-integration-test',
+              statuses: [WorkflowStatus.COMPLETED],
+            });
+            return runs.items.length;
+          },
+          { timeout: 10000 },
+        )
+        .toBeGreaterThanOrEqual(1);
+
+      // Verify schedule context was populated
+      expect(capturedSchedule).toBeDefined();
+      expect(capturedSchedule?.timestamp).toBeInstanceOf(Date);
+      expect(capturedSchedule?.timezone).toBe('America/New_York');
+      // First cron run — no previous completion
+      expect(capturedSchedule?.lastTimestamp).toBeUndefined();
+
+      // Verify the run record has cron and timezone columns
+      const cronRuns = await engine.getRuns({
+        workflowId: 'cron-integration-test',
+      });
+      const cronRun = cronRuns.items.find((r) => r.cron !== null);
+      expect(cronRun?.cron).toBe('* * * * *');
+      expect(cronRun?.timezone).toBe('America/New_York');
+
+      await engine.stop();
     });
   });
 

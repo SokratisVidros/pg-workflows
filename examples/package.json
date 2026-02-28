@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "start": "tsx basic.ts",
-    "start:bun": "bun run basic.ts"
+    "start:cron": "tsx cron.ts",
+    "start:bun": "bun run basic.ts",
+    "start:cron:bun": "bun run cron.ts"
   },
   "dependencies": {
     "pg": "^8.13.1",

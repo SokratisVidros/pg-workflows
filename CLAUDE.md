@@ -29,7 +29,8 @@ src/
 │   └── migration.ts  # Schema migrations
 └── tests/            # Test utilities
 examples/
-└── basic.ts          # Example usage
+├── basic.ts          # Example usage
+└── cron.ts           # Cron workflow example
 ```
 
 ## Commands
@@ -62,13 +63,16 @@ import { z } from 'zod';
 
 const myWorkflow = workflow(
   'workflow-id',                              // unique string ID
-  async ({ step, input, runId, workflowId, timeline, logger }) => {
+  async ({ step, input, runId, workflowId, timeline, logger, schedule }) => {
     // workflow body with step calls
+    // `schedule` is populated for cron-triggered runs
   },
   {
     inputSchema: z.object({ /* ... */ }),      // optional Zod schema
     timeout: 60000,                            // optional, milliseconds
     retries: 3,                                // optional, max retry count
+    cron: '*/15 * * * *',                         // cron expression string (UTC)
+    // or: cron: { expression: '*/15 * * * *', timezone: 'America/New_York' },
   }
 );
 ```
@@ -198,6 +202,8 @@ type WorkflowRun = {
   retryCount: number;
   maxRetries: number;
   jobId: string | null;
+  cron: string | null;
+  timezone: string | null;
 };
 
 type WorkflowRunProgress = WorkflowRun & {
@@ -222,6 +228,57 @@ class WorkflowRunNotFoundError extends WorkflowEngineError {}
 | `DATABASE_URL`                    | PostgreSQL connection string    | required |
 | `WORKFLOW_RUN_WORKERS`            | Number of worker processes      | `3`     |
 | `WORKFLOW_RUN_EXPIRE_IN_SECONDS`  | Job expiration time in seconds  | `300`   |
+
+## Cron Workflows
+
+Workflows can be scheduled to run on a cron expression using the `cron` option. The engine uses pg-boss `schedule()` under the hood.
+
+### CronConfig
+
+The `cron` option accepts a string or an object:
+
+```typescript
+// String shorthand (defaults to UTC)
+cron: '*/15 * * * *'
+
+// Object with explicit timezone
+cron: { expression: '*/15 * * * *', timezone: 'America/New_York' }
+
+type CronConfig = {
+  expression: string;     // standard cron expression
+  timezone?: string;      // IANA timezone, defaults to 'UTC'
+};
+```
+
+### ScheduleContext
+
+Cron-triggered runs receive a `schedule` object on the workflow context. The `timestamp` is derived from `run.createdAt` and `lastTimestamp` is queried from the latest completed run at execution time.
+
+```typescript
+type ScheduleContext = {
+  timestamp: Date;              // when this cron trigger fired
+  lastTimestamp: Date | undefined; // when the last successful cron run completed
+  timezone: string;             // the configured timezone
+};
+```
+
+### Cron workflow example
+
+```typescript
+const sync = workflow('sync-data', async ({ step, schedule, logger }) => {
+  const since = schedule?.lastTimestamp ?? new Date(0);
+  const data = await step.run('fetch', async () => fetchSince(since));
+  await step.run('write', async () => writeToDB(data));
+  return { synced: data.length };
+}, {
+  cron: '*/15 * * * *',  // every 15 minutes, UTC
+  retries: 3,
+});
+```
+
+### Post-start registration
+
+Calling `engine.registerWorkflow()` after `engine.start()` will automatically set up the cron schedule if the workflow has a `cron` config.
 
 ## AI & Agent Workflow Patterns
 
