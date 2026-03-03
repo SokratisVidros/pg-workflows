@@ -139,6 +139,26 @@ describe('AST Parser for Workflow Steps', () => {
     ]);
   });
 
+  it('should parse delay and sleep steps (sleep as alias of delay)', async () => {
+    const delayWorkflow = workflow('delay-workflow', async ({ step }) => {
+      await step.run('step-1', async () => 'result-1');
+      await step.delay('cool-off', '3 days');
+      await step.sleep('ramp-up', { days: 2, hours: 12 });
+      await step.run('step-4', async () => 'result-4');
+      return 'completed';
+    });
+
+    const engine = new WorkflowEngine({ boss: testBoss });
+    await engine.registerWorkflow(delayWorkflow);
+
+    expect(engine.workflows.get('delay-workflow')?.steps).toEqual([
+      { id: 'step-1', type: StepType.RUN, conditional: false, loop: false, isDynamic: false },
+      { id: 'cool-off', type: StepType.DELAY, conditional: false, loop: false, isDynamic: false },
+      { id: 'ramp-up', type: StepType.DELAY, conditional: false, loop: false, isDynamic: false },
+      { id: 'step-4', type: StepType.RUN, conditional: false, loop: false, isDynamic: false },
+    ]);
+  });
+
   it('should handle workflow with waitFor and pause steps', async () => {
     const mixedStepWorkflow = workflow('mixed-step-workflow', async ({ step }) => {
       await step.run('step-1', async () => 'result-1');

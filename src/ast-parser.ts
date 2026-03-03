@@ -1,5 +1,6 @@
 import * as ts from 'typescript';
-import type { StepInternalDefinition, StepType, WorkflowContext } from './types';
+import type { StepInternalDefinition, WorkflowContext } from './types';
+import { StepType } from './types';
 
 type ParseWorkflowHandlerReturnType = {
   steps: StepInternalDefinition[];
@@ -77,15 +78,18 @@ export function parseWorkflowHandler(
         (methodName === 'run' ||
           methodName === 'waitFor' ||
           methodName === 'pause' ||
-          methodName === 'waitUntil')
+          methodName === 'waitUntil' ||
+          methodName === 'delay' ||
+          methodName === 'sleep')
       ) {
         const firstArg = node.arguments[0];
         if (firstArg) {
           const { id, isDynamic } = extractStepId(firstArg);
+          const stepType = methodName === 'sleep' ? StepType.DELAY : (methodName as StepType);
 
           const stepDefinition: StepInternalDefinition = {
             id,
-            type: methodName as StepType,
+            type: stepType,
             conditional: isInConditional(node),
             loop: isInLoop(node),
             isDynamic,

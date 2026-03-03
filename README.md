@@ -45,6 +45,7 @@ If you need enterprise-grade features like distributed tracing, complex DAG sche
 - **Durable Execution on Postgres** - Workflow state is persisted in PostgreSQL. Workflows survive process crashes, restarts, and deployments.
 - **Step-by-Step Execution** - Break complex processes into discrete, resumable steps. Each step runs exactly once, even across retries.
 - **Event-Driven Orchestration** - Pause workflows and wait for external events with `step.waitFor()`. Resume automatically when signals arrive.
+- **Scheduled & Delay Steps** - Wait until a specific date with `step.waitUntil()`, or use `step.delay()` / `step.sleep()` with human-readable durations (`'3 days'`, `{ hours: 2 }`). Past dates run immediately.
 - **Pause and Resume** - Manually pause long-running workflows and resume them later via API.
 - **Built-in Retries** - Automatic retries with exponential backoff at the workflow level.
 - **Configurable Timeouts** - Set workflow-level and step-level timeouts to prevent runaway executions.
@@ -378,6 +379,23 @@ const eventData = await step.waitFor('wait-step', {
 });
 ```
 
+### Scheduled and Delay Steps
+
+Wait until a specific time, or delay for a duration (sugar over `waitUntil`). If the date is in the past, the step runs immediately.
+
+```typescript
+// Wait until a specific date (Date, ISO string, or { date })
+await step.waitUntil('scheduled-step', new Date('2025-06-01'));
+await step.waitUntil('scheduled-step', '2025-06-01T12:00:00.000Z');
+await step.waitUntil('scheduled-step', { date: new Date('2025-06-01') });
+
+// Delay for a duration (string or object). sleep is an alias of delay.
+await step.delay('cool-off', '3 days');
+await step.delay('cool-off', { days: 3 });
+await step.delay('ramp-up', '2 days 12 hours');
+await step.sleep('backoff', '1 hour');
+```
+
 ### Resource ID
 
 The optional `resourceId` associates a workflow run with an external entity in your application - a user, an order, a subscription, or any domain object the workflow operates on. It serves two purposes:
@@ -451,6 +469,21 @@ const batchWorkflow = workflow('batch-process', async ({ step }) => {
     });
   }
 });
+```
+
+### Scheduled Reminder with Delay
+
+```typescript
+const reminderWorkflow = workflow('send-reminder', async ({ step, input }) => {
+  await step.run('send-initial', async () => {
+    return await sendEmail(input.email, 'Welcome!');
+  });
+  // Pause for 3 days, then send follow-up (durable - survives restarts)
+  await step.delay('cool-off', '3 days');
+  await step.run('send-follow-up', async () => {
+    return await sendEmail(input.email, 'Here’s a reminder…');
+  });
+}, { inputSchema: z.object({ email: z.string().email() }) });
 ```
 
 ### Error Handling with Retries
@@ -543,11 +576,15 @@ The context object passed to workflow handlers:
   step: {
     run: <T>(stepId, handler) => Promise<T>,
     waitFor: <T>(stepId, { eventName, timeout?, schema? }) => Promise<T>,
-    waitUntil: (stepId, { date }) => Promise<void>,
+    waitUntil: (stepId, date | dateString | { date }) => Promise<void>,
+    delay: (stepId, duration) => Promise<void>,
+    sleep: (stepId, duration) => Promise<void>,
     pause: (stepId) => Promise<void>,
   }
 }
 ```
+
+`duration` is a string (e.g. `'3 days'`, `'2h'`) or an object (`{ weeks?, days?, hours?, minutes?, seconds? }`). See the `Duration` type and `parseDuration` from the package.
 
 ### WorkflowStatus
 

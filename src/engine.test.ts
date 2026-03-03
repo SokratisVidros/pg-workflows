@@ -961,6 +961,103 @@ describe('WorkflowEngine', () => {
       });
     });
 
+    it('should handle workflow with delay step (string duration)', async () => {
+      const delayWorkflow = workflow('delay-workflow', async ({ step }) => {
+        await step.run('step-1', async () => 'result-1');
+        await step.delay('step-2', '500ms');
+        await step.run('step-3', async () => 'result-3');
+        return 'completed';
+      });
+
+      await engine.registerWorkflow(delayWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'delay-workflow',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 5000,
+        })
+        .toBe(WorkflowStatus.COMPLETED);
+
+      const completed = await engine.getRun({ runId: run.id, resourceId });
+      expect(completed.output).toBe('completed');
+      expect(completed.timeline).toMatchObject({
+        'step-1': { output: 'result-1' },
+        'step-2': { output: { date: expect.any(String) } },
+        'step-3': { output: 'result-3' },
+      });
+    });
+
+    it('should handle workflow with delay step (object duration)', async () => {
+      const delayWorkflow = workflow('delay-object-workflow', async ({ step }) => {
+        await step.run('step-1', async () => 'result-1');
+        await step.delay('step-2', { seconds: 1 });
+        await step.run('step-3', async () => 'result-3');
+        return 'completed';
+      });
+
+      await engine.registerWorkflow(delayWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'delay-object-workflow',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 5000,
+        })
+        .toBe(WorkflowStatus.COMPLETED);
+
+      const completed = await engine.getRun({ runId: run.id, resourceId });
+      expect(completed.output).toBe('completed');
+    });
+
+    it('should treat sleep as alias of delay', async () => {
+      const sleepWorkflow = workflow('sleep-workflow', async ({ step }) => {
+        await step.run('step-1', async () => 'result-1');
+        await step.sleep('step-2', '500ms');
+        await step.run('step-3', async () => 'result-3');
+        return 'completed';
+      });
+
+      await engine.registerWorkflow(sleepWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'sleep-workflow',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 5000,
+        })
+        .toBe(WorkflowStatus.COMPLETED);
+
+      const completed = await engine.getRun({ runId: run.id, resourceId });
+      expect(completed.output).toBe('completed');
+      expect(completed.timeline).toMatchObject({
+        'step-1': { output: 'result-1' },
+        'step-2': { output: { date: expect.any(String) } },
+        'step-3': { output: 'result-3' },
+      });
+    });
+
     it.todo('should handle workflow timeout', async () => {});
 
     it('should handle workflow with conditionals and for loops', async () => {
