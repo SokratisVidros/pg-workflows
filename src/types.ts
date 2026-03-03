@@ -17,57 +17,62 @@ export enum StepType {
   WAIT_UNTIL = 'waitUntil',
 }
 
-export type Parameters = z.ZodTypeAny;
-export type inferParameters<P extends Parameters> = P extends z.ZodTypeAny ? z.infer<P> : never;
+export type InputParameters = z.ZodTypeAny;
+export type InferInputParameters<P extends InputParameters> = P extends z.ZodTypeAny
+  ? z.infer<P>
+  : never;
 
-export type WorkflowOptions<I extends Parameters> = {
+export type WorkflowOptions<I extends InputParameters> = {
   timeout?: number;
   retries?: number;
   inputSchema?: I;
 };
 
-export interface WorkflowLogger {
-  log(message: string): void;
-  error(message: string, ...args: unknown[]): void;
-}
-
-export type InternalWorkflowLoggerContext = {
-  runId?: string;
-  workflowId?: string;
-};
-export interface InternalWorkflowLogger {
-  log(message: string, context?: InternalWorkflowLoggerContext): void;
-  error(message: string, error: Error, context?: InternalWorkflowLoggerContext): void;
-}
-
-export type StepContext = {
+export type StepBaseContext = {
   run: <T>(stepId: string, handler: () => Promise<T>) => Promise<T>;
-  waitFor: <T extends Parameters>(
+  waitFor: <T extends InputParameters>(
     stepId: string,
     { eventName, timeout, schema }: { eventName: string; timeout?: number; schema?: T },
-  ) => Promise<inferParameters<T>>;
+  ) => Promise<InferInputParameters<T>>;
   waitUntil: (stepId: string, { date }: { date: Date }) => Promise<void>;
   pause: (stepId: string) => Promise<void>;
 };
 
-export type WorkflowContext<T extends Parameters = Parameters> = {
-  input: T;
-  step: StepContext;
+/**
+ * Plugin that extends the workflow step API with extra methods.
+ * @template TStepBase - The step type this plugin receives (base + previous plugins).
+ * @template TStepExt - The extra methods this plugin adds to step.
+ */
+export interface WorkflowPlugin<TStepBase = StepBaseContext, TStepExt = object> {
+  name: string;
+  methods: (step: TStepBase) => TStepExt;
+}
+
+export type WorkflowContext<
+  TInput extends InputParameters = InputParameters,
+  TStep extends StepBaseContext = StepBaseContext,
+> = {
+  input: InferInputParameters<TInput>;
+  step: TStep;
   workflowId: string;
   runId: string;
   timeline: Record<string, unknown>;
   logger: WorkflowLogger;
 };
 
-export type WorkflowDefinition<T extends Parameters = Parameters> = {
+export type WorkflowDefinition<
+  TInput extends InputParameters = InputParameters,
+  TStep extends StepBaseContext = StepBaseContext,
+> = {
   id: string;
-  handler: (context: WorkflowContext<inferParameters<T>>) => Promise<unknown>;
-  inputSchema?: T;
+  handler: (context: WorkflowContext<TInput, TStep>) => Promise<unknown>;
+  inputSchema?: TInput;
   timeout?: number; // milliseconds
   retries?: number;
+  plugins?: WorkflowPlugin[];
 };
 
-export type InternalStepDefinition = {
+export type StepInternalDefinition = {
   id: string;
   type: StepType;
   conditional: boolean;
@@ -75,13 +80,46 @@ export type InternalStepDefinition = {
   isDynamic: boolean;
 };
 
-export type InternalWorkflowDefinition<T extends Parameters = Parameters> =
-  WorkflowDefinition<T> & {
-    steps: InternalStepDefinition[];
-  };
+export type WorkflowInternalDefinition<
+  TInput extends InputParameters = InputParameters,
+  TStep extends StepBaseContext = StepBaseContext,
+> = WorkflowDefinition<TInput, TStep> & {
+  steps: StepInternalDefinition[];
+};
+
+/**
+ * Chainable workflow factory: call as (id, handler, options) and/or use .use(plugin).
+ * TStepExt is the accumulated step extension from all plugins (step = StepContext & TStepExt).
+ */
+export interface WorkflowFactory<TStepExt = object> {
+  (
+    id: string,
+    handler: (
+      context: WorkflowContext<InputParameters, StepBaseContext & TStepExt>,
+    ) => Promise<unknown>,
+    options?: WorkflowOptions<InputParameters>,
+  ): WorkflowDefinition<InputParameters, StepBaseContext & TStepExt>;
+  use<TNewExt>(
+    plugin: WorkflowPlugin<StepBaseContext & TStepExt, TNewExt>,
+  ): WorkflowFactory<TStepExt & TNewExt>;
+}
 
 export type WorkflowRunProgress = WorkflowRun & {
   completionPercentage: number;
   totalSteps: number;
   completedSteps: number;
 };
+
+export interface WorkflowLogger {
+  log(message: string): void;
+  error(message: string, ...args: unknown[]): void;
+}
+
+export type WorkflowInternalLoggerContext = {
+  runId?: string;
+  workflowId?: string;
+};
+export interface WorkflowInternalLogger {
+  log(message: string, context?: WorkflowInternalLoggerContext): void;
+  error(message: string, error: Error, context?: WorkflowInternalLoggerContext): void;
+}

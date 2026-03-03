@@ -1,8 +1,8 @@
 import * as ts from 'typescript';
-import type { InternalStepDefinition, StepType, WorkflowContext } from './types';
+import type { StepInternalDefinition, StepType, WorkflowContext } from './types';
 
 type ParseWorkflowHandlerReturnType = {
-  steps: InternalStepDefinition[];
+  steps: StepInternalDefinition[];
 };
 
 export function parseWorkflowHandler(
@@ -11,7 +11,7 @@ export function parseWorkflowHandler(
   const handlerSource = handler.toString();
   const sourceFile = ts.createSourceFile('handler.ts', handlerSource, ts.ScriptTarget.Latest, true);
 
-  const steps: Map<string, InternalStepDefinition> = new Map();
+  const steps: Map<string, StepInternalDefinition> = new Map();
 
   function isInConditional(node: ts.Node): boolean {
     let current = node.parent;
@@ -83,7 +83,7 @@ export function parseWorkflowHandler(
         if (firstArg) {
           const { id, isDynamic } = extractStepId(firstArg);
 
-          const stepDefinition: InternalStepDefinition = {
+          const stepDefinition: StepInternalDefinition = {
             id,
             type: methodName as StepType,
             conditional: isInConditional(node),

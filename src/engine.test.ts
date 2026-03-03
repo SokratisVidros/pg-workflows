@@ -6,6 +6,7 @@ import { WorkflowEngine } from './engine';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
 import { getBoss } from './tests/pgboss';
 import { closeTestDatabase, createTestDatabase } from './tests/test-db';
+import type { StepBaseContext, WorkflowPlugin } from './types';
 import { WorkflowStatus } from './types';
 
 let testBoss: PgBoss;
@@ -145,6 +146,129 @@ describe('WorkflowEngine', () => {
       });
 
       await expect(engine.registerWorkflow(invalidWorkflow)).rejects.toThrow(WorkflowEngineError);
+    });
+  });
+
+  describe('workflow.use(plugin)', () => {
+    const doublePlugin: WorkflowPlugin<
+      StepBaseContext,
+      { double: (stepId: string, n: number) => Promise<number> }
+    > = {
+      name: 'double',
+      methods: (step) => ({
+        double: (stepId, n) => step.run(stepId, async () => n * 2),
+      }),
+    };
+
+    it('should return a callable that produces a definition with plugins array', () => {
+      const withPlugin = workflow.use(doublePlugin);
+      const def = withPlugin('plugin-workflow', async ({ step }) => {
+        const x = await step.double('double-step', 21);
+        return { value: x };
+      });
+      expect(def.id).toBe('plugin-workflow');
+      expect(def.plugins).toBeDefined();
+      expect(def.plugins).toHaveLength(1);
+      expect(def.plugins?.[0].name).toBe('double');
+    });
+
+    it('should support chaining multiple plugins', () => {
+      const greetPlugin: WorkflowPlugin<
+        StepBaseContext,
+        { greet: (stepId: string, name: string) => Promise<string> }
+      > = {
+        name: 'greet',
+        methods: (step) => ({
+          greet: (stepId, name) => step.run(stepId, async () => `Hello, ${name}`),
+        }),
+      };
+      const w = workflow.use(doublePlugin).use(greetPlugin);
+      const def = w('chained-workflow', async ({ step }) => {
+        const g = await step.greet('g', 'World');
+        const d = await step.double('d', 3);
+        return { g, d };
+      });
+      expect(def.plugins).toHaveLength(2);
+      expect(def.plugins?.[0].name).toBe('double');
+      expect(def.plugins?.[1].name).toBe('greet');
+    });
+
+    it('should extend step with plugin methods at runtime and complete workflow', async () => {
+      const engine = new WorkflowEngine({
+        workflows: [],
+        boss: testBoss,
+      });
+      await engine.start();
+
+      const pluginWorkflow = workflow.use(doublePlugin)(
+        'plugin-exec-workflow',
+        async ({ step }) => {
+          const a = await step.double('double-a', 5);
+          const b = await step.double('double-b', 10);
+          return { a, b };
+        },
+      );
+      await engine.registerWorkflow(pluginWorkflow);
+
+      const run = await engine.startWorkflow({
+        resourceId: 'plugin-test-resource',
+        workflowId: 'plugin-exec-workflow',
+        input: {},
+      });
+
+      await expect
+        .poll(
+          async () => await engine.getRun({ runId: run.id, resourceId: 'plugin-test-resource' }),
+        )
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: { a: 10, b: 20 },
+          timeline: {
+            'double-a': { output: 10 },
+            'double-b': { output: 20 },
+          },
+        });
+
+      await engine.stop();
+    });
+
+    it('should pass base step (run, waitFor, pause) to handler alongside plugin methods', async () => {
+      const engine = new WorkflowEngine({
+        workflows: [],
+        boss: testBoss,
+      });
+      await engine.start();
+
+      const pluginWorkflow = workflow.use(doublePlugin)(
+        'plugin-with-base-steps',
+        async ({ step }) => {
+          const x = await step.run('plain-run', async () => 'ok');
+          const d = await step.double('plugin-double', 7);
+          expect(step.run).toBeDefined();
+          expect(step.waitFor).toBeDefined();
+          expect(step.pause).toBeDefined();
+          expect(step.double).toBeDefined();
+          return { x, d };
+        },
+      );
+      await engine.registerWorkflow(pluginWorkflow);
+
+      const run = await engine.startWorkflow({
+        resourceId: 'plugin-base-resource',
+        workflowId: 'plugin-with-base-steps',
+        input: {},
+      });
+
+      await expect
+        .poll(
+          async () => await engine.getRun({ runId: run.id, resourceId: 'plugin-base-resource' }),
+        )
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: { x: 'ok', d: 14 },
+        });
+
+      await engine.stop();
     });
   });
 

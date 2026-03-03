@@ -13,14 +13,15 @@ import {
 import type { WorkflowRun } from './db/types';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
 import {
-  type InternalWorkflowDefinition,
-  type InternalWorkflowLogger,
-  type InternalWorkflowLoggerContext,
-  type inferParameters,
-  type Parameters,
+  type InferInputParameters,
+  type InputParameters,
+  type StepBaseContext,
   StepType,
   type WorkflowContext,
   type WorkflowDefinition,
+  type WorkflowInternalDefinition,
+  type WorkflowInternalLogger,
+  type WorkflowInternalLoggerContext,
   type WorkflowLogger,
   type WorkflowRunProgress,
   WorkflowStatus,
@@ -77,11 +78,11 @@ export class WorkflowEngine {
   private unregisteredWorkflows = new Map<string, WorkflowDefinition>();
   private _started = false;
 
-  public workflows: Map<string, InternalWorkflowDefinition> = new Map<
+  public workflows: Map<string, WorkflowInternalDefinition> = new Map<
     string,
-    InternalWorkflowDefinition
+    WorkflowInternalDefinition
   >();
-  private logger: InternalWorkflowLogger;
+  private logger: WorkflowInternalLogger;
 
   constructor({
     workflows,
@@ -154,7 +155,9 @@ export class WorkflowEngine {
     this.logger.log('Workflow engine stopped');
   }
 
-  async registerWorkflow(definition: WorkflowDefinition): Promise<WorkflowEngine> {
+  async registerWorkflow<TStep extends StepBaseContext>(
+    definition: WorkflowDefinition<InputParameters, TStep>,
+  ): Promise<WorkflowEngine> {
     if (this.workflows.has(definition.id)) {
       throw new WorkflowEngineError(
         `Workflow ${definition.id} is already registered`,
@@ -162,12 +165,14 @@ export class WorkflowEngine {
       );
     }
 
-    const { steps } = parseWorkflowHandler(definition.handler);
+    const { steps } = parseWorkflowHandler(
+      definition.handler as (context: WorkflowContext) => Promise<unknown>,
+    );
 
     this.workflows.set(definition.id, {
       ...definition,
       steps,
-    });
+    } as WorkflowInternalDefinition);
 
     this.logger.log(`Registered workflow "${definition.id}" with steps:`);
     for (const step of steps.values()) {
@@ -216,7 +221,9 @@ export class WorkflowEngine {
       throw new WorkflowEngineError(`Unknown workflow ${workflowId}`);
     }
 
-    if (workflow.steps.length === 0 || !workflow.steps[0]) {
+    const hasSteps = workflow.steps.length > 0 && workflow.steps[0];
+    const hasPlugins = (workflow.plugins?.length ?? 0) > 0;
+    if (!hasSteps && !hasPlugins) {
       throw new WorkflowEngineError(`Workflow ${workflowId} has no steps`, workflowId);
     }
     if (workflow.inputSchema) {
@@ -226,7 +233,7 @@ export class WorkflowEngine {
       }
     }
 
-    const initialStepId = workflow.steps[0]?.id;
+    const initialStepId = workflow.steps[0]?.id ?? '__start__';
 
     const run = await withPostgresTransaction(this.boss.getDb(), async (_db) => {
       const timeoutAt = options?.timeout
@@ -549,68 +556,80 @@ export class WorkflowEngine {
         }
       }
 
+      const baseStep = {
+        run: async <T>(stepId: string, handler: () => Promise<T>) => {
+          if (!run) {
+            throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
+          }
+
+          return this.runStep({
+            stepId,
+            run,
+            handler,
+          }) as Promise<T>;
+        },
+        waitFor: async <T extends InputParameters>(
+          stepId: string,
+          { eventName, timeout }: { eventName: string; timeout?: number; schema?: T },
+        ) => {
+          if (!run) {
+            throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
+          }
+          return this.waitForEvent({
+            run,
+            stepId,
+            eventName,
+            timeout,
+          }) as Promise<InferInputParameters<T>>;
+        },
+        waitUntil: async (stepId: string, { date }: { date: Date }) => {
+          if (!run) {
+            throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
+          }
+          await this.waitUntilDate({
+            run,
+            stepId,
+            date,
+          });
+        },
+        pause: async (stepId: string) => {
+          if (!run) {
+            throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
+          }
+          return this.pauseStep({
+            stepId,
+            run,
+          });
+        },
+      };
+
+      let step = { ...baseStep };
+      const plugins = workflow.plugins ?? [];
+      for (const plugin of plugins) {
+        const extra = plugin.methods(step);
+        step = { ...step, ...extra };
+      }
+
       const context: WorkflowContext = {
         input: run.input as z.ZodTypeAny,
         workflowId: run.workflowId,
         runId: run.id,
         timeline: run.timeline,
         logger: this.logger,
-        step: {
-          run: async <T>(stepId: string, handler: () => Promise<T>) => {
-            if (!run) {
-              throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
-            }
-
-            return this.runStep({
-              stepId,
-              run,
-              handler,
-            }) as Promise<T>;
-          },
-          waitFor: async <T extends Parameters>(
-            stepId: string,
-            { eventName, timeout }: { eventName: string; timeout?: number; schema?: T },
-          ) => {
-            if (!run) {
-              throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
-            }
-            return this.waitForEvent({
-              run,
-              stepId,
-              eventName,
-              timeout,
-            }) as Promise<inferParameters<T>>;
-          },
-          waitUntil: async (stepId: string, { date }: { date: Date }) => {
-            if (!run) {
-              throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
-            }
-            await this.waitUntilDate({
-              run,
-              stepId,
-              date,
-            });
-          },
-          pause: async (stepId: string) => {
-            if (!run) {
-              throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
-            }
-            return this.pauseStep({
-              stepId,
-              run,
-            });
-          },
-        },
+        step,
       };
 
       const result = await workflow.handler(context);
 
       run = await this.getRun({ runId, resourceId });
 
-      if (
+      const isLastParsedStep = run.currentStepId === workflow.steps[workflow.steps.length - 1]?.id;
+      const hasPluginSteps = (workflow.plugins?.length ?? 0) > 0;
+      const noParsedSteps = workflow.steps.length === 0;
+      const shouldComplete =
         run.status === WorkflowStatus.RUNNING &&
-        run.currentStepId === workflow.steps[workflow.steps.length - 1]?.id
-      ) {
+        (noParsedSteps || isLastParsedStep || (hasPluginSteps && result !== undefined));
+      if (shouldComplete) {
         const normalizedResult = result === undefined ? {} : result;
         await this.updateRun({
           runId,
@@ -894,14 +913,14 @@ export class WorkflowEngine {
     }
   }
 
-  private buildLogger(logger: WorkflowLogger): InternalWorkflowLogger {
+  private buildLogger(logger: WorkflowLogger): WorkflowInternalLogger {
     return {
-      log: (message: string, context?: InternalWorkflowLoggerContext) => {
+      log: (message: string, context?: WorkflowInternalLoggerContext) => {
         const { runId, workflowId } = context ?? {};
         const parts = [LOG_PREFIX, workflowId, runId].filter(Boolean).join(' ');
         logger.log(`${parts}: ${message}`);
       },
-      error: (message: string, error: Error, context?: InternalWorkflowLoggerContext) => {
+      error: (message: string, error: Error, context?: WorkflowInternalLoggerContext) => {
         const { runId, workflowId } = context ?? {};
         const parts = [LOG_PREFIX, workflowId, runId].filter(Boolean).join(' ');
         logger.error(`${parts}: ${message}`, error);
