@@ -11,6 +11,8 @@ import {
   withPostgresTransaction,
 } from './db/queries';
 import type { WorkflowRun } from './db/types';
+import type { Duration } from './duration';
+import { parseDuration } from './duration';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
 import {
   type InferInputParameters,
@@ -36,6 +38,7 @@ const StepTypeToIcon = {
   [StepType.WAIT_FOR]: '○',
   [StepType.PAUSE]: '⏸',
   [StepType.WAIT_UNTIL]: '⏲',
+  [StepType.DELAY]: '⏱',
 };
 
 // Timeline entry types
@@ -582,10 +585,21 @@ export class WorkflowEngine {
             timeout,
           }) as Promise<InferInputParameters<T>>;
         },
-        waitUntil: async (stepId: string, { date }: { date: Date }) => {
+        waitUntil: async (
+          stepId: string,
+          dateOrOptions: Date | string | { date: Date | string },
+        ) => {
           if (!run) {
             throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
           }
+          const date =
+            dateOrOptions instanceof Date
+              ? dateOrOptions
+              : typeof dateOrOptions === 'string'
+                ? new Date(dateOrOptions)
+                : dateOrOptions.date instanceof Date
+                  ? dateOrOptions.date
+                  : new Date(dateOrOptions.date);
           await this.waitUntilDate({
             run,
             stepId,
@@ -600,6 +614,20 @@ export class WorkflowEngine {
             stepId,
             run,
           });
+        },
+        delay: async (stepId: string, duration: Duration) => {
+          if (!run) {
+            throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
+          }
+          const date = new Date(Date.now() + parseDuration(duration));
+          await this.waitUntilDate({
+            run,
+            stepId,
+            date,
+          });
+        },
+        get sleep() {
+          return this.delay;
         },
       };
 
@@ -896,15 +924,29 @@ export class WorkflowEngine {
       },
     };
 
-    await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
-      startAfter: date,
-      expireInSeconds: defaultExpireInSeconds,
-    });
-
-    this.logger.log(`Running step ${stepId}, waiting until ${date.toISOString()}...`, {
-      runId: run.id,
-      workflowId: run.workflowId,
-    });
+    const now = Date.now();
+    const isPast = date.getTime() <= now;
+    if (isPast) {
+      await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+        expireInSeconds: defaultExpireInSeconds,
+      });
+      this.logger.log(
+        `Running step ${stepId}, date ${date.toISOString()} is in the past, executing immediately`,
+        {
+          runId: run.id,
+          workflowId: run.workflowId,
+        },
+      );
+    } else {
+      await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+        startAfter: date,
+        expireInSeconds: defaultExpireInSeconds,
+      });
+      this.logger.log(`Running step ${stepId}, waiting until ${date.toISOString()}...`, {
+        runId: run.id,
+        workflowId: run.workflowId,
+      });
+    }
   }
 
   private async checkIfHasStarted(): Promise<void> {

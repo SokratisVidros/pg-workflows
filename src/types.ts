@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import type { WorkflowRun } from './db/types';
+import type { Duration } from './duration';
 
 export enum WorkflowStatus {
   PENDING = 'pending',
@@ -15,6 +16,7 @@ export enum StepType {
   RUN = 'run',
   WAIT_FOR = 'waitFor',
   WAIT_UNTIL = 'waitUntil',
+  DELAY = 'delay',
 }
 
 export type InputParameters = z.ZodTypeAny;
@@ -34,7 +36,15 @@ export type StepBaseContext = {
     stepId: string,
     { eventName, timeout, schema }: { eventName: string; timeout?: number; schema?: T },
   ) => Promise<InferInputParameters<T>>;
-  waitUntil: (stepId: string, { date }: { date: Date }) => Promise<void>;
+  waitUntil: {
+    (stepId: string, date: Date): Promise<void>;
+    (stepId: string, dateString: string): Promise<void>;
+    (stepId: string, options: { date: Date | string }): Promise<void>;
+  };
+  /** Delay execution for a duration (sugar over waitUntil). Alias: sleep. */
+  delay: (stepId: string, duration: Duration) => Promise<void>;
+  /** Alias for delay. */
+  sleep: (stepId: string, duration: Duration) => Promise<void>;
   pause: (stepId: string) => Promise<void>;
 };
 
