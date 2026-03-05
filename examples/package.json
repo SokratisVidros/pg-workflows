@@ -9,16 +9,23 @@
     "example:basic": "npm run build:lib && dotenvx run -- tsx basic.ts",
     "example:approval-flow": "npm run build:lib && dotenvx run -- tsx approval-flow.ts",
     "example:timeout": "npm run build:lib && dotenvx run -- tsx timeout.ts",
-    "example:polling": "npm run build:lib && dotenvx run -- tsx polling.ts"
+    "example:polling": "npm run build:lib && dotenvx run -- tsx polling.ts",
+    "example:drip-campaign": "npm run build:lib && dotenvx run -- tsx drip-campaign.tsx"
   },
   "dependencies": {
+    "@react-email/components": "^1.0.8",
+    "@react-email/render": "^2.0.4",
+    "form-data": "^4.0.5",
+    "mailgun.js": "^12.7.1",
     "pg": "^8.13.1",
     "pg-boss": ">=12.0.0",
-    "pg-workflows": "file:.."
+    "pg-workflows": "file:..",
+    "react": "^19.0.0"
   },
   "devDependencies": {
     "@dotenvx/dotenvx": "^1.52.0",
-    "tsx": "^4.19.0",
-    "@types/pg": "^8.11.10"
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.0.0",
+    "tsx": "^4.19.0"
   }
 }
