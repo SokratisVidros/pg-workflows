@@ -39,6 +39,7 @@ const StepTypeToIcon = {
   [StepType.PAUSE]: '⏸',
   [StepType.WAIT_UNTIL]: '⏲',
   [StepType.DELAY]: '⏱',
+  [StepType.POLL]: '↻',
 };
 
 // Timeline entry types
@@ -52,6 +53,7 @@ type TimelineWaitForEntry = {
   waitFor: {
     eventName?: string;
     timeoutEvent?: string;
+    skipOutput?: true;
   };
   timestamp: Date;
 };
@@ -521,11 +523,7 @@ export class WorkflowEngine {
           waitForStepEntry && typeof waitForStepEntry === 'object' && 'waitFor' in waitForStepEntry
             ? (waitForStepEntry as TimelineWaitForEntry)
             : null;
-        const currentStepEntry = run.timeline[run.currentStepId];
-        const currentStep =
-          currentStepEntry && typeof currentStepEntry === 'object' && 'output' in currentStepEntry
-            ? (currentStepEntry as TimelineStepEntry)
-            : null;
+        const currentStep = this.getCachedStepEntry(run.timeline, run.currentStepId);
         const waitFor = waitForStep?.waitFor;
         const hasCurrentStepOutput = currentStep?.output !== undefined;
 
@@ -537,6 +535,7 @@ export class WorkflowEngine {
 
         if (eventMatches) {
           const isTimeout = event?.name === waitFor?.timeoutEvent;
+          const skipOutput = waitFor?.skipOutput;
           run = await this.updateRun({
             runId,
             resourceId,
@@ -544,14 +543,18 @@ export class WorkflowEngine {
               status: WorkflowStatus.RUNNING,
               pausedAt: null,
               resumedAt: new Date(),
-              timeline: merge(run.timeline, {
-                [run.currentStepId]: {
-                  output: event?.data ?? {},
-                  ...(isTimeout ? { timedOut: true as const } : {}),
-                  timestamp: new Date(),
-                },
-              }),
               jobId: job?.id,
+              ...(skipOutput
+                ? {}
+                : {
+                    timeline: merge(run.timeline, {
+                      [run.currentStepId]: {
+                        output: event?.data ?? {},
+                        ...(isTimeout ? { timedOut: true as const } : {}),
+                        timestamp: new Date(),
+                      },
+                    }),
+                  }),
             },
           });
         } else {
@@ -622,6 +625,27 @@ export class WorkflowEngine {
         },
         get sleep() {
           return this.delay;
+        },
+        poll: async <T>(
+          stepId: string,
+          conditionFn: () => Promise<T | false>,
+          options?: { interval?: Duration; timeout?: Duration },
+        ) => {
+          if (!run) {
+            throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
+          }
+          const intervalMs = parseDuration(options?.interval ?? '30s');
+          if (intervalMs < 30_000) {
+            throw new WorkflowEngineError(
+              `step.poll interval must be at least 30s (got ${intervalMs}ms)`,
+              workflowId,
+              runId,
+            );
+          }
+          const timeoutMs = options?.timeout ? parseDuration(options.timeout) : undefined;
+          return this.pollStep({ run, stepId, conditionFn, intervalMs, timeoutMs }) as Promise<
+            { timedOut: false; data: T } | { timedOut: true }
+          >;
         },
       };
 
@@ -712,6 +736,16 @@ export class WorkflowEngine {
     }
   }
 
+  private getCachedStepEntry(
+    timeline: Record<string, unknown>,
+    stepId: string,
+  ): TimelineStepEntry | null {
+    const stepEntry = timeline[stepId];
+    return stepEntry && typeof stepEntry === 'object' && 'output' in stepEntry
+      ? (stepEntry as TimelineStepEntry)
+      : null;
+  }
+
   private async runStep({
     stepId,
     run,
@@ -744,56 +778,50 @@ export class WorkflowEngine {
       }
 
       try {
-        let result: unknown;
-
-        // If the step has already been run, return the result
-        const timelineStepEntry = persistedRun.timeline[stepId];
-        const timelineStep =
-          timelineStepEntry &&
-          typeof timelineStepEntry === 'object' &&
-          'output' in timelineStepEntry
-            ? (timelineStepEntry as TimelineStepEntry)
-            : null;
-        if (timelineStep?.output !== undefined) {
-          result = timelineStep.output;
-        } else {
-          await this.updateRun(
-            {
-              runId: run.id,
-              resourceId: run.resourceId ?? undefined,
-              data: {
-                currentStepId: stepId,
-              },
-            },
-            { db },
-          );
-
-          this.logger.log(`Running step ${stepId}...`, {
-            runId: run.id,
-            workflowId: run.workflowId,
-          });
-
-          result = await handler();
-
-          run = await this.updateRun(
-            {
-              runId: run.id,
-              resourceId: run.resourceId ?? undefined,
-              data: {
-                timeline: merge(run.timeline, {
-                  [stepId]: {
-                    output: result === undefined ? {} : result,
-                    timestamp: new Date(),
-                  },
-                }),
-              },
-            },
-            { db },
-          );
+        const cached = this.getCachedStepEntry(persistedRun.timeline, stepId);
+        if (cached?.output !== undefined) {
+          return cached.output;
         }
 
-        const finalResult = result === undefined ? {} : result;
-        return finalResult;
+        await this.updateRun(
+          {
+            runId: run.id,
+            resourceId: run.resourceId ?? undefined,
+            data: {
+              currentStepId: stepId,
+            },
+          },
+          { db },
+        );
+
+        this.logger.log(`Running step ${stepId}...`, {
+          runId: run.id,
+          workflowId: run.workflowId,
+        });
+
+        let output = await handler();
+
+        if (output === undefined) {
+          output = {};
+        }
+
+        run = await this.updateRun(
+          {
+            runId: run.id,
+            resourceId: run.resourceId ?? undefined,
+            data: {
+              timeline: merge(run.timeline, {
+                [stepId]: {
+                  output,
+                  timestamp: new Date(),
+                },
+              }),
+            },
+          },
+          { db },
+        );
+
+        return output;
       } catch (error) {
         this.logger.error(`Step ${stepId} failed:`, error as Error, {
           runId: run.id,
@@ -841,13 +869,9 @@ export class WorkflowEngine {
       return;
     }
 
-    const timelineStepEntry = persistedRun.timeline[stepId];
-    const timelineStep =
-      timelineStepEntry && typeof timelineStepEntry === 'object' && 'output' in timelineStepEntry
-        ? (timelineStepEntry as TimelineStepEntry)
-        : null;
-    if (timelineStep?.output !== undefined) {
-      return timelineStep.timedOut ? undefined : timelineStep.output;
+    const cached = this.getCachedStepEntry(persistedRun.timeline, stepId);
+    if (cached?.output !== undefined) {
+      return cached.timedOut ? undefined : cached.output;
     }
 
     const timeoutEvent = timeoutDate ? `__timeout_${stepId}` : undefined;
@@ -886,6 +910,114 @@ export class WorkflowEngine {
       `Step ${stepId} waiting${eventName ? ` for event "${eventName}"` : ''}${timeoutDate ? ` until ${timeoutDate.toISOString()}` : ''}`,
       { runId: run.id, workflowId: run.workflowId },
     );
+  }
+
+  private async pollStep<T>({
+    run,
+    stepId,
+    conditionFn,
+    intervalMs,
+    timeoutMs,
+  }: {
+    run: WorkflowRun;
+    stepId: string;
+    conditionFn: () => Promise<T | false>;
+    intervalMs: number;
+    timeoutMs?: number;
+  }): Promise<{ timedOut: false; data: T } | { timedOut: true } | undefined> {
+    const persistedRun = await this.getRun({
+      runId: run.id,
+      resourceId: run.resourceId ?? undefined,
+    });
+
+    if (
+      persistedRun.status === WorkflowStatus.CANCELLED ||
+      persistedRun.status === WorkflowStatus.PAUSED ||
+      persistedRun.status === WorkflowStatus.FAILED
+    ) {
+      return { timedOut: true };
+    }
+
+    const cached = this.getCachedStepEntry(persistedRun.timeline, stepId);
+    if (cached?.output !== undefined) {
+      return cached.timedOut ? { timedOut: true } : { timedOut: false, data: cached.output as T };
+    }
+
+    const pollStateEntry = persistedRun.timeline[`${stepId}-poll`];
+    const startedAt =
+      pollStateEntry && typeof pollStateEntry === 'object' && 'startedAt' in pollStateEntry
+        ? new Date((pollStateEntry as { startedAt: string }).startedAt)
+        : new Date();
+
+    if (timeoutMs !== undefined && Date.now() >= startedAt.getTime() + timeoutMs) {
+      await this.updateRun({
+        runId: run.id,
+        resourceId: run.resourceId ?? undefined,
+        data: {
+          currentStepId: stepId,
+          timeline: merge(persistedRun.timeline, {
+            [stepId]: { output: {}, timedOut: true as const, timestamp: new Date() },
+          }),
+        },
+      });
+      return { timedOut: true };
+    }
+
+    const result = await conditionFn();
+
+    if (result !== false) {
+      await this.updateRun({
+        runId: run.id,
+        resourceId: run.resourceId ?? undefined,
+        data: {
+          currentStepId: stepId,
+          timeline: merge(persistedRun.timeline, {
+            [stepId]: { output: result, timestamp: new Date() },
+          }),
+        },
+      });
+      return { timedOut: false, data: result };
+    }
+
+    const pollEvent = `__poll_${stepId}`;
+    await this.updateRun({
+      runId: run.id,
+      resourceId: run.resourceId ?? undefined,
+      data: {
+        status: WorkflowStatus.PAUSED,
+        currentStepId: stepId,
+        pausedAt: new Date(),
+        timeline: merge(persistedRun.timeline, {
+          [`${stepId}-poll`]: { startedAt: startedAt.toISOString() },
+          [`${stepId}-wait-for`]: {
+            waitFor: { timeoutEvent: pollEvent, skipOutput: true },
+            timestamp: new Date(),
+          },
+        }),
+      },
+    });
+
+    await this.boss.send(
+      WORKFLOW_RUN_QUEUE_NAME,
+      {
+        runId: run.id,
+        resourceId: run.resourceId ?? undefined,
+        workflowId: run.workflowId,
+        input: run.input,
+        event: { name: pollEvent, data: {} },
+      },
+      {
+        startAfter: new Date(Date.now() + intervalMs),
+        expireInSeconds: defaultExpireInSeconds,
+      },
+    );
+
+    this.logger.log(`Step ${stepId} polling every ${intervalMs}ms...`, {
+      runId: run.id,
+      workflowId: run.workflowId,
+    });
+
+    return { timedOut: false, data: undefined as T };
   }
 
   private async checkIfHasStarted(): Promise<void> {

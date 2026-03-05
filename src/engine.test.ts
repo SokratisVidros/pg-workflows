@@ -1134,6 +1134,118 @@ describe('WorkflowEngine', () => {
         });
     });
 
+    it('should resolve poll step when condition becomes true', async () => {
+      let callCount = 0;
+      const pollConditionWorkflow = workflow('poll-condition-workflow', async ({ step }) => {
+        const result = await step.poll(
+          'poll-step',
+          async () => {
+            callCount++;
+            return callCount >= 3 ? { value: callCount } : false;
+          },
+          { interval: '30s' },
+        );
+        return result;
+      });
+
+      await engine.registerWorkflow(pollConditionWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'poll-condition-workflow',
+        input: {},
+      });
+
+      // First execution: condition false, workflow pauses
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      const pausedRun = await engine.getRun({ runId: run.id, resourceId });
+      expect(pausedRun.timeline).toMatchObject({
+        'poll-step-poll': { startedAt: expect.any(String) },
+        'poll-step-wait-for': {
+          waitFor: { timeoutEvent: '__poll_poll-step', skipOutput: true },
+        },
+      });
+
+      // Manually trigger second poll (simulating interval firing)
+      await engine.triggerEvent({ runId: run.id, resourceId, eventName: '__poll_poll-step' });
+
+      // Second execution: condition still false, workflow pauses again
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      // Manually trigger third poll
+      await engine.triggerEvent({ runId: run.id, resourceId, eventName: '__poll_poll-step' });
+
+      // Third execution: condition true, workflow completes
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 5000 })
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: { timedOut: false, data: { value: 3 } },
+          timeline: {
+            'poll-step': { output: { value: 3 } },
+          },
+        });
+    });
+
+    it('should resolve poll step with timedOut when timeout expires', async () => {
+      const pollTimeoutWorkflow = workflow('poll-timeout-workflow', async ({ step }) => {
+        const result = await step.poll('poll-step', async () => false, {
+          interval: '30s',
+          timeout: '1s',
+        });
+        return result;
+      });
+
+      await engine.registerWorkflow(pollTimeoutWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'poll-timeout-workflow',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      // Wait for timeout to elapse then trigger a poll cycle
+      await new Promise((r) => setTimeout(r, 1100));
+      await engine.triggerEvent({ runId: run.id, resourceId, eventName: '__poll_poll-step' });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 5000 })
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: { timedOut: true },
+          timeline: {
+            'poll-step': { output: {}, timedOut: true },
+          },
+        });
+    });
+
+    it('should throw when poll interval is below 30s', async () => {
+      const pollInvalidWorkflow = workflow('poll-invalid-workflow', async ({ step }) => {
+        await step.poll('poll-step', async () => false, { interval: '1s' });
+      });
+
+      await engine.registerWorkflow(pollInvalidWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'poll-invalid-workflow',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 5000 })
+        .toMatchObject({
+          status: WorkflowStatus.FAILED,
+          error: expect.stringContaining('step.poll interval must be at least 30s'),
+        });
+    });
+
     it.todo('should handle workflow timeout', async () => {});
 
     it('should handle workflow with conditionals and for loops', async () => {

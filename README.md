@@ -45,6 +45,7 @@ If you need enterprise-grade features like distributed tracing, complex DAG sche
 - **Durable Execution on Postgres** - Workflow state is persisted in PostgreSQL. Workflows survive process crashes, restarts, and deployments.
 - **Step-by-Step Execution** - Break complex processes into discrete, resumable steps. Each step runs exactly once, even across retries.
 - **Event-Driven Orchestration** - Pause workflows and wait for external events with `step.waitFor()`. Resume automatically when signals arrive.
+- **Polling Steps** - Repeatedly check a condition with `step.poll()` at a configurable interval (minimum 30s) until it returns a truthy value or a timeout expires.
 - **Scheduled & Delay Steps** - Wait until a specific date with `step.waitUntil()`, or use `step.delay()` / `step.sleep()` with human-readable durations (`'3 days'`, `{ hours: 2 }`). Past dates run immediately.
 - **Pause and Resume** - Manually pause long-running workflows and resume them later via API.
 - **Built-in Retries** - Automatic retries with exponential backoff at the workflow level.
@@ -486,6 +487,29 @@ const reminderWorkflow = workflow('send-reminder', async ({ step, input }) => {
 }, { inputSchema: z.object({ email: z.string().email() }) });
 ```
 
+### Polling Until a Condition Is Met
+
+```typescript
+const paymentWorkflow = workflow('await-payment', async ({ step, input }) => {
+  const result = await step.poll(
+    'wait-for-payment',
+    async () => {
+      const payment = await getPaymentStatus(input.paymentId);
+      return payment.completed ? payment : false;
+    },
+    { interval: '1 minute', timeout: '24 hours' },
+  );
+
+  if (result.timedOut) {
+    return { status: 'expired' };
+  }
+
+  return { status: 'paid', payment: result.data };
+});
+```
+
+`conditionFn` returns `false` to keep polling, or a truthy value to resolve the step. The minimum interval is 30s (default). If `timeout` is omitted the step polls indefinitely.
+
 ### Error Handling with Retries
 
 ```typescript
@@ -583,6 +607,7 @@ The context object passed to workflow handlers:
     delay: (stepId, duration) => Promise<void>,
     sleep: (stepId, duration) => Promise<void>,
     pause: (stepId) => Promise<void>,
+    poll: <T>(stepId, conditionFn, { interval?, timeout? }) => Promise<{ timedOut: false; data: T } | { timedOut: true }>,
   }
 }
 ```

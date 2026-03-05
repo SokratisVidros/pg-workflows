@@ -17,6 +17,7 @@ export enum StepType {
   WAIT_FOR = 'waitFor',
   WAIT_UNTIL = 'waitUntil',
   DELAY = 'delay',
+  POLL = 'poll',
 }
 
 export type InputParameters = z.ZodTypeAny;
@@ -52,6 +53,11 @@ export type StepBaseContext = {
   /** Alias for delay. */
   sleep: (stepId: string, duration: Duration) => Promise<void>;
   pause: (stepId: string) => Promise<void>;
+  poll: <T>(
+    stepId: string,
+    conditionFn: () => Promise<T | false>,
+    options?: { interval?: Duration; timeout?: Duration },
+  ) => Promise<{ timedOut: false; data: T } | { timedOut: true }>;
 };
 
 /**

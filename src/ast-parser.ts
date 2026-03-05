@@ -80,7 +80,8 @@ export function parseWorkflowHandler(
           methodName === 'pause' ||
           methodName === 'waitUntil' ||
           methodName === 'delay' ||
-          methodName === 'sleep')
+          methodName === 'sleep' ||
+          methodName === 'poll')
       ) {
         const firstArg = node.arguments[0];
         if (firstArg) {
