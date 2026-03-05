@@ -44,13 +44,14 @@ const StepTypeToIcon = {
 // Timeline entry types
 type TimelineStepEntry = {
   output?: unknown;
+  timedOut?: true;
   timestamp: Date;
 };
 
 type TimelineWaitForEntry = {
   waitFor: {
-    eventName: string;
-    timeout?: number;
+    eventName?: string;
+    timeoutEvent?: string;
   };
   timestamp: Date;
 };
@@ -528,7 +529,14 @@ export class WorkflowEngine {
         const waitFor = waitForStep?.waitFor;
         const hasCurrentStepOutput = currentStep?.output !== undefined;
 
-        if (waitFor && waitFor.eventName === event?.name && !hasCurrentStepOutput) {
+        const eventMatches =
+          waitFor &&
+          event?.name &&
+          (event.name === waitFor.eventName || event.name === waitFor.timeoutEvent) &&
+          !hasCurrentStepOutput;
+
+        if (eventMatches) {
+          const isTimeout = event?.name === waitFor?.timeoutEvent;
           run = await this.updateRun({
             runId,
             resourceId,
@@ -539,6 +547,7 @@ export class WorkflowEngine {
               timeline: merge(run.timeline, {
                 [run.currentStepId]: {
                   output: event?.data ?? {},
+                  ...(isTimeout ? { timedOut: true as const } : {}),
                   timestamp: new Date(),
                 },
               }),
@@ -564,12 +573,7 @@ export class WorkflowEngine {
           if (!run) {
             throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
           }
-
-          return this.runStep({
-            stepId,
-            run,
-            handler,
-          }) as Promise<T>;
+          return this.runStep({ stepId, run, handler }) as Promise<T>;
         },
         waitFor: async <T extends InputParameters>(
           stepId: string,
@@ -578,12 +582,10 @@ export class WorkflowEngine {
           if (!run) {
             throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
           }
-          return this.waitForEvent({
-            run,
-            stepId,
-            eventName,
-            timeout,
-          }) as Promise<InferInputParameters<T>>;
+          const timeoutDate = timeout ? new Date(Date.now() + timeout) : undefined;
+          return this.waitStep({ run, stepId, eventName, timeoutDate }) as Promise<
+            InferInputParameters<T> | undefined
+          >;
         },
         waitUntil: async (
           stepId: string,
@@ -600,30 +602,22 @@ export class WorkflowEngine {
                 : dateOrOptions.date instanceof Date
                   ? dateOrOptions.date
                   : new Date(dateOrOptions.date);
-          await this.waitUntilDate({
-            run,
-            stepId,
-            date,
-          });
+          await this.waitStep({ run, stepId, timeoutDate: date });
         },
         pause: async (stepId: string) => {
           if (!run) {
             throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
           }
-          return this.pauseStep({
-            stepId,
-            run,
-          });
+          await this.waitStep({ run, stepId, eventName: PAUSE_EVENT_NAME });
         },
         delay: async (stepId: string, duration: Duration) => {
           if (!run) {
             throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
           }
-          const date = new Date(Date.now() + parseDuration(duration));
-          await this.waitUntilDate({
+          await this.waitStep({
             run,
             stepId,
-            date,
+            timeoutDate: new Date(Date.now() + parseDuration(duration)),
           });
         },
         get sleep() {
@@ -823,17 +817,17 @@ export class WorkflowEngine {
     });
   }
 
-  private async waitForEvent({
+  private async waitStep({
     run,
     stepId,
     eventName,
-    timeout,
+    timeoutDate,
   }: {
     run: WorkflowRun;
     stepId: string;
-    eventName: string;
-    timeout?: number;
-  }) {
+    eventName?: string;
+    timeoutDate?: Date;
+  }): Promise<unknown> {
     const persistedRun = await this.getRun({
       runId: run.id,
       resourceId: run.resourceId ?? undefined,
@@ -844,24 +838,19 @@ export class WorkflowEngine {
       persistedRun.status === WorkflowStatus.PAUSED ||
       persistedRun.status === WorkflowStatus.FAILED
     ) {
-      this.logger.log(`Step ${stepId} skipped, workflow run is ${persistedRun.status}`, {
-        runId: run.id,
-        workflowId: run.workflowId,
-      });
-
       return;
     }
 
-    const timelineStepCheckEntry = persistedRun.timeline[stepId];
-    const timelineStepCheck =
-      timelineStepCheckEntry &&
-      typeof timelineStepCheckEntry === 'object' &&
-      'output' in timelineStepCheckEntry
-        ? (timelineStepCheckEntry as TimelineStepEntry)
+    const timelineStepEntry = persistedRun.timeline[stepId];
+    const timelineStep =
+      timelineStepEntry && typeof timelineStepEntry === 'object' && 'output' in timelineStepEntry
+        ? (timelineStepEntry as TimelineStepEntry)
         : null;
-    if (timelineStepCheck?.output !== undefined) {
-      return timelineStepCheck.output;
+    if (timelineStep?.output !== undefined) {
+      return timelineStep.timedOut ? undefined : timelineStep.output;
     }
+
+    const timeoutEvent = timeoutDate ? `__timeout_${stepId}` : undefined;
 
     await this.updateRun({
       runId: run.id,
@@ -869,84 +858,34 @@ export class WorkflowEngine {
       data: {
         status: WorkflowStatus.PAUSED,
         currentStepId: stepId,
+        pausedAt: new Date(),
         timeline: merge(run.timeline, {
           [`${stepId}-wait-for`]: {
-            waitFor: {
-              eventName,
-              timeout,
-            },
+            waitFor: { eventName, timeoutEvent },
             timestamp: new Date(),
           },
         }),
-        pausedAt: new Date(),
       },
     });
 
-    this.logger.log(`Running step ${stepId}, waiting for event ${eventName}...`, {
-      runId: run.id,
-      workflowId: run.workflowId,
-    });
-  }
-
-  private async pauseStep({ stepId, run }: { stepId: string; run: WorkflowRun }): Promise<void> {
-    await this.waitForEvent({
-      run,
-      stepId,
-      eventName: PAUSE_EVENT_NAME,
-    });
-  }
-
-  private async waitUntilDate({
-    run,
-    stepId,
-    date,
-  }: {
-    run: WorkflowRun;
-    stepId: string;
-    date: Date;
-  }) {
-    const eventName = `__wait_until_${stepId}`;
-
-    await this.waitForEvent({
-      run,
-      stepId,
-      eventName,
-    });
-
-    const job: WorkflowRunJobParameters = {
-      runId: run.id,
-      resourceId: run.resourceId ?? undefined,
-      workflowId: run.workflowId,
-      input: run.input,
-      event: {
-        name: eventName,
-        data: { date: date.toISOString() },
-      },
-    };
-
-    const now = Date.now();
-    const isPast = date.getTime() <= now;
-    if (isPast) {
-      await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
-        expireInSeconds: defaultExpireInSeconds,
-      });
-      this.logger.log(
-        `Running step ${stepId}, date ${date.toISOString()} is in the past, executing immediately`,
-        {
-          runId: run.id,
-          workflowId: run.workflowId,
-        },
-      );
-    } else {
-      await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
-        startAfter: date,
-        expireInSeconds: defaultExpireInSeconds,
-      });
-      this.logger.log(`Running step ${stepId}, waiting until ${date.toISOString()}...`, {
+    if (timeoutDate && timeoutEvent) {
+      const job: WorkflowRunJobParameters = {
         runId: run.id,
+        resourceId: run.resourceId ?? undefined,
         workflowId: run.workflowId,
+        input: run.input,
+        event: { name: timeoutEvent, data: { date: timeoutDate.toISOString() } },
+      };
+      await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+        startAfter: timeoutDate.getTime() <= Date.now() ? new Date() : timeoutDate,
+        expireInSeconds: defaultExpireInSeconds,
       });
     }
+
+    this.logger.log(
+      `Step ${stepId} waiting${eventName ? ` for event "${eventName}"` : ''}${timeoutDate ? ` until ${timeoutDate.toISOString()}` : ''}`,
+      { runId: run.id, workflowId: run.workflowId },
+    );
   }
 
   private async checkIfHasStarted(): Promise<void> {

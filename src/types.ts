@@ -32,10 +32,16 @@ export type WorkflowOptions<I extends InputParameters> = {
 
 export type StepBaseContext = {
   run: <T>(stepId: string, handler: () => Promise<T>) => Promise<T>;
-  waitFor: <T extends InputParameters>(
-    stepId: string,
-    { eventName, timeout, schema }: { eventName: string; timeout?: number; schema?: T },
-  ) => Promise<InferInputParameters<T>>;
+  waitFor: {
+    <T extends InputParameters>(
+      stepId: string,
+      options: { eventName: string; schema?: T },
+    ): Promise<InferInputParameters<T>>;
+    <T extends InputParameters>(
+      stepId: string,
+      options: { eventName: string; timeout: number; schema?: T },
+    ): Promise<InferInputParameters<T> | undefined>;
+  };
   waitUntil: {
     (stepId: string, date: Date): Promise<void>;
     (stepId: string, dateString: string): Promise<void>;

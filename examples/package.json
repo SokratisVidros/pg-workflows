@@ -4,14 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "dotenvx run -- tsx basic.ts",
-    "example:basic": "dotenvx run -- tsx basic.ts",
-    "example:approval-flow": "dotenvx run -- tsx approval-flow.ts"
+    "build:lib": "test -d ../dist || (cd .. && bun run build)",
+    "start": "npm run build:lib && dotenvx run -- tsx basic.ts",
+    "example:basic": "npm run build:lib && dotenvx run -- tsx basic.ts",
+    "example:approval-flow": "npm run build:lib && dotenvx run -- tsx approval-flow.ts",
+    "example:timeout": "npm run build:lib && dotenvx run -- tsx timeout-example.ts"
   },
   "dependencies": {
     "pg": "^8.13.1",
     "pg-boss": ">=12.0.0",
-    "pg-workflows": "~0.1.0"
+    "pg-workflows": "file:.."
   },
   "devDependencies": {
     "@dotenvx/dotenvx": "^1.52.0",

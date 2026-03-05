@@ -909,7 +909,7 @@ describe('WorkflowEngine', () => {
       expect(pausedRun.timeline).toMatchObject({
         'step-1': { output: 'result-1' },
         'step-2-wait-for': {
-          waitFor: { eventName: '__wait_until_step-2' },
+          waitFor: { timeoutEvent: '__timeout_step-2' },
         },
       });
 
@@ -924,7 +924,7 @@ describe('WorkflowEngine', () => {
       expect(completed.timeline).toMatchObject({
         'step-1': { output: 'result-1' },
         'step-2-wait-for': {
-          waitFor: { eventName: '__wait_until_step-2' },
+          waitFor: { timeoutEvent: '__timeout_step-2' },
         },
         'step-2': { output: { date: expect.any(String) } },
         'step-3': { output: 'result-3' },
@@ -1056,6 +1056,82 @@ describe('WorkflowEngine', () => {
         'step-2': { output: { date: expect.any(String) } },
         'step-3': { output: 'result-3' },
       });
+    });
+
+    it('should resolve waitFor with undefined when timeout fires before event', async () => {
+      const waitForTimeoutWorkflow = workflow('wait-for-timeout-workflow', async ({ step }) => {
+        await step.run('step-1', async () => 'result-1');
+        const result = await step.waitFor('step-2', {
+          eventName: 'some-event',
+          timeout: 500,
+        });
+        return { result };
+      });
+
+      await engine.registerWorkflow(waitForTimeoutWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'wait-for-timeout-workflow',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      const pausedRun = await engine.getRun({ runId: run.id, resourceId });
+      expect(pausedRun.timeline).toMatchObject({
+        'step-2-wait-for': {
+          waitFor: { eventName: 'some-event', timeoutEvent: '__timeout_step-2' },
+        },
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 5000,
+        })
+        .toBe(WorkflowStatus.COMPLETED);
+
+      const completed = await engine.getRun({ runId: run.id, resourceId });
+      expect(completed.output).toEqual({ result: undefined });
+    });
+
+    it('should resolve waitFor with event data when event fires before timeout', async () => {
+      const waitForBeforeTimeoutWorkflow = workflow(
+        'wait-for-before-timeout-workflow',
+        async ({ step }) => {
+          const result = await step.waitFor('step-1', {
+            eventName: 'early-event',
+            timeout: 5000,
+          });
+          return { result };
+        },
+      );
+
+      await engine.registerWorkflow(waitForBeforeTimeoutWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'wait-for-before-timeout-workflow',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      await engine.triggerEvent({
+        runId: run.id,
+        resourceId,
+        eventName: 'early-event',
+        data: { fired: true },
+      });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 5000 })
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: { result: { fired: true } },
+        });
     });
 
     it.todo('should handle workflow timeout', async () => {});

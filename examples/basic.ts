@@ -49,12 +49,12 @@ async function main() {
   let progress: WorkflowRunProgress;
 
   do {
-    await new Promise((r) => setTimeout(r, 1000))
-    progress = await engine.checkProgress({ runId: run.id, resourceId: 'tenant_1' })
+    await new Promise((r) => setTimeout(r, 1000));
+    progress = await engine.checkProgress({ runId: run.id, resourceId: 'tenant_1' });
     console.log(
       `Progress: ${progress.completionPercentage}% (${progress.completedSteps}/${progress.totalSteps} steps)`,
-    )
-  } while (progress.status === 'running')
+    );
+  } while (progress.status === 'running');
 
   await engine.stop();
   await pool.end();

@@ -575,7 +575,10 @@ The context object passed to workflow handlers:
   logger: WorkflowLogger,      // Logger instance
   step: {
     run: <T>(stepId, handler) => Promise<T>,
-    waitFor: <T>(stepId, { eventName, timeout?, schema? }) => Promise<T>,
+    // without timeout: always returns event data T
+    waitFor: <T>(stepId, { eventName, schema? }) => Promise<T>,
+    // with timeout: returns event data T or undefined if timeout fires first
+    waitFor: <T>(stepId, { eventName, timeout, schema? }) => Promise<T | undefined>,
     waitUntil: (stepId, date | dateString | { date }) => Promise<void>,
     delay: (stepId, duration) => Promise<void>,
     sleep: (stepId, duration) => Promise<void>,
