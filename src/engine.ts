@@ -572,6 +572,8 @@ export class WorkflowEngine {
       }
 
       const baseStep = {
+        runId: run.id,
+        resourceId: run.resourceId ?? undefined,
         run: async <T>(stepId: string, handler: () => Promise<T>) => {
           if (!run) {
             throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
@@ -694,7 +696,14 @@ export class WorkflowEngine {
         });
       }
     } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error))
+
       if (run.retryCount < run.maxRetries) {
+        this.logger.error(
+          `Workflow run failed (retry ${run.retryCount + 1}/${run.maxRetries}), will retry in ${2 ** run.retryCount}s`,
+          err,
+          { runId, workflowId },
+        )
         await this.updateRun({
           runId,
           resourceId,
@@ -721,13 +730,15 @@ export class WorkflowEngine {
         return;
       }
 
+      this.logger.error('Workflow run failed', err, { runId, workflowId })
+
       // TODO: Ensure that this code always runs, even if worker is stopped unexpectedly.
       await this.updateRun({
         runId,
         resourceId,
         data: {
           status: WorkflowStatus.FAILED,
-          error: error instanceof Error ? error.message : String(error),
+          error: err.message,
           jobId: job?.id,
         },
       });

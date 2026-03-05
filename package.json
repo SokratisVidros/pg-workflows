@@ -19,8 +19,7 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
-    },
-    "./package.json": "./package.json"
+    }
   },
   "scripts": {
     "build": "bunup",
@@ -66,6 +65,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
+    "cheerio": "^1.2.0",
     "es-toolkit": "^1.44.0",
     "ksuid": "^3.0.0",
     "parse-duration": "^2.1.5",

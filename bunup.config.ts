@@ -1,11 +1,23 @@
-import { defineConfig } from 'bunup';
-import { exports } from 'bunup/plugins';
+import { defineConfig } from 'bunup'
 
-export default defineConfig({
-  entry: 'src/index.ts',
-  format: ['esm', 'cjs'],
+const shared = {
+  format: ['esm', 'cjs'] as const,
   minify: false,
-  sourcemap: 'linked',
-  target: 'node',
-  plugins: [exports()],
-});
+  sourcemap: 'linked' as const,
+  target: 'node' as const,
+  exports: false as const,
+}
+
+export default defineConfig([
+  {
+    name: 'core',
+    entry: 'src/index.ts',
+    ...shared,
+  },
+  {
+    name: 'email-plugin',
+    entry: 'src/plugins/email/index.ts',
+    outDir: 'dist/plugins/email',
+    ...shared,
+  },
+])
