@@ -42,7 +42,7 @@ const myWorkflow = workflow(
 
 ```typescript
 import { WorkflowEngine } from 'pg-workflows';
-import PgBoss from 'pg-boss';
+import PgBoss from 'pg-boss';  // peer dependency - user installs separately
 
 const engine = new WorkflowEngine({
   boss: new PgBoss({ connectionString: process.env.DATABASE_URL }),

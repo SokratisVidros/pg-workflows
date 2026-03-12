@@ -62,19 +62,23 @@ export type EmailStepMethods = {
 
 /**
  * Raw event record as returned by the tracker admin API (GET /api/events/<token>).
- * Field names match the API response (snake_case).
+ * Field names match the API response (camelCase).
  */
 export type TrackerAdminEventRecord = {
+  runId?: string;
+  stepId?: string;
   event: 'open' | 'click';
   url?: string;
-  user_agent?: string;
+  firedAt: string;
+  userAgent?: string;
   ip?: string;
   language?: string;
   os?: string;
-  device_type?: string;
-  location?: { country?: string; city?: string; region?: string };
+  deviceType?: string;
+  country?: string;
+  city?: string;
+  region?: string;
   referrer?: string;
-  fired_at: string;
 };
 
 /**

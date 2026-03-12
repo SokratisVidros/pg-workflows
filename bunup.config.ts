@@ -18,6 +18,7 @@ export default defineConfig([
     name: 'email-plugin',
     entry: 'src/plugins/email/index.ts',
     outDir: 'dist/plugins/email',
+    noExternal: ['cheerio'],
     ...shared,
   },
 ])

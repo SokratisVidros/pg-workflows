@@ -144,9 +144,9 @@ describe('createEmailPlugin — waitForOpen', () => {
   it('returns done:true with mapped data when tracker responds', async () => {
     const mockRecord = {
       event: 'open' as const,
-      fired_at: '2026-03-04T00:00:00Z',
+      firedAt: '2026-03-04T00:00:00Z',
       ip: '1.2.3.4',
-      user_agent: 'Mozilla/5.0',
+      userAgent: 'Mozilla/5.0',
     };
     const step = makeMockStep({
       poll: vi.fn().mockResolvedValue({ timedOut: false, data: mockRecord }),
@@ -202,7 +202,7 @@ describe('createEmailPlugin — waitForOpen', () => {
   });
 
   it('polling function returns tracker data when event is found', async () => {
-    const trackerData = { event: 'open', fired_at: '2026-03-04T00:00:00Z' };
+    const trackerData = { event: 'open', firedAt: '2026-03-04T00:00:00Z' };
     let capturedCondition: (() => Promise<unknown>) | undefined;
 
     const step = makeMockStep({
@@ -233,7 +233,7 @@ describe('createEmailPlugin — waitForClick', () => {
     const mockRecord = {
       event: 'click' as const,
       url: 'https://example.com/cta',
-      fired_at: '2026-03-04T00:00:00Z',
+      firedAt: '2026-03-04T00:00:00Z',
     };
     const step = makeMockStep({
       poll: vi.fn().mockResolvedValue({ timedOut: false, data: mockRecord }),

@@ -19,7 +19,18 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
-    }
+    },
+    "./plugins/email": {
+      "import": {
+        "types": "./dist/plugins/email/index.d.ts",
+        "default": "./dist/plugins/email/index.js"
+      },
+      "require": {
+        "types": "./dist/plugins/email/index.d.cts",
+        "default": "./dist/plugins/email/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
   },
   "scripts": {
     "build": "bunup",
@@ -70,12 +81,15 @@
     "ksuid": "^3.0.0",
     "parse-duration": "^2.1.5",
     "pg": "^8.13.1",
-    "pg-boss": ">=12.0.0",
     "typescript": "^5.9.3",
     "zod": "^3.24.0"
   },
+  "peerDependencies": {
+    "pg-boss": ">=12.0.0"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.3.10",
+    "cheerio": "^1.2.0",
     "@electric-sql/pglite": "^0.3.14",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",

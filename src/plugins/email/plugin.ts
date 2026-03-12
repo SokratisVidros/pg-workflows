@@ -14,31 +14,58 @@ import type {
   WaitForOpenResult,
 } from './types';
 
+function isTrackerEventRecord(
+  value: unknown,
+): value is TrackerAdminEventRecord {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'firedAt' in value &&
+    typeof (value as TrackerAdminEventRecord).firedAt === 'string'
+  )
+}
+
 function mapToOpenedData(record: TrackerAdminEventRecord): EmailOpenedData {
+  const location =
+    record.country != null || record.city != null || record.region != null
+      ? {
+          country: record.country,
+          city: record.city,
+          region: record.region,
+        }
+      : undefined
   return {
-    openedAt: record.fired_at,
-    userAgent: record.user_agent,
+    openedAt: record.firedAt,
+    userAgent: record.userAgent,
     ipAddress: record.ip,
     language: record.language,
     os: record.os,
-    deviceType: record.device_type as EmailOpenedData['deviceType'],
-    location: record.location,
+    deviceType: record.deviceType as EmailOpenedData['deviceType'],
+    location,
     referrer: record.referrer,
-  };
+  }
 }
 
 function mapToClickedData(record: TrackerAdminEventRecord): EmailClickedData {
+  const location =
+    record.country != null || record.city != null || record.region != null
+      ? {
+          country: record.country,
+          city: record.city,
+          region: record.region,
+        }
+      : undefined
   return {
-    clickedAt: record.fired_at,
+    clickedAt: record.firedAt,
     url: record.url ?? '',
-    userAgent: record.user_agent,
+    userAgent: record.userAgent,
     ipAddress: record.ip,
     language: record.language,
     os: record.os,
-    deviceType: record.device_type as EmailClickedData['deviceType'],
-    location: record.location,
+    deviceType: record.deviceType as EmailClickedData['deviceType'],
+    location,
     referrer: record.referrer,
-  };
+  }
 }
 
 export function createEmailPlugin(
@@ -70,12 +97,20 @@ export function createEmailPlugin(
                 headers: { Authorization: `Bearer ${config.apiKey}` },
               });
               const body = (await res.json()) as TrackerAdminEventResponse;
-              return body.found ? body.data : false;
+              const data = body.found ? body.data : undefined
+              return data !== undefined && isTrackerEventRecord(data) ? data : false
             },
             { timeout: duration },
           );
+
+          console.log('result >>>>>>>>>>>>', result);
           if (result.timedOut) {
             return { done: false, state: 'timeout', duration };
+          }
+          if (!isTrackerEventRecord(result.data)) {
+            throw new Error(
+              `Tracker API returned success but invalid or missing event data (expected object with firedAt). Got: ${typeof result.data === 'object' && result.data !== null ? JSON.stringify(result.data).slice(0, 200) : String(result.data)}`,
+            )
           }
           return { done: true, data: mapToOpenedData(result.data) };
         },
@@ -89,12 +124,18 @@ export function createEmailPlugin(
                 headers: { Authorization: `Bearer ${config.apiKey}` },
               });
               const body = (await res.json()) as TrackerAdminEventResponse;
-              return body.found ? body.data : false;
+              const data = body.found ? body.data : undefined
+              return data !== undefined && isTrackerEventRecord(data) ? data : false
             },
             { timeout: duration },
           );
           if (result.timedOut) {
             return { done: false, state: 'timeout', duration };
+          }
+          if (!isTrackerEventRecord(result.data)) {
+            throw new Error(
+              `Tracker API returned success but invalid or missing event data (expected object with firedAt). Got: ${typeof result.data === 'object' && result.data !== null ? JSON.stringify(result.data).slice(0, 200) : String(result.data)}`,
+            )
           }
           return { done: true, data: mapToClickedData(result.data) };
         },

@@ -550,7 +550,7 @@ console.log({
 
 ```typescript
 const engine = new WorkflowEngine({
-  boss: PgBoss,                    // Required: pg-boss instance
+  boss: PgBoss,                    // Required: user-provided pg-boss instance (peer dependency)
   workflows: WorkflowDefinition[], // Optional: register workflows on init
   logger: WorkflowLogger,          // Optional: custom logger
 });
@@ -660,7 +660,7 @@ As championed by [postgresforeverything.com](https://postgresforeverything.com/)
 If you're already running Postgres (and you probably should be), adding durable workflows is as simple as:
 
 ```bash
-npm install pg-workflows
+npm install pg-workflows pg-boss
 ```
 
 ---
@@ -669,7 +669,7 @@ npm install pg-workflows
 
 - Node.js >= 18.0.0
 - PostgreSQL >= 10
-- pg-boss >= 10.0.0
+- pg-boss >= 12.0.0 (peer dependency - you install it yourself)
 
 ## Acknowledgments
 

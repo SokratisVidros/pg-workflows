@@ -81,10 +81,10 @@ const myWorkflow = workflow(
 
 ```typescript
 import { WorkflowEngine } from 'pg-workflows';
-import PgBoss from 'pg-boss';
+import PgBoss from 'pg-boss';  // peer dependency - user installs separately
 
 const engine = new WorkflowEngine({
-  boss: pgBossInstance,                        // required
+  boss: pgBossInstance,                        // required, user-provided pg-boss instance
   workflows: [myWorkflow],                     // optional, register on init
   logger: { log: console.log, error: console.error }, // optional
 });
