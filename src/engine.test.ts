@@ -1,3 +1,4 @@
+import type pg from 'pg';
 import type { PgBoss } from 'pg-boss';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -10,10 +11,11 @@ import type { StepBaseContext, WorkflowPlugin } from './types';
 import { WorkflowStatus } from './types';
 
 let testBoss: PgBoss;
+let testPool: pg.Pool;
 
 beforeAll(async () => {
-  const testDb = await createTestDatabase();
-  testBoss = await getBoss(testDb);
+  testPool = await createTestDatabase();
+  testBoss = await getBoss(testPool);
 });
 
 afterAll(async () => {
@@ -43,6 +45,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        pool: testPool,
         boss: testBoss,
       });
     });
@@ -74,6 +77,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start(false);
@@ -196,6 +200,7 @@ describe('WorkflowEngine', () => {
     it('should extend step with plugin methods at runtime and complete workflow', async () => {
       const engine = new WorkflowEngine({
         workflows: [],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -235,6 +240,7 @@ describe('WorkflowEngine', () => {
     it('should pass base step (run, waitFor, pause) to handler alongside plugin methods', async () => {
       const engine = new WorkflowEngine({
         workflows: [],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -278,6 +284,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start(false);
@@ -299,6 +306,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start(false);
@@ -320,6 +328,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -424,6 +433,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -458,6 +468,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -499,6 +510,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start(false);
@@ -532,6 +544,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -1352,6 +1365,7 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [testWorkflow],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start(false);

@@ -1,5 +1,6 @@
 import { merge } from 'es-toolkit';
-import type { Db, Job, PgBoss } from 'pg-boss';
+import type pg from 'pg';
+import { type Db, type Job, PgBoss } from 'pg-boss';
 import type { z } from 'zod';
 import { parseWorkflowHandler } from './ast-parser';
 import { runMigrations } from './db/migration';
@@ -81,6 +82,7 @@ const defaultExpireInSeconds = process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS
 export class WorkflowEngine {
   private boss: PgBoss;
   private db: Db;
+  private pool: pg.Pool;
   private unregisteredWorkflows = new Map<string, WorkflowDefinition>();
   private _started = false;
 
@@ -94,22 +96,31 @@ export class WorkflowEngine {
     workflows,
     logger,
     boss,
-  }: Partial<{
-    workflows: WorkflowDefinition[];
-    logger: WorkflowLogger;
-    boss: PgBoss;
-  }> = {}) {
+    pool,
+  }: {
+    pool: pg.Pool;
+    workflows?: WorkflowDefinition[];
+    logger?: WorkflowLogger;
+    boss?: PgBoss;
+  }) {
     this.logger = this.buildLogger(logger ?? defaultLogger);
+    this.pool = pool;
 
     if (workflows) {
       this.unregisteredWorkflows = new Map(workflows.map((workflow) => [workflow.id, workflow]));
     }
 
-    if (!boss) {
-      throw new WorkflowEngineError('PgBoss instance is required in constructor');
+    const db: Db = {
+      executeSql: (text: string, values?: unknown[]) =>
+        pool.query(text, values) as Promise<{ rows: unknown[] }>,
+    };
+
+    if (boss) {
+      this.boss = boss;
+    } else {
+      this.boss = new PgBoss({ db });
     }
-    this.boss = boss;
-    this.db = boss.getDb();
+    this.db = this.boss.getDb();
   }
 
   async start(
@@ -241,40 +252,44 @@ export class WorkflowEngine {
 
     const initialStepId = workflow.steps[0]?.id ?? '__start__';
 
-    const run = await withPostgresTransaction(this.boss.getDb(), async (_db) => {
-      const timeoutAt = options?.timeout
-        ? new Date(Date.now() + options.timeout)
-        : workflow.timeout
-          ? new Date(Date.now() + workflow.timeout)
-          : null;
+    const run = await withPostgresTransaction(
+      this.boss.getDb(),
+      async (_db) => {
+        const timeoutAt = options?.timeout
+          ? new Date(Date.now() + options.timeout)
+          : workflow.timeout
+            ? new Date(Date.now() + workflow.timeout)
+            : null;
 
-      const insertedRun = await insertWorkflowRun(
-        {
+        const insertedRun = await insertWorkflowRun(
+          {
+            resourceId,
+            workflowId,
+            currentStepId: initialStepId,
+            status: WorkflowStatus.RUNNING,
+            input,
+            maxRetries: options?.retries ?? workflow.retries ?? 0,
+            timeoutAt,
+          },
+          _db,
+        );
+
+        const job: WorkflowRunJobParameters = {
+          runId: insertedRun.id,
           resourceId,
           workflowId,
-          currentStepId: initialStepId,
-          status: WorkflowStatus.RUNNING,
           input,
-          maxRetries: options?.retries ?? workflow.retries ?? 0,
-          timeoutAt,
-        },
-        this.boss.getDb(),
-      );
+        };
 
-      const job: WorkflowRunJobParameters = {
-        runId: insertedRun.id,
-        resourceId,
-        workflowId,
-        input,
-      };
+        await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+          startAfter: new Date(),
+          expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
+        });
 
-      await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
-        startAfter: new Date(),
-        expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
-      });
-
-      return insertedRun;
-    });
+        return insertedRun;
+      },
+      this.pool,
+    );
 
     this.logger.log('Started workflow run', {
       runId: run.id,
@@ -755,94 +770,98 @@ export class WorkflowEngine {
     run: WorkflowRun;
     handler: () => Promise<unknown>;
   }) {
-    return withPostgresTransaction(this.db, async (db) => {
-      const persistedRun = await this.getRun(
-        { runId: run.id, resourceId: run.resourceId ?? undefined },
-        {
-          exclusiveLock: true,
-          db,
-        },
-      );
+    return withPostgresTransaction(
+      this.db,
+      async (db) => {
+        const persistedRun = await this.getRun(
+          { runId: run.id, resourceId: run.resourceId ?? undefined },
+          {
+            exclusiveLock: true,
+            db,
+          },
+        );
 
-      if (
-        persistedRun.status === WorkflowStatus.CANCELLED ||
-        persistedRun.status === WorkflowStatus.PAUSED ||
-        persistedRun.status === WorkflowStatus.FAILED
-      ) {
-        this.logger.log(`Step ${stepId} skipped, workflow run is ${persistedRun.status}`, {
-          runId: run.id,
-          workflowId: run.workflowId,
-        });
+        if (
+          persistedRun.status === WorkflowStatus.CANCELLED ||
+          persistedRun.status === WorkflowStatus.PAUSED ||
+          persistedRun.status === WorkflowStatus.FAILED
+        ) {
+          this.logger.log(`Step ${stepId} skipped, workflow run is ${persistedRun.status}`, {
+            runId: run.id,
+            workflowId: run.workflowId,
+          });
 
-        return;
-      }
-
-      try {
-        const cached = this.getCachedStepEntry(persistedRun.timeline, stepId);
-        if (cached?.output !== undefined) {
-          return cached.output;
+          return;
         }
 
-        await this.updateRun(
-          {
-            runId: run.id,
-            resourceId: run.resourceId ?? undefined,
-            data: {
-              currentStepId: stepId,
+        try {
+          const cached = this.getCachedStepEntry(persistedRun.timeline, stepId);
+          if (cached?.output !== undefined) {
+            return cached.output;
+          }
+
+          await this.updateRun(
+            {
+              runId: run.id,
+              resourceId: run.resourceId ?? undefined,
+              data: {
+                currentStepId: stepId,
+              },
             },
-          },
-          { db },
-        );
+            { db },
+          );
 
-        this.logger.log(`Running step ${stepId}...`, {
-          runId: run.id,
-          workflowId: run.workflowId,
-        });
+          this.logger.log(`Running step ${stepId}...`, {
+            runId: run.id,
+            workflowId: run.workflowId,
+          });
 
-        let output = await handler();
+          let output = await handler();
 
-        if (output === undefined) {
-          output = {};
+          if (output === undefined) {
+            output = {};
+          }
+
+          run = await this.updateRun(
+            {
+              runId: run.id,
+              resourceId: run.resourceId ?? undefined,
+              data: {
+                timeline: merge(run.timeline, {
+                  [stepId]: {
+                    output,
+                    timestamp: new Date(),
+                  },
+                }),
+              },
+            },
+            { db },
+          );
+
+          return output;
+        } catch (error) {
+          this.logger.error(`Step ${stepId} failed:`, error as Error, {
+            runId: run.id,
+            workflowId: run.workflowId,
+          });
+
+          await this.updateRun(
+            {
+              runId: run.id,
+              resourceId: run.resourceId ?? undefined,
+              data: {
+                status: WorkflowStatus.FAILED,
+                error: error instanceof Error ? `${error.message}\n${error.stack}` : String(error),
+              },
+            },
+            { db },
+          );
+
+          throw error;
         }
-
-        run = await this.updateRun(
-          {
-            runId: run.id,
-            resourceId: run.resourceId ?? undefined,
-            data: {
-              timeline: merge(run.timeline, {
-                [stepId]: {
-                  output,
-                  timestamp: new Date(),
-                },
-              }),
-            },
-          },
-          { db },
-        );
-
-        return output;
-      } catch (error) {
-        this.logger.error(`Step ${stepId} failed:`, error as Error, {
-          runId: run.id,
-          workflowId: run.workflowId,
-        });
-
-        await this.updateRun(
-          {
-            runId: run.id,
-            resourceId: run.resourceId ?? undefined,
-            data: {
-              status: WorkflowStatus.FAILED,
-              error: error instanceof Error ? `${error.message}\n${error.stack}` : String(error),
-            },
-          },
-          { db },
-        );
-
-        throw error;
-      }
-    });
+      },
+      this.pool,
+    );
   }
 
   private async waitStep({

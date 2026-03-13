@@ -352,17 +352,49 @@ export async function getWorkflowRuns(
   return { items, nextCursor, prevCursor, hasMore, hasPrev };
 }
 
+/**
+ * Run a callback inside a PostgreSQL transaction using a dedicated client.
+ *
+ * When a `pool` is provided, a dedicated client is checked out so that
+ * BEGIN / COMMIT / ROLLBACK all execute on the **same** connection.
+ * This is critical for `SELECT … FOR UPDATE` locks and any work that
+ * yields to the event-loop inside the transaction (e.g. async step handlers).
+ *
+ * Falls back to the pg-boss `Db` adapter when no pool is given (unit-test path).
+ */
 export async function withPostgresTransaction<T>(
   db: Db,
   callback: (db: Db) => Promise<T>,
+  pool?: {
+    connect: () => Promise<{
+      query: (text: string, values?: unknown[]) => Promise<unknown>;
+      release: () => void;
+    }>;
+  },
 ): Promise<T> {
+  let txDb: Db;
+  let release: (() => void) | undefined;
+
+  if (pool) {
+    const client = await pool.connect();
+    txDb = {
+      executeSql: (text: string, values?: unknown[]) =>
+        client.query(text, values) as Promise<{ rows: unknown[] }>,
+    };
+    release = () => client.release();
+  } else {
+    txDb = db;
+  }
+
   try {
-    await db.executeSql('BEGIN', []);
-    const result = await callback(db);
-    await db.executeSql('COMMIT', []);
+    await txDb.executeSql('BEGIN', []);
+    const result = await callback(txDb);
+    await txDb.executeSql('COMMIT', []);
     return result;
   } catch (error) {
-    await db.executeSql('ROLLBACK', []);
+    await txDb.executeSql('ROLLBACK', []);
     throw error;
+  } finally {
+    release?.();
   }
 }
