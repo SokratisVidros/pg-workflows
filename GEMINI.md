@@ -36,8 +36,9 @@ examples/
 
 - `npm run build` - Build with bunup
 - `npm run dev` - Watch mode build
-- `npm test` - Run tests with vitest
-- `npm run test:run` - Run tests once
+- `npm test` - Run all tests (unit + integration)
+- `npm run test:unit` - Run unit tests only (PGlite, no PostgreSQL needed)
+- `npm run test:integration` - Run integration tests (requires real PostgreSQL)
 - `npm run lint` - Lint with Biome
 - `npm run lint:fix` - Auto-fix lint issues
 - `npm run format` - Format with Biome
@@ -81,17 +82,41 @@ const myWorkflow = workflow(
 
 ```typescript
 import { WorkflowEngine } from 'pg-workflows';
-import PgBoss from 'pg-boss';
 
+// Option 1: Connection string (simplest)
 const engine = new WorkflowEngine({
-  boss: pgBossInstance,                        // required
+  connectionString: 'postgresql://user:pass@localhost:5432/mydb',
   workflows: [myWorkflow],                     // optional, register on init
   logger: { log: console.log, error: console.error }, // optional
 });
 
+// Option 2: Existing pg.Pool
+import pg from 'pg';
+const pool = new pg.Pool({ connectionString: '...' });
+const engine = new WorkflowEngine({
+  pool,
+  workflows: [myWorkflow],
+});
+
+// Option 3: Bring your own PgBoss (advanced)
+import PgBoss from 'pg-boss';
+const engine = new WorkflowEngine({
+  pool,
+  boss: myPgBossInstance,                      // optional, uses your pg-boss config
+  workflows: [myWorkflow],
+});
+
 await engine.start();           // starts boss, runs migrations, creates workers
-await engine.stop();            // graceful shutdown
+await engine.stop();            // graceful shutdown (also closes pool if engine created it)
 ```
+
+**Constructor options** (`WorkflowEngineOptions`):
+- `connectionString` or `pool` — exactly one required. If `connectionString` is used, the engine creates and owns the pool (closed on `stop()`).
+- `boss` — optional. When omitted, pg-boss is created internally with an isolated schema (`pgboss_v12_pgworkflow`) to avoid conflicts with other pg-boss installations.
+- `workflows` — optional array of workflow definitions to register on init.
+- `logger` — optional `{ log, error }` logger.
+
+**Dependencies**: `pg` is a peer dependency (you install it); `pg-boss` is a regular dependency (bundled, no install needed).
 
 ### Step Types (available on `context.step`)
 
@@ -167,6 +192,16 @@ await engine.unregisterAllWorkflows();
 ## Key Types
 
 ```typescript
+// Constructor options — pass pool OR connectionString (exactly one)
+type WorkflowEngineOptions = {
+  workflows?: WorkflowDefinition[];
+  logger?: WorkflowLogger;
+  boss?: PgBoss;
+} & (
+  | { pool: pg.Pool; connectionString?: never }
+  | { connectionString: string; pool?: never }
+);
+
 enum WorkflowStatus {
   PENDING = 'pending',
   RUNNING = 'running',
@@ -181,6 +216,8 @@ enum StepType {
   RUN = 'run',
   WAIT_FOR = 'waitFor',
   WAIT_UNTIL = 'waitUntil',
+  DELAY = 'delay',
+  POLL = 'poll',
 }
 
 type WorkflowRun = {
@@ -316,4 +353,5 @@ const rag = workflow('rag-agent', async ({ step, input }) => {
 3. **`resourceId` is optional** but useful for multi-tenant scoping and querying runs by external entity.
 4. **Workflow handlers are statically analyzed** at registration time to extract step definitions (conditional, loop, dynamic).
 5. **Migrations run automatically** on `engine.start()` - no manual schema setup needed.
-6. **The engine uses pg-boss** for job queuing but manages its own retry logic with exponential backoff (`2^retryCount * 1000ms`).
+6. **pg-boss is an internal dependency** — users don't need to install or configure it. The engine creates pg-boss with an isolated schema (`pgboss_v12_pgworkflow`) to avoid conflicts. Advanced users can pass their own `boss` instance.
+7. **The engine manages its own retry logic** with exponential backoff (`2^retryCount * 1000ms`), independent of pg-boss's retry settings.
