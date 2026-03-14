@@ -282,7 +282,7 @@ export class WorkflowEngine {
     };
   }
 
-  private async scheduleCronWorkflow(wf: InternalWorkflowDefinition): Promise<void> {
+  private async scheduleCronWorkflow(wf: WorkflowInternalDefinition): Promise<void> {
     if (!wf.cron) return;
 
     await this.boss.createQueue(wf.id);

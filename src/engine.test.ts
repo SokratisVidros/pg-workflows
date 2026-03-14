@@ -1387,6 +1387,7 @@ describe('WorkflowEngine', () => {
   describe('cron workflows', () => {
     it('should throw error when registering workflow with invalid cron expression', async () => {
       const engine = new WorkflowEngine({
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start(false);
@@ -1409,6 +1410,7 @@ describe('WorkflowEngine', () => {
 
     it('should normalize string cron shorthand to CronConfig', async () => {
       const engine = new WorkflowEngine({
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start(false);
@@ -1433,6 +1435,7 @@ describe('WorkflowEngine', () => {
 
     it('should pass through standard cron expressions unchanged', async () => {
       const engine = new WorkflowEngine({
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start(false);
@@ -1456,6 +1459,7 @@ describe('WorkflowEngine', () => {
 
     it('should throw error when cron workflow has inputSchema that rejects empty input', async () => {
       const engine = new WorkflowEngine({
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start(false);
@@ -1504,6 +1508,7 @@ describe('WorkflowEngine', () => {
 
       const engine = new WorkflowEngine({
         workflows: [cronWf],
+        pool: testPool,
         boss: testBoss,
       });
 
@@ -1535,6 +1540,7 @@ describe('WorkflowEngine', () => {
 
       const engine = new WorkflowEngine({
         workflows: [cronWf],
+        pool: testPool,
         boss: testBoss,
       });
 
@@ -1576,6 +1582,7 @@ describe('WorkflowEngine', () => {
 
       const engine = new WorkflowEngine({
         workflows: [cronWf],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -1607,6 +1614,7 @@ describe('WorkflowEngine', () => {
 
       const engine = new WorkflowEngine({
         workflows: [cronWf],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -1641,6 +1649,7 @@ describe('WorkflowEngine', () => {
 
       const engine = new WorkflowEngine({
         workflows: [regularWf],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -1678,6 +1687,7 @@ describe('WorkflowEngine', () => {
 
       const engine = new WorkflowEngine({
         workflows: [cronWf],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -1724,6 +1734,7 @@ describe('WorkflowEngine', () => {
 
       const engine = new WorkflowEngine({
         workflows: [cronRetryWf],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -1770,6 +1781,7 @@ describe('WorkflowEngine', () => {
 
       const engine = new WorkflowEngine({
         workflows: [cronWf],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -1794,6 +1806,7 @@ describe('WorkflowEngine', () => {
 
     it('should set up cron schedule when registering workflow after engine start', async () => {
       const engine = new WorkflowEngine({
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -1836,6 +1849,7 @@ describe('WorkflowEngine', () => {
 
       const engine = new WorkflowEngine({
         workflows: [cronFilterWf],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
@@ -1875,6 +1889,7 @@ describe('WorkflowEngine', () => {
 
       const engine = new WorkflowEngine({
         workflows: [cronIntegrationWf],
+        pool: testPool,
         boss: testBoss,
       });
       await engine.start();
