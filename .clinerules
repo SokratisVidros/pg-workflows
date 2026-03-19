@@ -35,7 +35,7 @@ import { z } from 'zod';
 
 const myWorkflow = workflow(
   'workflow-id',
-  async ({ step, input, runId, workflowId, timeline, logger }) => {
+  async ({ step, input, runId, workflowId, timeline, logger, schedule }) => {
     const result = await step.run('step-1', async () => {
       return { processed: input.data };
     });
@@ -45,6 +45,8 @@ const myWorkflow = workflow(
     inputSchema: z.object({ data: z.string() }),
     timeout: 60000,
     retries: 3,
+    cron: '*/15 * * * *',                         // cron expression string (UTC)
+    // or: cron: { expression: '*/15 * * * *', timezone: 'America/New_York' },
   }
 );
 ```
@@ -67,7 +69,7 @@ await engine.start();
 - `step.run(stepId, handler)` - Durable step, runs exactly once, result persisted in PostgreSQL
 - `step.waitFor(stepId, { eventName, timeout?, schema? })` - Pause and wait for an external event
 - `step.pause(stepId)` - Manual pause; resume with `engine.resumeWorkflow()`
-- `step.waitUntil(stepId, { date })` - Wait until a date (not yet implemented)
+- `step.waitUntil(stepId, { date })` - Wait until a specific date
 
 ### Engine methods
 
@@ -93,6 +95,17 @@ enum StepType { PAUSE = 'pause', RUN = 'run', WAIT_FOR = 'waitFor', WAIT_UNTIL =
 
 - `WorkflowEngineError(message, workflowId?, runId?, cause?)` - Base error
 - `WorkflowRunNotFoundError(runId?, workflowId?)` - Run not found
+
+## Cron Workflows
+
+Workflows can run on a cron schedule via the `cron` option on `workflow()`. Uses pg-boss `schedule()` under the hood.
+
+- `cron` option accepts a string (`'*/15 * * * *'`) or object (`{ expression, timezone? }`)
+- `CronConfig`: `{ expression: string, timezone?: string }`
+- `ScheduleContext`: `{ timestamp: Date, lastTimestamp: Date | undefined, timezone: string }` — available as `schedule` on workflow context for cron-triggered runs. Built at runtime from `run.createdAt` and latest completed run.
+- `WorkflowRun` stores `cron: string | null` and `timezone: string | null` as flat columns (no nested JSON)
+- Cron-triggered runs are identified by `cron !== null` on the `WorkflowRun`
+- Post-start registration: `registerWorkflow()` after `start()` automatically sets up cron schedule
 
 ## AI & Agent Workflows
 

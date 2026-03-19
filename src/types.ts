@@ -25,10 +25,22 @@ export type InferInputParameters<P extends InputParameters> = P extends z.ZodTyp
   ? z.infer<P>
   : never;
 
+export type ScheduleContext = {
+  timestamp: Date;
+  lastTimestamp: Date | undefined;
+  timezone: string;
+};
+
+export type CronConfig = {
+  expression: string;
+  timezone?: string;
+};
+
 export type WorkflowOptions<I extends InputParameters> = {
   timeout?: number;
   retries?: number;
   inputSchema?: I;
+  cron?: string | CronConfig;
 };
 
 export type StepBaseContext = {
@@ -80,6 +92,7 @@ export type WorkflowContext<
   runId: string;
   timeline: Record<string, unknown>;
   logger: WorkflowLogger;
+  schedule?: ScheduleContext;
 };
 
 export type WorkflowDefinition<
@@ -91,6 +104,7 @@ export type WorkflowDefinition<
   inputSchema?: TInput;
   timeout?: number; // milliseconds
   retries?: number;
+  cron?: CronConfig;
   plugins?: WorkflowPlugin[];
 };
 
