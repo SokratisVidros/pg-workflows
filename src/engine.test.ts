@@ -367,6 +367,22 @@ describe('WorkflowEngine', () => {
       });
     });
 
+    it('should start and complete without resourceId', async () => {
+      const run = await engine.startWorkflow({
+        workflowId: 'test-workflow',
+        input: { data: 'no-resource' },
+      });
+
+      expect(run.resourceId).toBeNull();
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id })).status)
+        .toBe(WorkflowStatus.COMPLETED);
+
+      const completed = await engine.getRun({ runId: run.id });
+      expect(completed.output).toEqual({ result: 'no-resource' });
+    });
+
     it('should start workflow with options', async () => {
       const run = await engine.startWorkflow({
         resourceId: 'testResourceId',
@@ -616,6 +632,43 @@ describe('WorkflowEngine', () => {
         totalSteps: 2,
         completedSteps: 2,
       });
+    });
+
+    it('should complete waitFor when triggerEvent omits resourceId for a scoped run', async () => {
+      const waitForWorkflowScoped = workflow(
+        'wait-for-workflow-scoped-trigger',
+        async ({ step }) => {
+          await step.run('step-1', async () => 'result-1');
+          await step.waitFor('step-2', { eventName: 'user-action' });
+          return 'completed';
+        },
+      );
+
+      await engine.registerWorkflow(waitForWorkflowScoped);
+      const scopedResource = 'scoped-tenant-trigger-test';
+      const run = await engine.startWorkflow({
+        resourceId: scopedResource,
+        workflowId: 'wait-for-workflow-scoped-trigger',
+        input: {},
+      });
+
+      await expect
+        .poll(
+          async () => (await engine.getRun({ runId: run.id, resourceId: scopedResource })).status,
+        )
+        .toBe(WorkflowStatus.PAUSED);
+
+      await engine.triggerEvent({
+        runId: run.id,
+        eventName: 'user-action',
+        data: { accepted: true },
+      });
+
+      await expect
+        .poll(
+          async () => (await engine.getRun({ runId: run.id, resourceId: scopedResource })).status,
+        )
+        .toBe(WorkflowStatus.COMPLETED);
     });
 
     it('should handle workflow with pause step', async () => {
