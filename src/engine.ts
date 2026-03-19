@@ -397,9 +397,11 @@ export class WorkflowEngine {
 
     const run = await this.getRun({ runId, resourceId });
 
+    const jobResourceId = resourceId ?? run.resourceId ?? undefined;
+
     const job: WorkflowRunJobParameters = {
       runId: run.id,
-      resourceId,
+      resourceId: jobResourceId,
       workflowId: run.workflowId,
       input: run.input,
       event: {
@@ -501,15 +503,37 @@ export class WorkflowEngine {
     };
   }
 
+  /**
+   * Resolves the resource id used for scoped DB access (getRun/updateRun).
+   * When the job omits resourceId, the run's stored resourceId is used.
+   * When the job includes resourceId, it must match the run's resourceId if the run is scoped;
+   * unscoped runs reject a job-supplied resourceId (authorization).
+   */
+  private resolveScopedResourceId(
+    jobResourceId: string | undefined,
+    run: WorkflowRun,
+  ): string | undefined {
+    const jobResourceProvided =
+      jobResourceId !== undefined && jobResourceId !== null && jobResourceId !== '';
+
+    if (jobResourceProvided) {
+      if (run.resourceId === null) {
+        throw new WorkflowRunNotFoundError(run.id);
+      }
+      if (run.resourceId !== jobResourceId) {
+        throw new WorkflowRunNotFoundError(run.id);
+      }
+      return jobResourceId;
+    }
+
+    return run.resourceId ?? undefined;
+  }
+
   private async handleWorkflowRun([job]: Job<WorkflowRunJobParameters>[]) {
     const { runId, resourceId, workflowId, input, event } = job?.data ?? {};
 
     if (!runId) {
       throw new WorkflowEngineError('Invalid workflow run job, missing runId', workflowId);
-    }
-
-    if (!resourceId) {
-      throw new WorkflowEngineError('Invalid workflow run job, missing resourceId', workflowId);
     }
 
     if (!workflowId) {
@@ -530,7 +554,17 @@ export class WorkflowEngine {
       workflowId,
     });
 
-    let run = await this.getRun({ runId, resourceId });
+    let run = await this.getRun({ runId });
+
+    if (run.workflowId !== workflowId) {
+      throw new WorkflowEngineError(
+        `Workflow run ${runId} does not match job workflowId ${workflowId}`,
+        workflowId,
+        runId,
+      );
+    }
+
+    const scopedResourceId = this.resolveScopedResourceId(resourceId, run);
 
     try {
       if (run.status === WorkflowStatus.CANCELLED) {
@@ -563,7 +597,7 @@ export class WorkflowEngine {
           const skipOutput = waitFor?.skipOutput;
           run = await this.updateRun({
             runId,
-            resourceId,
+            resourceId: scopedResourceId,
             data: {
               status: WorkflowStatus.RUNNING,
               pausedAt: null,
@@ -585,7 +619,7 @@ export class WorkflowEngine {
         } else {
           run = await this.updateRun({
             runId,
-            resourceId,
+            resourceId: scopedResourceId,
             data: {
               status: WorkflowStatus.RUNNING,
               pausedAt: null,
@@ -692,7 +726,7 @@ export class WorkflowEngine {
 
       const result = await workflow.handler(context);
 
-      run = await this.getRun({ runId, resourceId });
+      run = await this.getRun({ runId, resourceId: scopedResourceId });
 
       const isLastParsedStep = run.currentStepId === workflow.steps[workflow.steps.length - 1]?.id;
       const hasPluginSteps = (workflow.plugins?.length ?? 0) > 0;
@@ -704,7 +738,7 @@ export class WorkflowEngine {
         const normalizedResult = result === undefined ? {} : result;
         await this.updateRun({
           runId,
-          resourceId,
+          resourceId: scopedResourceId,
           data: {
             status: WorkflowStatus.COMPLETED,
             output: normalizedResult,
@@ -722,7 +756,7 @@ export class WorkflowEngine {
       if (run.retryCount < run.maxRetries) {
         await this.updateRun({
           runId,
-          resourceId,
+          resourceId: scopedResourceId,
           data: {
             retryCount: run.retryCount + 1,
             jobId: job?.id,
@@ -734,7 +768,7 @@ export class WorkflowEngine {
         // NOTE: Do not use pg-boss retryLimit and retryBackoff so that we can fully control the retry logic from the WorkflowEngine and not PGBoss.
         const pgBossJob: WorkflowRunJobParameters = {
           runId,
-          resourceId,
+          resourceId: scopedResourceId,
           workflowId,
           input,
         };
@@ -749,7 +783,7 @@ export class WorkflowEngine {
       // TODO: Ensure that this code always runs, even if worker is stopped unexpectedly.
       await this.updateRun({
         runId,
-        resourceId,
+        resourceId: scopedResourceId,
         data: {
           status: WorkflowStatus.FAILED,
           error: error instanceof Error ? error.message : String(error),

@@ -16,19 +16,25 @@ let engine: WorkflowEngine;
 
 async function waitForStatus(
   runId: string,
-  resourceId: string,
+  resourceId: string | undefined,
   targetStatuses: string[],
   timeoutMs = POLL_TIMEOUT_MS,
 ) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const progress = await engine.checkProgress({ runId, resourceId });
+    const progress =
+      resourceId !== undefined
+        ? await engine.checkProgress({ runId, resourceId })
+        : await engine.checkProgress({ runId });
     if (targetStatuses.includes(progress.status)) {
       return progress;
     }
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
-  const final = await engine.checkProgress({ runId, resourceId });
+  const final =
+    resourceId !== undefined
+      ? await engine.checkProgress({ runId, resourceId })
+      : await engine.checkProgress({ runId });
   throw new Error(
     `Timed out waiting for status [${targetStatuses}]. Current: ${final.status}, step: ${final.currentStepId}`,
   );
@@ -196,6 +202,20 @@ describe('WorkflowEngine Integration (real PostgreSQL)', () => {
     expect(result.error).toBeNull();
   });
 
+  it('should complete sequential workflow without resourceId', async () => {
+    const run = await engine.startWorkflow({
+      workflowId: 'integration-sequential',
+      input: {},
+    });
+
+    expect(run.resourceId).toBeNull();
+
+    const result = await waitForStatus(run.id, undefined, ['completed']);
+
+    expect(result.status).toBe(WorkflowStatus.COMPLETED);
+    expect(result.completionPercentage).toBe(100);
+  });
+
   it('should validate input with Zod schema', async () => {
     const resourceId = `test-input-${Date.now()}`;
 
@@ -246,6 +266,30 @@ describe('WorkflowEngine Integration (real PostgreSQL)', () => {
     });
 
     // Wait for completion
+    const result = await waitForStatus(run.id, resourceId, ['completed']);
+    expect(result.status).toBe(WorkflowStatus.COMPLETED);
+    expect(result.output).toEqual({
+      setup: { ready: true },
+      approved: true,
+    });
+  });
+
+  it('should resume waitFor when triggerEvent omits resourceId', async () => {
+    const resourceId = `test-event-no-res-${Date.now()}`;
+    const run = await engine.startWorkflow({
+      workflowId: 'integration-wait-for-event',
+      resourceId,
+      input: {},
+    });
+
+    await waitForStatus(run.id, resourceId, ['paused']);
+
+    await engine.triggerEvent({
+      runId: run.id,
+      eventName: 'approval',
+      data: { approved: true },
+    });
+
     const result = await waitForStatus(run.id, resourceId, ['completed']);
     expect(result.status).toBe(WorkflowStatus.COMPLETED);
     expect(result.output).toEqual({
