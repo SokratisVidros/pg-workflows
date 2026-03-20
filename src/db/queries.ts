@@ -331,10 +331,12 @@ export async function getWorkflowRuns(
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
   const actualLimit = Math.min(Math.max(limit, 1), 100) + 1;
 
+  const isBackward = !!endingBefore && !startingAfter;
+
   const query = `
     SELECT * FROM workflow_runs
     ${whereClause}
-    ORDER BY created_at DESC
+    ORDER BY created_at ${isBackward ? 'ASC' : 'DESC'}
     LIMIT $${paramIndex}
   `;
   values.push(actualLimit);
@@ -342,10 +344,18 @@ export async function getWorkflowRuns(
   const result = await db.executeSql(query, values);
   const rows = result.rows;
 
-  const hasMore = rows.length > (limit ?? 20);
-  const rawItems = hasMore ? rows.slice(0, limit) : rows;
+  const hasExtraRow = rows.length > (limit ?? 20);
+  const rawItems = hasExtraRow ? rows.slice(0, limit) : rows;
+
+  if (isBackward) {
+    rawItems.reverse();
+  }
+
   const items = rawItems.map((row) => mapRowToWorkflowRun(row));
-  const hasPrev = !!endingBefore;
+
+  const hasMore = isBackward ? items.length > 0 : hasExtraRow;
+  const hasPrev = isBackward ? hasExtraRow : !!startingAfter && items.length > 0;
+
   const nextCursor = hasMore && items.length > 0 ? (items[items.length - 1]?.id ?? null) : null;
   const prevCursor = hasPrev && items.length > 0 ? (items[0]?.id ?? null) : null;
 

@@ -1487,7 +1487,7 @@ describe('WorkflowEngine', () => {
       expect(page2.items[0]?.id).toBe(runA1.id);
       expect(page2.hasMore).toBe(false);
       expect(page2.nextCursor).toBeNull();
-      expect(page2.hasPrev).toBe(false);
+      expect(page2.hasPrev).toBe(true);
 
       const runningOnly = await engine.getRuns({
         resourceId: 'userA',
@@ -1498,6 +1498,125 @@ describe('WorkflowEngine', () => {
       for (const r of runningOnly.items) {
         expect(r.status).toBe(WorkflowStatus.RUNNING);
       }
+    });
+
+    it('getRuns should navigate forward and backward across multiple pages', async () => {
+      const PAGE_SIZE = 10;
+      const TOTAL_RUNS = 35;
+      const runIds: string[] = [];
+
+      for (let i = 0; i < TOTAL_RUNS; i++) {
+        const run = await engine.startWorkflow({
+          resourceId: 'paginationUser',
+          workflowId: 'test-workflow',
+          input: { data: `run-${i}` },
+        });
+        runIds.push(run.id);
+        await new Promise((r) => setTimeout(r, 2));
+      }
+
+      // runIds[0] is oldest, runIds[34] is newest.
+      // Results are ordered newest-first (DESC), so:
+      //   Page 1: runIds[34..25]  (10 items)
+      //   Page 2: runIds[24..15]  (10 items)
+      //   Page 3: runIds[14..5]   (10 items)
+      //   Page 4: runIds[4..0]    (5 items)
+      const expectedPage1Ids = runIds.slice(25, 35).reverse();
+      const expectedPage2Ids = runIds.slice(15, 25).reverse();
+      const expectedPage3Ids = runIds.slice(5, 15).reverse();
+      const expectedPage4Ids = runIds.slice(0, 5).reverse();
+
+      // --- Forward pagination ---
+
+      // Page 1
+      const page1 = await engine.getRuns({
+        resourceId: 'paginationUser',
+        limit: PAGE_SIZE,
+      });
+      expect(page1.items).toHaveLength(10);
+      expect(page1.items.map((r) => r.id)).toEqual(expectedPage1Ids);
+      expect(page1.hasMore).toBe(true);
+      expect(page1.hasPrev).toBe(false);
+      expect(page1.nextCursor).toBe(expectedPage1Ids[9]);
+      expect(page1.prevCursor).toBeNull();
+
+      // Page 2
+      const page2 = await engine.getRuns({
+        resourceId: 'paginationUser',
+        limit: PAGE_SIZE,
+        startingAfter: page1.nextCursor,
+      });
+      expect(page2.items).toHaveLength(10);
+      expect(page2.items.map((r) => r.id)).toEqual(expectedPage2Ids);
+      expect(page2.hasMore).toBe(true);
+      expect(page2.hasPrev).toBe(true);
+      expect(page2.nextCursor).toBe(expectedPage2Ids[9]);
+      expect(page2.prevCursor).toBe(expectedPage2Ids[0]);
+
+      // Page 3
+      const page3 = await engine.getRuns({
+        resourceId: 'paginationUser',
+        limit: PAGE_SIZE,
+        startingAfter: page2.nextCursor,
+      });
+      expect(page3.items).toHaveLength(10);
+      expect(page3.items.map((r) => r.id)).toEqual(expectedPage3Ids);
+      expect(page3.hasMore).toBe(true);
+      expect(page3.hasPrev).toBe(true);
+      expect(page3.nextCursor).toBe(expectedPage3Ids[9]);
+
+      // Page 4 (last page, partial)
+      const page4 = await engine.getRuns({
+        resourceId: 'paginationUser',
+        limit: PAGE_SIZE,
+        startingAfter: page3.nextCursor,
+      });
+      expect(page4.items).toHaveLength(5);
+      expect(page4.items.map((r) => r.id)).toEqual(expectedPage4Ids);
+      expect(page4.hasMore).toBe(false);
+      expect(page4.hasPrev).toBe(true);
+      expect(page4.nextCursor).toBeNull();
+
+      // --- Backward pagination ---
+
+      // Back to page 3 (endingBefore = first item of page 4)
+      const backPage3 = await engine.getRuns({
+        resourceId: 'paginationUser',
+        limit: PAGE_SIZE,
+        endingBefore: page4.items[0]?.id,
+      });
+      expect(backPage3.items).toHaveLength(10);
+      expect(backPage3.items.map((r) => r.id)).toEqual(expectedPage3Ids);
+      expect(backPage3.hasMore).toBe(true);
+      expect(backPage3.hasPrev).toBe(true);
+      expect(backPage3.nextCursor).toBe(expectedPage3Ids[9]);
+      expect(backPage3.prevCursor).toBe(expectedPage3Ids[0]);
+
+      // Back to page 2 (endingBefore = first item of page 3)
+      const backPage2 = await engine.getRuns({
+        resourceId: 'paginationUser',
+        limit: PAGE_SIZE,
+        endingBefore: backPage3.items[0]?.id,
+      });
+      expect(backPage2.items).toHaveLength(10);
+      expect(backPage2.items.map((r) => r.id)).toEqual(expectedPage2Ids);
+      expect(backPage2.hasMore).toBe(true);
+      expect(backPage2.hasPrev).toBe(true);
+      expect(backPage2.nextCursor).toBe(expectedPage2Ids[9]);
+      expect(backPage2.prevCursor).toBe(expectedPage2Ids[0]);
+
+      // Back to page 1 (endingBefore = first item of page 2)
+      const backPage1 = await engine.getRuns({
+        resourceId: 'paginationUser',
+        limit: PAGE_SIZE,
+        endingBefore: backPage2.items[0]?.id,
+      });
+      expect(backPage1.items).toHaveLength(10);
+      expect(backPage1.items.map((r) => r.id)).toEqual(expectedPage1Ids);
+      expect(backPage1.hasMore).toBe(true);
+      expect(backPage1.hasPrev).toBe(false);
+      expect(backPage1.nextCursor).toBe(expectedPage1Ids[9]);
+      expect(backPage1.prevCursor).toBeNull();
     });
   });
 });
