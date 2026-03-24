@@ -280,6 +280,7 @@ export class WorkflowEngine {
             input,
             maxRetries: options?.retries ?? workflow.retries ?? 0,
             timeoutAt,
+            timeline: undefined,
           },
           _db,
         );
@@ -354,6 +355,72 @@ export class WorkflowEngine {
       data: {},
       options,
     });
+  }
+
+  async fastForwardWorkflow({
+    runId,
+    resourceId,
+    data,
+  }: {
+    runId: string;
+    resourceId?: string;
+    data?: Record<string, unknown>;
+  }): Promise<WorkflowRun> {
+    await this.checkIfHasStarted();
+
+    const run = await this.getRun({ runId, resourceId });
+
+    if (run.status !== WorkflowStatus.PAUSED) {
+      return run;
+    }
+
+    const stepId = run.currentStepId;
+    const waitForStepEntry = run.timeline[`${stepId}-wait-for`];
+    const waitForStep =
+      waitForStepEntry && typeof waitForStepEntry === 'object' && 'waitFor' in waitForStepEntry
+        ? (waitForStepEntry as TimelineWaitForEntry)
+        : null;
+
+    if (!waitForStep) {
+      return run;
+    }
+
+    const { eventName, timeoutEvent, skipOutput } = waitForStep.waitFor;
+
+    // step.pause() — delegate to resumeWorkflow
+    if (eventName === PAUSE_EVENT_NAME) {
+      return this.resumeWorkflow({ runId, resourceId });
+    }
+
+    // step.poll() — write output to timeline first, then trigger resume
+    if (skipOutput && timeoutEvent) {
+      await this.updateRun({
+        runId,
+        resourceId,
+        data: {
+          timeline: merge(run.timeline, {
+            [stepId]: {
+              output: data ?? {},
+              timestamp: new Date(),
+            },
+          }),
+        },
+      });
+
+      return this.triggerEvent({ runId, resourceId, eventName: timeoutEvent });
+    }
+
+    // waitFor steps — trigger the event with data
+    if (eventName) {
+      return this.triggerEvent({ runId, resourceId, eventName, data: data ?? {} });
+    }
+
+    // delay/waitUntil steps — trigger the timeout event
+    if (timeoutEvent) {
+      return this.triggerEvent({ runId, resourceId, eventName: timeoutEvent, data: data ?? {} });
+    }
+
+    return run;
   }
 
   async cancelWorkflow({
@@ -935,6 +1002,48 @@ export class WorkflowEngine {
     const cached = this.getCachedStepEntry(persistedRun.timeline, stepId);
     if (cached?.output !== undefined) {
       return cached.timedOut ? undefined : cached.output;
+    }
+
+    // Fast-forward: resolve immediately instead of pausing
+    const fastForwardConfig = persistedRun.timeline.__fastForward;
+    if (fastForwardConfig && eventName !== PAUSE_EVENT_NAME) {
+      let output: unknown = {};
+
+      if (eventName) {
+        // This is a waitFor step — check for mock data
+        if (
+          typeof fastForwardConfig === 'object' &&
+          fastForwardConfig !== null &&
+          !Array.isArray(fastForwardConfig)
+        ) {
+          const mockData = (fastForwardConfig as Record<string, unknown>)[stepId];
+          if (mockData !== undefined) {
+            output = mockData;
+          }
+        }
+      }
+
+      // Write step output to timeline and continue (no pause, no job scheduling)
+      run = await this.updateRun({
+        runId: run.id,
+        resourceId: run.resourceId ?? undefined,
+        data: {
+          currentStepId: stepId,
+          timeline: merge(run.timeline, {
+            [stepId]: {
+              output,
+              timestamp: new Date(),
+            },
+          }),
+        },
+      });
+
+      this.logger.log(`Step ${stepId} fast-forwarded`, {
+        runId: run.id,
+        workflowId: run.workflowId,
+      });
+
+      return output;
     }
 
     const timeoutEvent = timeoutDate ? `__timeout_${stepId}` : undefined;

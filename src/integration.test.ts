@@ -434,4 +434,34 @@ describe('WorkflowEngine Integration (real PostgreSQL)', () => {
     expect(timeline['step-3']).toBeDefined();
     expect(timeline['step-3'].output).toEqual({ value: 'three', prev: 'two' });
   });
+
+  describe('fastForward', () => {
+    it('should fast-forward a waitFor step with fastForwardWorkflow method', async () => {
+      const resourceId = `test-ff-method-${Date.now()}`;
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'integration-wait-for-event',
+        input: {},
+      });
+
+      // Wait for workflow to pause at waitFor step
+      const paused = await waitForStatus(run.id, resourceId, ['paused']);
+      expect(paused.currentStepId).toBe('wait-for-approval');
+
+      // Fast-forward with mock data
+      await engine.fastForwardWorkflow({
+        runId: run.id,
+        resourceId,
+        data: { approved: true, reviewer: 'ff-test' },
+      });
+
+      // Wait for completion
+      const result = await waitForStatus(run.id, resourceId, ['completed']);
+      expect(result.status).toBe('completed');
+      expect(result.output).toEqual({
+        setup: { ready: true },
+        approved: true,
+      });
+    });
+  });
 });

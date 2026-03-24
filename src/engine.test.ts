@@ -1619,4 +1619,243 @@ describe('WorkflowEngine', () => {
       expect(backPage1.prevCursor).toBeNull();
     });
   });
+
+  describe('fastForwardWorkflow', () => {
+    let engine: WorkflowEngine;
+
+    beforeEach(async () => {
+      engine = new WorkflowEngine({
+        pool: testPool,
+        boss: testBoss,
+      });
+      await engine.start();
+    });
+
+    afterEach(async () => {
+      await engine.stop();
+    });
+
+    it('should fast-forward a waitFor step with provided data', async () => {
+      const ffWorkflow = workflow('ff-method-waitfor', async ({ step }) => {
+        await step.run('step-1', async () => 'before');
+        const eventData = await step.waitFor('wait-step', { eventName: 'approval' });
+        await step.run('step-2', async () => ({ prev: eventData }));
+        return 'done';
+      });
+
+      await engine.registerWorkflow(ffWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'ff-method-waitfor',
+        input: {},
+      });
+
+      // Wait for workflow to pause at waitFor step
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      // Fast-forward with mock data
+      await engine.fastForwardWorkflow({
+        runId: run.id,
+        resourceId,
+        data: { approved: true },
+      });
+
+      // Workflow should complete with the mock data flowing through
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }))
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: 'done',
+          timeline: {
+            'wait-step': { output: { approved: true } },
+            'step-2': { output: { prev: { approved: true } } },
+          },
+        });
+    });
+
+    it('should fast-forward a delay step', async () => {
+      const ffWorkflow = workflow('ff-method-delay', async ({ step }) => {
+        await step.run('step-1', async () => 'before');
+        await step.delay('wait-step', '1h');
+        await step.run('step-2', async () => 'after');
+        return 'done';
+      });
+
+      await engine.registerWorkflow(ffWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'ff-method-delay',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      await engine.fastForwardWorkflow({ runId: run.id, resourceId });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }))
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: 'done',
+        });
+    });
+
+    it('should fast-forward a waitUntil step', async () => {
+      const ffWorkflow = workflow('ff-method-waituntil', async ({ step }) => {
+        await step.run('step-1', async () => 'before');
+        await step.waitUntil('wait-step', new Date(Date.now() + 3_600_000));
+        await step.run('step-2', async () => 'after');
+        return 'done';
+      });
+
+      await engine.registerWorkflow(ffWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'ff-method-waituntil',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      await engine.fastForwardWorkflow({ runId: run.id, resourceId });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }))
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: 'done',
+        });
+    });
+
+    it('should fast-forward a poll step with mock data', async () => {
+      const ffWorkflow = workflow('ff-method-poll', async ({ step }) => {
+        const result = await step.poll(
+          'poll-step',
+          async () => {
+            return false;
+          },
+          { interval: '30s' },
+        );
+        return result;
+      });
+
+      await engine.registerWorkflow(ffWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'ff-method-poll',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      await engine.fastForwardWorkflow({
+        runId: run.id,
+        resourceId,
+        data: { value: 42 },
+      });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 5000 })
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: { timedOut: false, data: { value: 42 } },
+          timeline: {
+            'poll-step': { output: { value: 42 } },
+          },
+        });
+    });
+
+    it('should resume a step.pause() step', async () => {
+      const ffWorkflow = workflow('ff-method-pause', async ({ step }) => {
+        await step.run('step-1', async () => 'before');
+        await step.pause('manual-pause');
+        await step.run('step-2', async () => 'after');
+        return 'done';
+      });
+
+      await engine.registerWorkflow(ffWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'ff-method-pause',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      await engine.fastForwardWorkflow({ runId: run.id, resourceId });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }))
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: 'done',
+        });
+    });
+
+    it('should noop when workflow is not paused', async () => {
+      const ffWorkflow = workflow('ff-method-noop', async ({ step }) => {
+        await step.run('step-1', async () => 'result');
+        return 'done';
+      });
+
+      await engine.registerWorkflow(ffWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'ff-method-noop',
+        input: {},
+      });
+
+      // Wait for completion
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.COMPLETED);
+
+      // Calling fastForward on a completed workflow should noop
+      const result = await engine.fastForwardWorkflow({ runId: run.id, resourceId });
+      expect(result.status).toBe(WorkflowStatus.COMPLETED);
+    });
+
+    it('should default data to {} when not provided', async () => {
+      const ffWorkflow = workflow('ff-method-default-data', async ({ step }) => {
+        await step.run('step-1', async () => 'before');
+        const eventData = await step.waitFor('wait-step', { eventName: 'approval' });
+        await step.run('step-2', async () => ({ prev: eventData }));
+        return 'done';
+      });
+
+      await engine.registerWorkflow(ffWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'ff-method-default-data',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      // Call without data parameter
+      await engine.fastForwardWorkflow({ runId: run.id, resourceId });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }))
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          timeline: {
+            'wait-step': { output: {} },
+            'step-2': { output: { prev: {} } },
+          },
+        });
+    });
+  });
 });

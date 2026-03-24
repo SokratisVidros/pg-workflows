@@ -64,6 +64,7 @@ export async function insertWorkflowRun(
     input,
     maxRetries,
     timeoutAt,
+    timeline,
   }: {
     resourceId?: string;
     workflowId: string;
@@ -72,6 +73,7 @@ export async function insertWorkflowRun(
     input: unknown;
     maxRetries: number;
     timeoutAt: Date | null;
+    timeline?: Record<string, unknown>;
   },
   db: Db,
 ): Promise<WorkflowRun> {
@@ -80,13 +82,13 @@ export async function insertWorkflowRun(
 
   const result = await db.executeSql(
     `INSERT INTO workflow_runs (
-      id, 
-      resource_id, 
-      workflow_id, 
-      current_step_id, 
-      status, 
-      input, 
-      max_retries, 
+      id,
+      resource_id,
+      workflow_id,
+      current_step_id,
+      status,
+      input,
+      max_retries,
       timeout_at,
       created_at,
       updated_at,
@@ -106,7 +108,7 @@ export async function insertWorkflowRun(
       timeoutAt,
       now,
       now,
-      '{}',
+      JSON.stringify(timeline ?? {}),
       0,
     ],
   );
