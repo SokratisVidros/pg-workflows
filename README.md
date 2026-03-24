@@ -441,6 +441,41 @@ await engine.resumeWorkflow({
 });
 ```
 
+### Fast-Forward
+
+Skip the current waiting step and immediately resume execution. `fastForwardWorkflow` inspects the paused step and dispatches the right internal action — `triggerEvent` for `waitFor`, timeout triggers for `delay`/`waitUntil`, resume for `pause`, and direct output writes for `poll`. If the workflow is not paused, it's a no-op.
+
+This is useful for testing, debugging, or manually advancing workflows past long waits.
+
+```typescript
+// Fast-forward a waitFor step, providing mock event data
+await engine.fastForwardWorkflow({
+  runId: run.id,
+  resourceId: 'user-123',
+  data: { approved: true, reviewer: 'admin' },
+});
+
+// Fast-forward a delay/waitUntil step (no data needed)
+await engine.fastForwardWorkflow({
+  runId: run.id,
+  resourceId: 'user-123',
+});
+
+// Fast-forward a poll step with mock result data
+await engine.fastForwardWorkflow({
+  runId: run.id,
+  resourceId: 'user-123',
+  data: { paymentId: 'pay_123', status: 'completed' },
+});
+```
+
+| Paused step type | Behavior |
+|------------------|----------|
+| `step.waitFor()` | Triggers the event with `data` (defaults to `{}`) |
+| `step.delay()` / `step.waitUntil()` | Triggers the timeout event to skip the wait |
+| `step.poll()` | Writes `data` as the poll result and triggers resolution |
+| `step.pause()` | Delegates to `resumeWorkflow()` |
+
 ---
 
 ## Examples
@@ -588,6 +623,7 @@ When `boss` is omitted, pg-boss is created automatically with an isolated schema
 | `resumeWorkflow({ runId, resourceId?, options? })` | Resume a paused workflow |
 | `cancelWorkflow({ runId, resourceId? })` | Cancel a workflow |
 | `triggerEvent({ runId, resourceId?, eventName, data?, options? })` | Send an event to a workflow |
+| `fastForwardWorkflow({ runId, resourceId?, data? })` | Skip the current waiting step and resume execution |
 | `getRun({ runId, resourceId? })` | Get workflow run details |
 | `checkProgress({ runId, resourceId? })` | Get workflow progress |
 | `getRuns(filters)` | List workflow runs with pagination |
