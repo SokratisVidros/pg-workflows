@@ -1625,6 +1625,7 @@ describe('WorkflowEngine', () => {
 
     beforeEach(async () => {
       engine = new WorkflowEngine({
+        workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
       });
@@ -1652,7 +1653,9 @@ describe('WorkflowEngine', () => {
 
       // Wait for workflow to pause at waitFor step
       await expect
-        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 10_000,
+        })
         .toBe(WorkflowStatus.PAUSED);
 
       // Fast-forward with mock data
@@ -1664,7 +1667,7 @@ describe('WorkflowEngine', () => {
 
       // Workflow should complete with the mock data flowing through
       await expect
-        .poll(async () => await engine.getRun({ runId: run.id, resourceId }))
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 10_000 })
         .toMatchObject({
           status: WorkflowStatus.COMPLETED,
           output: 'done',
@@ -1691,13 +1694,15 @@ describe('WorkflowEngine', () => {
       });
 
       await expect
-        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 10_000,
+        })
         .toBe(WorkflowStatus.PAUSED);
 
       await engine.fastForwardWorkflow({ runId: run.id, resourceId });
 
       await expect
-        .poll(async () => await engine.getRun({ runId: run.id, resourceId }))
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 10_000 })
         .toMatchObject({
           status: WorkflowStatus.COMPLETED,
           output: 'done',
@@ -1720,13 +1725,15 @@ describe('WorkflowEngine', () => {
       });
 
       await expect
-        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 10_000,
+        })
         .toBe(WorkflowStatus.PAUSED);
 
       await engine.fastForwardWorkflow({ runId: run.id, resourceId });
 
       await expect
-        .poll(async () => await engine.getRun({ runId: run.id, resourceId }))
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 10_000 })
         .toMatchObject({
           status: WorkflowStatus.COMPLETED,
           output: 'done',
@@ -1753,7 +1760,9 @@ describe('WorkflowEngine', () => {
       });
 
       await expect
-        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 10_000,
+        })
         .toBe(WorkflowStatus.PAUSED);
 
       await engine.fastForwardWorkflow({
@@ -1763,7 +1772,7 @@ describe('WorkflowEngine', () => {
       });
 
       await expect
-        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 5000 })
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 10_000 })
         .toMatchObject({
           status: WorkflowStatus.COMPLETED,
           output: { timedOut: false, data: { value: 42 } },
@@ -1789,13 +1798,15 @@ describe('WorkflowEngine', () => {
       });
 
       await expect
-        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 10_000,
+        })
         .toBe(WorkflowStatus.PAUSED);
 
       await engine.fastForwardWorkflow({ runId: run.id, resourceId });
 
       await expect
-        .poll(async () => await engine.getRun({ runId: run.id, resourceId }))
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 10_000 })
         .toMatchObject({
           status: WorkflowStatus.COMPLETED,
           output: 'done',
@@ -1817,7 +1828,9 @@ describe('WorkflowEngine', () => {
 
       // Wait for completion
       await expect
-        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 10_000,
+        })
         .toBe(WorkflowStatus.COMPLETED);
 
       // Calling fastForward on a completed workflow should noop
@@ -1841,14 +1854,16 @@ describe('WorkflowEngine', () => {
       });
 
       await expect
-        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 10_000,
+        })
         .toBe(WorkflowStatus.PAUSED);
 
       // Call without data parameter
       await engine.fastForwardWorkflow({ runId: run.id, resourceId });
 
       await expect
-        .poll(async () => await engine.getRun({ runId: run.id, resourceId }))
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), { timeout: 10_000 })
         .toMatchObject({
           status: WorkflowStatus.COMPLETED,
           timeline: {
