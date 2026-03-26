@@ -280,7 +280,6 @@ export class WorkflowEngine {
             input,
             maxRetries: options?.retries ?? workflow.retries ?? 0,
             timeoutAt,
-            timeline: undefined,
           },
           _db,
         );
@@ -375,11 +374,7 @@ export class WorkflowEngine {
     }
 
     const stepId = run.currentStepId;
-    const waitForStepEntry = run.timeline[`${stepId}-wait-for`];
-    const waitForStep =
-      waitForStepEntry && typeof waitForStepEntry === 'object' && 'waitFor' in waitForStepEntry
-        ? (waitForStepEntry as TimelineWaitForEntry)
-        : null;
+    const waitForStep = this.getWaitForStepEntry(run.timeline, stepId);
 
     if (!waitForStep) {
       return run;
@@ -644,11 +639,7 @@ export class WorkflowEngine {
       }
 
       if (run.status === WorkflowStatus.PAUSED) {
-        const waitForStepEntry = run.timeline[`${run.currentStepId}-wait-for`];
-        const waitForStep =
-          waitForStepEntry && typeof waitForStepEntry === 'object' && 'waitFor' in waitForStepEntry
-            ? (waitForStepEntry as TimelineWaitForEntry)
-            : null;
+        const waitForStep = this.getWaitForStepEntry(run.timeline, run.currentStepId);
         const currentStep = this.getCachedStepEntry(run.timeline, run.currentStepId);
         const waitFor = waitForStep?.waitFor;
         const hasCurrentStepOutput = currentStep?.output !== undefined;
@@ -872,6 +863,16 @@ export class WorkflowEngine {
       : null;
   }
 
+  private getWaitForStepEntry(
+    timeline: Record<string, unknown>,
+    stepId: string,
+  ): TimelineWaitForEntry | null {
+    const entry = timeline[`${stepId}-wait-for`];
+    return entry && typeof entry === 'object' && 'waitFor' in entry
+      ? (entry as TimelineWaitForEntry)
+      : null;
+  }
+
   private async runStep({
     stepId,
     run,
@@ -1002,48 +1003,6 @@ export class WorkflowEngine {
     const cached = this.getCachedStepEntry(persistedRun.timeline, stepId);
     if (cached?.output !== undefined) {
       return cached.timedOut ? undefined : cached.output;
-    }
-
-    // Fast-forward: resolve immediately instead of pausing
-    const fastForwardConfig = persistedRun.timeline.__fastForward;
-    if (fastForwardConfig && eventName !== PAUSE_EVENT_NAME) {
-      let output: unknown = {};
-
-      if (eventName) {
-        // This is a waitFor step — check for mock data
-        if (
-          typeof fastForwardConfig === 'object' &&
-          fastForwardConfig !== null &&
-          !Array.isArray(fastForwardConfig)
-        ) {
-          const mockData = (fastForwardConfig as Record<string, unknown>)[stepId];
-          if (mockData !== undefined) {
-            output = mockData;
-          }
-        }
-      }
-
-      // Write step output to timeline and continue (no pause, no job scheduling)
-      run = await this.updateRun({
-        runId: run.id,
-        resourceId: run.resourceId ?? undefined,
-        data: {
-          currentStepId: stepId,
-          timeline: merge(run.timeline, {
-            [stepId]: {
-              output,
-              timestamp: new Date(),
-            },
-          }),
-        },
-      });
-
-      this.logger.log(`Step ${stepId} fast-forwarded`, {
-        runId: run.id,
-        workflowId: run.workflowId,
-      });
-
-      return output;
     }
 
     const timeoutEvent = timeoutDate ? `__timeout_${stepId}` : undefined;

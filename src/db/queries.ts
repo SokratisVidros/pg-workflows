@@ -64,7 +64,6 @@ export async function insertWorkflowRun(
     input,
     maxRetries,
     timeoutAt,
-    timeline,
   }: {
     resourceId?: string;
     workflowId: string;
@@ -73,7 +72,6 @@ export async function insertWorkflowRun(
     input: unknown;
     maxRetries: number;
     timeoutAt: Date | null;
-    timeline?: Record<string, unknown>;
   },
   db: Db,
 ): Promise<WorkflowRun> {
@@ -108,7 +106,7 @@ export async function insertWorkflowRun(
       timeoutAt,
       now,
       now,
-      JSON.stringify(timeline ?? {}),
+      '{}',
       0,
     ],
   );
