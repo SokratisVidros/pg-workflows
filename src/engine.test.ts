@@ -476,6 +476,38 @@ describe('WorkflowEngine', () => {
       expect(pausedRun.status).toBe(WorkflowStatus.PAUSED);
       expect(pausedRun.pausedAt).toBeDefined();
     });
+
+    it('should reject pausing a completed workflow', async () => {
+      const run = await engine.startWorkflow({
+        resourceId: 'testResourceId',
+        workflowId: 'test-workflow',
+        input: { data: '42' },
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 3000,
+        })
+        .toBe(WorkflowStatus.COMPLETED);
+
+      await expect(engine.pauseWorkflow({ runId: run.id, resourceId })).rejects.toThrow(
+        WorkflowEngineError,
+      );
+    });
+
+    it('should reject pausing a cancelled workflow', async () => {
+      const run = await engine.startWorkflow({
+        resourceId: 'testResourceId',
+        workflowId: 'test-workflow',
+        input: { data: '42' },
+      });
+
+      await engine.cancelWorkflow({ runId: run.id, resourceId });
+
+      await expect(engine.pauseWorkflow({ runId: run.id, resourceId })).rejects.toThrow(
+        WorkflowEngineError,
+      );
+    });
   });
 
   describe('resumeWorkflow(runId)', () => {
@@ -518,6 +550,19 @@ describe('WorkflowEngine', () => {
         })
         .toBe(WorkflowStatus.COMPLETED);
     });
+
+    it('should reject resuming a running workflow', async () => {
+      const run = await engine.startWorkflow({
+        resourceId: 'testResourceId',
+        workflowId: 'test-workflow',
+        input: { data: '42' },
+      });
+      expect(run.status).toBe(WorkflowStatus.RUNNING);
+
+      await expect(engine.resumeWorkflow({ runId: run.id, resourceId })).rejects.toThrow(
+        WorkflowEngineError,
+      );
+    });
   });
 
   describe('cancelWorkflow(runId)', () => {
@@ -551,6 +596,47 @@ describe('WorkflowEngine', () => {
         resourceId,
       });
       expect(cancelledRun.status).toBe(WorkflowStatus.CANCELLED);
+    });
+
+    it('should reject cancelling an already cancelled workflow', async () => {
+      const run = await engine.startWorkflow({
+        resourceId: 'testResourceId',
+        workflowId: 'test-workflow',
+        input: { data: '42' },
+      });
+
+      await engine.cancelWorkflow({ runId: run.id, resourceId });
+
+      await expect(engine.cancelWorkflow({ runId: run.id, resourceId })).rejects.toThrow(
+        WorkflowEngineError,
+      );
+    });
+
+    it('should reject cancelling a completed workflow', async () => {
+      const engine2 = new WorkflowEngine({
+        workflows: [testWorkflow],
+        pool: testPool,
+        boss: testBoss,
+      });
+      await engine2.start();
+
+      const run = await engine2.startWorkflow({
+        resourceId: 'testResourceId',
+        workflowId: 'test-workflow',
+        input: { data: '42' },
+      });
+
+      await expect
+        .poll(async () => (await engine2.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 3000,
+        })
+        .toBe(WorkflowStatus.COMPLETED);
+
+      await expect(engine2.cancelWorkflow({ runId: run.id, resourceId })).rejects.toThrow(
+        WorkflowEngineError,
+      );
+
+      await engine2.stop();
     });
   });
 

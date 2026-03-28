@@ -160,17 +160,19 @@ export async function updateWorkflowRun(
     runId,
     resourceId,
     data,
+    expectedStatuses,
   }: {
     runId: string;
     resourceId?: string;
     data: Partial<WorkflowRun>;
+    expectedStatuses?: string[];
   },
   db: Db,
 ): Promise<WorkflowRun | null> {
   const now = new Date();
 
   const updates: string[] = ['updated_at = $1'];
-  const values: (string | number | Date | null)[] = [now];
+  const values: (string | number | Date | null | string[])[] = [now];
   let paramIndex = 2;
 
   if (data.status !== undefined) {
@@ -224,13 +226,26 @@ export async function updateWorkflowRun(
     paramIndex++;
   }
 
-  const whereClause = resourceId
-    ? `WHERE id = $${paramIndex} AND resource_id = $${paramIndex + 1}`
-    : `WHERE id = $${paramIndex}`;
-
   values.push(runId);
+  const idParam = paramIndex;
+  paramIndex++;
+
   if (resourceId) {
     values.push(resourceId);
+    paramIndex++;
+  }
+
+  if (expectedStatuses && expectedStatuses.length > 0) {
+    values.push(expectedStatuses);
+    paramIndex++;
+  }
+
+  let whereClause = resourceId
+    ? `WHERE id = $${idParam} AND resource_id = $${idParam + 1}`
+    : `WHERE id = $${idParam}`;
+
+  if (expectedStatuses && expectedStatuses.length > 0) {
+    whereClause += ` AND status = ANY($${paramIndex - 1})`;
   }
 
   const query = `
@@ -310,18 +325,22 @@ export async function getWorkflowRuns(
       );
     }
 
-    if (startingAfter && cursorMap.has(startingAfter)) {
-      conditions.push(`created_at < $${paramIndex}`);
+    if (startingAfter) {
       const cursor = cursorMap.get(startingAfter);
-      if (cursor) values.push(cursor);
-      paramIndex++;
+      if (cursor) {
+        conditions.push(`created_at < $${paramIndex}`);
+        values.push(cursor);
+        paramIndex++;
+      }
     }
 
-    if (endingBefore && cursorMap.has(endingBefore)) {
-      conditions.push(`created_at > $${paramIndex}`);
+    if (endingBefore) {
       const cursor = cursorMap.get(endingBefore);
-      if (cursor) values.push(cursor);
-      paramIndex++;
+      if (cursor) {
+        conditions.push(`created_at > $${paramIndex}`);
+        values.push(cursor);
+        paramIndex++;
+      }
     }
   }
 

@@ -318,15 +318,6 @@ export class WorkflowEngine {
   }): Promise<WorkflowRun> {
     await this.checkIfHasStarted();
 
-    const current = await this.getRun({ runId, resourceId });
-    if (current.status !== WorkflowStatus.RUNNING && current.status !== WorkflowStatus.PENDING) {
-      throw new WorkflowEngineError(
-        `Cannot pause workflow run in '${current.status}' status, must be 'running' or 'pending'`,
-        current.workflowId,
-        runId,
-      );
-    }
-
     // TODO: Pause all running steps immediately
     const run = await this.updateRun({
       runId,
@@ -335,6 +326,7 @@ export class WorkflowEngine {
         status: WorkflowStatus.PAUSED,
         pausedAt: new Date(),
       },
+      expectedStatuses: [WorkflowStatus.RUNNING, WorkflowStatus.PENDING],
     });
 
     this.logger.log('Paused workflow run', {
@@ -455,26 +447,13 @@ export class WorkflowEngine {
   }): Promise<WorkflowRun> {
     await this.checkIfHasStarted();
 
-    const current = await this.getRun({ runId, resourceId });
-    const terminalStatuses = [
-      WorkflowStatus.COMPLETED,
-      WorkflowStatus.FAILED,
-      WorkflowStatus.CANCELLED,
-    ];
-    if (terminalStatuses.includes(current.status as WorkflowStatus)) {
-      throw new WorkflowEngineError(
-        `Cannot cancel workflow run in '${current.status}' status`,
-        current.workflowId,
-        runId,
-      );
-    }
-
     const run = await this.updateRun({
       runId,
       resourceId,
       data: {
         status: WorkflowStatus.CANCELLED,
       },
+      expectedStatuses: [WorkflowStatus.PENDING, WorkflowStatus.RUNNING, WorkflowStatus.PAUSED],
     });
 
     this.logger.log(`cancelled workflow run with id ${runId}`);
@@ -540,16 +519,31 @@ export class WorkflowEngine {
       runId,
       resourceId,
       data,
+      expectedStatuses,
     }: {
       runId: string;
       resourceId?: string;
       data: Partial<WorkflowRun>;
+      expectedStatuses?: string[];
     },
     { db }: { db?: Db } = {},
   ): Promise<WorkflowRun> {
-    const run = await updateWorkflowRun({ runId, resourceId, data }, db ?? this.db);
+    const run = await updateWorkflowRun(
+      { runId, resourceId, data, expectedStatuses },
+      db ?? this.db,
+    );
 
     if (!run) {
+      if (expectedStatuses) {
+        const current = await getWorkflowRun({ runId, resourceId }, { db: db ?? this.db });
+        if (current) {
+          throw new WorkflowEngineError(
+            `Cannot update workflow run in '${current.status}' status, expected: ${expectedStatuses.join(', ')}`,
+            current.workflowId,
+            runId,
+          );
+        }
+      }
       throw new WorkflowRunNotFoundError(runId);
     }
 
