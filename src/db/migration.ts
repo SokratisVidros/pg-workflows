@@ -41,22 +41,27 @@ export async function runMigrations(db: Db): Promise<void> {
 
     await db.executeSql(
       `
-      CREATE INDEX workflow_runs_workflow_id_idx ON workflow_runs USING btree (workflow_id);
-    `,
-      [],
-    );
-
-    await db.executeSql(
-      `
       CREATE INDEX workflow_runs_created_at_idx ON workflow_runs USING btree (created_at);
+      CREATE INDEX workflow_runs_resource_id_created_at_idx ON workflow_runs USING btree (resource_id, created_at DESC);
+      CREATE INDEX workflow_runs_status_created_at_idx ON workflow_runs USING btree (status, created_at DESC);
+      CREATE INDEX workflow_runs_workflow_id_created_at_idx ON workflow_runs USING btree (workflow_id, created_at DESC);
+      CREATE INDEX workflow_runs_resource_id_workflow_id_created_at_idx ON workflow_runs USING btree (resource_id, workflow_id, created_at DESC);
     `,
       [],
     );
-
+  } else {
+    // Migrate indexes for existing tables: replace old single-column indexes
+    // with composite indexes that better support pagination queries.
     await db.executeSql(
       `
-      CREATE INDEX workflow_runs_resource_id_idx ON workflow_runs USING btree (resource_id);
-    `,
+      DROP INDEX IF EXISTS workflow_runs_workflow_id_idx;
+      DROP INDEX IF EXISTS workflow_runs_resource_id_idx;
+      CREATE INDEX IF NOT EXISTS workflow_runs_created_at_idx ON workflow_runs USING btree (created_at);
+      CREATE INDEX IF NOT EXISTS workflow_runs_resource_id_created_at_idx ON workflow_runs USING btree (resource_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS workflow_runs_status_created_at_idx ON workflow_runs USING btree (status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS workflow_runs_workflow_id_created_at_idx ON workflow_runs USING btree (workflow_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS workflow_runs_resource_id_workflow_id_created_at_idx ON workflow_runs USING btree (resource_id, workflow_id, created_at DESC);
+      `,
       [],
     );
   }

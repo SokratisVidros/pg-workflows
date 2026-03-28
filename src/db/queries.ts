@@ -64,7 +64,6 @@ export async function insertWorkflowRun(
     input,
     maxRetries,
     timeoutAt,
-    timeline,
   }: {
     resourceId?: string;
     workflowId: string;
@@ -73,7 +72,6 @@ export async function insertWorkflowRun(
     input: unknown;
     maxRetries: number;
     timeoutAt: Date | null;
-    timeline?: Record<string, unknown>;
   },
   db: Db,
 ): Promise<WorkflowRun> {
@@ -108,7 +106,7 @@ export async function insertWorkflowRun(
       timeoutAt,
       now,
       now,
-      JSON.stringify(timeline ?? {}),
+      '{}',
       0,
     ],
   );
@@ -162,17 +160,19 @@ export async function updateWorkflowRun(
     runId,
     resourceId,
     data,
+    expectedStatuses,
   }: {
     runId: string;
     resourceId?: string;
     data: Partial<WorkflowRun>;
+    expectedStatuses?: string[];
   },
   db: Db,
 ): Promise<WorkflowRun | null> {
   const now = new Date();
 
   const updates: string[] = ['updated_at = $1'];
-  const values: (string | number | Date | null)[] = [now];
+  const values: (string | number | Date | null | string[])[] = [now];
   let paramIndex = 2;
 
   if (data.status !== undefined) {
@@ -226,13 +226,26 @@ export async function updateWorkflowRun(
     paramIndex++;
   }
 
-  const whereClause = resourceId
-    ? `WHERE id = $${paramIndex} AND resource_id = $${paramIndex + 1}`
-    : `WHERE id = $${paramIndex}`;
-
   values.push(runId);
+  const idParam = paramIndex;
+  paramIndex++;
+
   if (resourceId) {
     values.push(resourceId);
+    paramIndex++;
+  }
+
+  if (expectedStatuses && expectedStatuses.length > 0) {
+    values.push(expectedStatuses);
+    paramIndex++;
+  }
+
+  let whereClause = resourceId
+    ? `WHERE id = $${idParam} AND resource_id = $${idParam + 1}`
+    : `WHERE id = $${idParam}`;
+
+  if (expectedStatuses && expectedStatuses.length > 0) {
+    whereClause += ` AND status = ANY($${paramIndex - 1})`;
   }
 
   const query = `
@@ -298,35 +311,36 @@ export async function getWorkflowRuns(
     paramIndex++;
   }
 
-  if (startingAfter) {
+  const cursorIds = [startingAfter, endingBefore].filter(Boolean) as string[];
+  if (cursorIds.length > 0) {
     const cursorResult = await db.executeSql(
-      'SELECT created_at FROM workflow_runs WHERE id = $1 LIMIT 1',
-      [startingAfter],
+      'SELECT id, created_at FROM workflow_runs WHERE id = ANY($1)',
+      [cursorIds],
     );
-    if (cursorResult.rows[0]?.created_at) {
-      conditions.push(`created_at < $${paramIndex}`);
-      values.push(
-        typeof cursorResult.rows[0].created_at === 'string'
-          ? new Date(cursorResult.rows[0].created_at)
-          : cursorResult.rows[0].created_at,
+    const cursorMap = new Map<string, Date>();
+    for (const row of cursorResult.rows) {
+      cursorMap.set(
+        row.id,
+        typeof row.created_at === 'string' ? new Date(row.created_at) : row.created_at,
       );
-      paramIndex++;
     }
-  }
 
-  if (endingBefore) {
-    const cursorResult = await db.executeSql(
-      'SELECT created_at FROM workflow_runs WHERE id = $1 LIMIT 1',
-      [endingBefore],
-    );
-    if (cursorResult.rows[0]?.created_at) {
-      conditions.push(`created_at > $${paramIndex}`);
-      values.push(
-        typeof cursorResult.rows[0].created_at === 'string'
-          ? new Date(cursorResult.rows[0].created_at)
-          : cursorResult.rows[0].created_at,
-      );
-      paramIndex++;
+    if (startingAfter) {
+      const cursor = cursorMap.get(startingAfter);
+      if (cursor) {
+        conditions.push(`created_at < $${paramIndex}`);
+        values.push(cursor);
+        paramIndex++;
+      }
+    }
+
+    if (endingBefore) {
+      const cursor = cursorMap.get(endingBefore);
+      if (cursor) {
+        conditions.push(`created_at > $${paramIndex}`);
+        values.push(cursor);
+        paramIndex++;
+      }
     }
   }
 

@@ -280,7 +280,6 @@ export class WorkflowEngine {
             input,
             maxRetries: options?.retries ?? workflow.retries ?? 0,
             timeoutAt,
-            timeline: undefined,
           },
           _db,
         );
@@ -327,6 +326,7 @@ export class WorkflowEngine {
         status: WorkflowStatus.PAUSED,
         pausedAt: new Date(),
       },
+      expectedStatuses: [WorkflowStatus.RUNNING, WorkflowStatus.PENDING],
     });
 
     this.logger.log('Paused workflow run', {
@@ -347,6 +347,15 @@ export class WorkflowEngine {
     options?: { expireInSeconds?: number };
   }): Promise<WorkflowRun> {
     await this.checkIfHasStarted();
+
+    const current = await this.getRun({ runId, resourceId });
+    if (current.status !== WorkflowStatus.PAUSED) {
+      throw new WorkflowEngineError(
+        `Cannot resume workflow run in '${current.status}' status, must be 'paused'`,
+        current.workflowId,
+        runId,
+      );
+    }
 
     return this.triggerEvent({
       runId,
@@ -375,11 +384,7 @@ export class WorkflowEngine {
     }
 
     const stepId = run.currentStepId;
-    const waitForStepEntry = run.timeline[`${stepId}-wait-for`];
-    const waitForStep =
-      waitForStepEntry && typeof waitForStepEntry === 'object' && 'waitFor' in waitForStepEntry
-        ? (waitForStepEntry as TimelineWaitForEntry)
-        : null;
+    const waitForStep = this.getWaitForStepEntry(run.timeline, stepId);
 
     if (!waitForStep) {
       return run;
@@ -394,18 +399,28 @@ export class WorkflowEngine {
 
     // step.poll() — write output to timeline first, then trigger resume
     if (skipOutput && timeoutEvent) {
-      await this.updateRun({
-        runId,
-        resourceId,
-        data: {
-          timeline: merge(run.timeline, {
-            [stepId]: {
-              output: data ?? {},
-              timestamp: new Date(),
+      await withPostgresTransaction(
+        this.db,
+        async (db) => {
+          const freshRun = await this.getRun({ runId, resourceId }, { exclusiveLock: true, db });
+          return this.updateRun(
+            {
+              runId,
+              resourceId,
+              data: {
+                timeline: merge(freshRun.timeline, {
+                  [stepId]: {
+                    output: data ?? {},
+                    timestamp: new Date(),
+                  },
+                }),
+              },
             },
-          }),
+            { db },
+          );
         },
-      });
+        this.pool,
+      );
 
       return this.triggerEvent({ runId, resourceId, eventName: timeoutEvent });
     }
@@ -438,6 +453,7 @@ export class WorkflowEngine {
       data: {
         status: WorkflowStatus.CANCELLED,
       },
+      expectedStatuses: [WorkflowStatus.PENDING, WorkflowStatus.RUNNING, WorkflowStatus.PAUSED],
     });
 
     this.logger.log(`cancelled workflow run with id ${runId}`);
@@ -503,16 +519,31 @@ export class WorkflowEngine {
       runId,
       resourceId,
       data,
+      expectedStatuses,
     }: {
       runId: string;
       resourceId?: string;
       data: Partial<WorkflowRun>;
+      expectedStatuses?: string[];
     },
     { db }: { db?: Db } = {},
   ): Promise<WorkflowRun> {
-    const run = await updateWorkflowRun({ runId, resourceId, data }, db ?? this.db);
+    const run = await updateWorkflowRun(
+      { runId, resourceId, data, expectedStatuses },
+      db ?? this.db,
+    );
 
     if (!run) {
+      if (expectedStatuses) {
+        const current = await getWorkflowRun({ runId, resourceId }, { db: db ?? this.db });
+        if (current) {
+          throw new WorkflowEngineError(
+            `Cannot update workflow run in '${current.status}' status, expected: ${expectedStatuses.join(', ')}`,
+            current.workflowId,
+            runId,
+          );
+        }
+      }
       throw new WorkflowRunNotFoundError(runId);
     }
 
@@ -644,57 +675,80 @@ export class WorkflowEngine {
       }
 
       if (run.status === WorkflowStatus.PAUSED) {
-        const waitForStepEntry = run.timeline[`${run.currentStepId}-wait-for`];
-        const waitForStep =
-          waitForStepEntry && typeof waitForStepEntry === 'object' && 'waitFor' in waitForStepEntry
-            ? (waitForStepEntry as TimelineWaitForEntry)
-            : null;
-        const currentStep = this.getCachedStepEntry(run.timeline, run.currentStepId);
-        const waitFor = waitForStep?.waitFor;
-        const hasCurrentStepOutput = currentStep?.output !== undefined;
+        run = await withPostgresTransaction(
+          this.db,
+          async (db) => {
+            const lockedRun = await this.getRun(
+              { runId, resourceId: scopedResourceId },
+              { exclusiveLock: true, db },
+            );
 
-        const eventMatches =
-          waitFor &&
-          event?.name &&
-          (event.name === waitFor.eventName || event.name === waitFor.timeoutEvent) &&
-          !hasCurrentStepOutput;
+            if (lockedRun.status !== WorkflowStatus.PAUSED) {
+              return lockedRun;
+            }
 
-        if (eventMatches) {
-          const isTimeout = event?.name === waitFor?.timeoutEvent;
-          const skipOutput = waitFor?.skipOutput;
-          run = await this.updateRun({
-            runId,
-            resourceId: scopedResourceId,
-            data: {
-              status: WorkflowStatus.RUNNING,
-              pausedAt: null,
-              resumedAt: new Date(),
-              jobId: job?.id,
-              ...(skipOutput
-                ? {}
-                : {
-                    timeline: merge(run.timeline, {
-                      [run.currentStepId]: {
-                        output: event?.data ?? {},
-                        ...(isTimeout ? { timedOut: true as const } : {}),
-                        timestamp: new Date(),
-                      },
-                    }),
-                  }),
-            },
-          });
-        } else {
-          run = await this.updateRun({
-            runId,
-            resourceId: scopedResourceId,
-            data: {
-              status: WorkflowStatus.RUNNING,
-              pausedAt: null,
-              resumedAt: new Date(),
-              jobId: job?.id,
-            },
-          });
-        }
+            const waitForStep = this.getWaitForStepEntry(
+              lockedRun.timeline,
+              lockedRun.currentStepId,
+            );
+            const currentStep = this.getCachedStepEntry(
+              lockedRun.timeline,
+              lockedRun.currentStepId,
+            );
+            const waitFor = waitForStep?.waitFor;
+            const hasCurrentStepOutput = currentStep?.output !== undefined;
+
+            const eventMatches =
+              waitFor &&
+              event?.name &&
+              (event.name === waitFor.eventName || event.name === waitFor.timeoutEvent) &&
+              !hasCurrentStepOutput;
+
+            if (eventMatches) {
+              const isTimeout = event?.name === waitFor?.timeoutEvent;
+              const skipOutput = waitFor?.skipOutput;
+              return this.updateRun(
+                {
+                  runId,
+                  resourceId: scopedResourceId,
+                  data: {
+                    status: WorkflowStatus.RUNNING,
+                    pausedAt: null,
+                    resumedAt: new Date(),
+                    jobId: job?.id,
+                    ...(skipOutput
+                      ? {}
+                      : {
+                          timeline: merge(lockedRun.timeline, {
+                            [lockedRun.currentStepId]: {
+                              output: event?.data ?? {},
+                              ...(isTimeout ? { timedOut: true as const } : {}),
+                              timestamp: new Date(),
+                            },
+                          }),
+                        }),
+                  },
+                },
+                { db },
+              );
+            }
+
+            return this.updateRun(
+              {
+                runId,
+                resourceId: scopedResourceId,
+                data: {
+                  status: WorkflowStatus.RUNNING,
+                  pausedAt: null,
+                  resumedAt: new Date(),
+                  jobId: job?.id,
+                },
+              },
+              { db },
+            );
+          },
+          this.pool,
+        );
       }
 
       const baseStep = {
@@ -872,6 +926,16 @@ export class WorkflowEngine {
       : null;
   }
 
+  private getWaitForStepEntry(
+    timeline: Record<string, unknown>,
+    stepId: string,
+  ): TimelineWaitForEntry | null {
+    const entry = timeline[`${stepId}-wait-for`];
+    return entry && typeof entry === 'object' && 'waitFor' in entry
+      ? (entry as TimelineWaitForEntry)
+      : null;
+  }
+
   private async runStep({
     stepId,
     run,
@@ -938,7 +1002,7 @@ export class WorkflowEngine {
               runId: run.id,
               resourceId: run.resourceId ?? undefined,
               data: {
-                timeline: merge(run.timeline, {
+                timeline: merge(persistedRun.timeline, {
                   [stepId]: {
                     output,
                     timestamp: new Date(),
@@ -1004,78 +1068,59 @@ export class WorkflowEngine {
       return cached.timedOut ? undefined : cached.output;
     }
 
-    // Fast-forward: resolve immediately instead of pausing
-    const fastForwardConfig = persistedRun.timeline.__fastForward;
-    if (fastForwardConfig && eventName !== PAUSE_EVENT_NAME) {
-      let output: unknown = {};
-
-      if (eventName) {
-        // This is a waitFor step — check for mock data
-        if (
-          typeof fastForwardConfig === 'object' &&
-          fastForwardConfig !== null &&
-          !Array.isArray(fastForwardConfig)
-        ) {
-          const mockData = (fastForwardConfig as Record<string, unknown>)[stepId];
-          if (mockData !== undefined) {
-            output = mockData;
-          }
-        }
-      }
-
-      // Write step output to timeline and continue (no pause, no job scheduling)
-      run = await this.updateRun({
-        runId: run.id,
-        resourceId: run.resourceId ?? undefined,
-        data: {
-          currentStepId: stepId,
-          timeline: merge(run.timeline, {
-            [stepId]: {
-              output,
-              timestamp: new Date(),
-            },
-          }),
-        },
-      });
-
-      this.logger.log(`Step ${stepId} fast-forwarded`, {
-        runId: run.id,
-        workflowId: run.workflowId,
-      });
-
-      return output;
-    }
-
     const timeoutEvent = timeoutDate ? `__timeout_${stepId}` : undefined;
 
-    await this.updateRun({
-      runId: run.id,
-      resourceId: run.resourceId ?? undefined,
-      data: {
-        status: WorkflowStatus.PAUSED,
-        currentStepId: stepId,
-        pausedAt: new Date(),
-        timeline: merge(run.timeline, {
-          [`${stepId}-wait-for`]: {
-            waitFor: { eventName, timeoutEvent },
-            timestamp: new Date(),
+    await withPostgresTransaction(
+      this.db,
+      async (db) => {
+        const freshRun = await this.getRun(
+          { runId: run.id, resourceId: run.resourceId ?? undefined },
+          { exclusiveLock: true, db },
+        );
+        return this.updateRun(
+          {
+            runId: run.id,
+            resourceId: run.resourceId ?? undefined,
+            data: {
+              status: WorkflowStatus.PAUSED,
+              currentStepId: stepId,
+              pausedAt: new Date(),
+              timeline: merge(freshRun.timeline, {
+                [`${stepId}-wait-for`]: {
+                  waitFor: { eventName, timeoutEvent },
+                  timestamp: new Date(),
+                },
+              }),
+            },
           },
-        }),
+          { db },
+        );
       },
-    });
+      this.pool,
+    );
 
     if (timeoutDate && timeoutEvent) {
-      const job: WorkflowRunJobParameters = {
-        runId: run.id,
-        resourceId: run.resourceId ?? undefined,
-        workflowId: run.workflowId,
-        input: run.input,
-        event: { name: timeoutEvent, data: { date: timeoutDate.toISOString() } },
-      };
-      await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
-        startAfter: timeoutDate.getTime() <= Date.now() ? new Date() : timeoutDate,
-        expireInSeconds: defaultExpireInSeconds,
-      });
+      try {
+        const job: WorkflowRunJobParameters = {
+          runId: run.id,
+          resourceId: run.resourceId ?? undefined,
+          workflowId: run.workflowId,
+          input: run.input,
+          event: { name: timeoutEvent, data: { date: timeoutDate.toISOString() } },
+        };
+        await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+          startAfter: timeoutDate.getTime() <= Date.now() ? new Date() : timeoutDate,
+          expireInSeconds: defaultExpireInSeconds,
+        });
+      } catch (error) {
+        // Revert PAUSED status so the workflow can retry this step
+        await this.updateRun({
+          runId: run.id,
+          resourceId: run.resourceId ?? undefined,
+          data: { status: WorkflowStatus.RUNNING, pausedAt: null },
+        });
+        throw error;
+      }
     }
 
     this.logger.log(
@@ -1122,67 +1167,155 @@ export class WorkflowEngine {
         : new Date();
 
     if (timeoutMs !== undefined && Date.now() >= startedAt.getTime() + timeoutMs) {
-      await this.updateRun({
-        runId: run.id,
-        resourceId: run.resourceId ?? undefined,
-        data: {
-          currentStepId: stepId,
-          timeline: merge(persistedRun.timeline, {
-            [stepId]: { output: {}, timedOut: true as const, timestamp: new Date() },
-          }),
+      await withPostgresTransaction(
+        this.db,
+        async (db) => {
+          const freshRun = await this.getRun(
+            { runId: run.id, resourceId: run.resourceId ?? undefined },
+            { exclusiveLock: true, db },
+          );
+          return this.updateRun(
+            {
+              runId: run.id,
+              resourceId: run.resourceId ?? undefined,
+              data: {
+                currentStepId: stepId,
+                timeline: merge(freshRun.timeline, {
+                  [stepId]: { output: {}, timedOut: true as const, timestamp: new Date() },
+                }),
+              },
+            },
+            { db },
+          );
         },
-      });
+        this.pool,
+      );
       return { timedOut: true };
     }
 
-    const result = await conditionFn();
+    let result: T | false;
+    try {
+      result = await conditionFn();
+    } catch (error) {
+      this.logger.error(
+        `Poll conditionFn for step ${stepId} threw an error, treating as non-match and continuing to poll`,
+        error as Error,
+        { runId: run.id, workflowId: run.workflowId },
+      );
+
+      // If the poll has timed out, respect the timeout even though conditionFn threw
+      if (timeoutMs !== undefined && Date.now() >= startedAt.getTime() + timeoutMs) {
+        await withPostgresTransaction(
+          this.db,
+          async (db) => {
+            const freshRun = await this.getRun(
+              { runId: run.id, resourceId: run.resourceId ?? undefined },
+              { exclusiveLock: true, db },
+            );
+            return this.updateRun(
+              {
+                runId: run.id,
+                resourceId: run.resourceId ?? undefined,
+                data: {
+                  currentStepId: stepId,
+                  timeline: merge(freshRun.timeline, {
+                    [stepId]: { output: {}, timedOut: true as const, timestamp: new Date() },
+                  }),
+                },
+              },
+              { db },
+            );
+          },
+          this.pool,
+        );
+        return { timedOut: true };
+      }
+
+      result = false;
+    }
 
     if (result !== false) {
-      await this.updateRun({
-        runId: run.id,
-        resourceId: run.resourceId ?? undefined,
-        data: {
-          currentStepId: stepId,
-          timeline: merge(persistedRun.timeline, {
-            [stepId]: { output: result, timestamp: new Date() },
-          }),
+      await withPostgresTransaction(
+        this.db,
+        async (db) => {
+          const freshRun = await this.getRun(
+            { runId: run.id, resourceId: run.resourceId ?? undefined },
+            { exclusiveLock: true, db },
+          );
+          return this.updateRun(
+            {
+              runId: run.id,
+              resourceId: run.resourceId ?? undefined,
+              data: {
+                currentStepId: stepId,
+                timeline: merge(freshRun.timeline, {
+                  [stepId]: { output: result, timestamp: new Date() },
+                }),
+              },
+            },
+            { db },
+          );
         },
-      });
+        this.pool,
+      );
       return { timedOut: false, data: result };
     }
 
     const pollEvent = `__poll_${stepId}`;
-    await this.updateRun({
-      runId: run.id,
-      resourceId: run.resourceId ?? undefined,
-      data: {
-        status: WorkflowStatus.PAUSED,
-        currentStepId: stepId,
-        pausedAt: new Date(),
-        timeline: merge(persistedRun.timeline, {
-          [`${stepId}-poll`]: { startedAt: startedAt.toISOString() },
-          [`${stepId}-wait-for`]: {
-            waitFor: { timeoutEvent: pollEvent, skipOutput: true },
-            timestamp: new Date(),
+    await withPostgresTransaction(
+      this.db,
+      async (db) => {
+        const freshRun = await this.getRun(
+          { runId: run.id, resourceId: run.resourceId ?? undefined },
+          { exclusiveLock: true, db },
+        );
+        return this.updateRun(
+          {
+            runId: run.id,
+            resourceId: run.resourceId ?? undefined,
+            data: {
+              status: WorkflowStatus.PAUSED,
+              currentStepId: stepId,
+              pausedAt: new Date(),
+              timeline: merge(freshRun.timeline, {
+                [`${stepId}-poll`]: { startedAt: startedAt.toISOString() },
+                [`${stepId}-wait-for`]: {
+                  waitFor: { timeoutEvent: pollEvent, skipOutput: true },
+                  timestamp: new Date(),
+                },
+              }),
+            },
           },
-        }),
+          { db },
+        );
       },
-    });
+      this.pool,
+    );
 
-    await this.boss.send(
-      WORKFLOW_RUN_QUEUE_NAME,
-      {
+    try {
+      await this.boss.send(
+        WORKFLOW_RUN_QUEUE_NAME,
+        {
+          runId: run.id,
+          resourceId: run.resourceId ?? undefined,
+          workflowId: run.workflowId,
+          input: run.input,
+          event: { name: pollEvent, data: {} },
+        },
+        {
+          startAfter: new Date(Date.now() + intervalMs),
+          expireInSeconds: defaultExpireInSeconds,
+        },
+      );
+    } catch (error) {
+      // Revert PAUSED status so the workflow can retry this step
+      await this.updateRun({
         runId: run.id,
         resourceId: run.resourceId ?? undefined,
-        workflowId: run.workflowId,
-        input: run.input,
-        event: { name: pollEvent, data: {} },
-      },
-      {
-        startAfter: new Date(Date.now() + intervalMs),
-        expireInSeconds: defaultExpireInSeconds,
-      },
-    );
+        data: { status: WorkflowStatus.RUNNING, pausedAt: null },
+      });
+      throw error;
+    }
 
     this.logger.log(`Step ${stepId} polling every ${intervalMs}ms...`, {
       runId: run.id,
