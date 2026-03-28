@@ -48,6 +48,6 @@ export async function runMigrations(db: Db): Promise<void> {
       CREATE INDEX workflow_runs_resource_id_workflow_id_created_at_idx ON workflow_runs USING btree (resource_id, workflow_id, created_at DESC);
     `,
       [],
-    )
+    );
   }
 }

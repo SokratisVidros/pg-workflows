@@ -296,34 +296,31 @@ export async function getWorkflowRuns(
     paramIndex++;
   }
 
-  if (startingAfter) {
+  const cursorIds = [startingAfter, endingBefore].filter(Boolean) as string[];
+  if (cursorIds.length > 0) {
     const cursorResult = await db.executeSql(
-      'SELECT created_at FROM workflow_runs WHERE id = $1 LIMIT 1',
-      [startingAfter],
+      'SELECT id, created_at FROM workflow_runs WHERE id = ANY($1)',
+      [cursorIds],
     );
-    if (cursorResult.rows[0]?.created_at) {
-      conditions.push(`created_at < $${paramIndex}`);
-      values.push(
-        typeof cursorResult.rows[0].created_at === 'string'
-          ? new Date(cursorResult.rows[0].created_at)
-          : cursorResult.rows[0].created_at,
+    const cursorMap = new Map<string, Date>();
+    for (const row of cursorResult.rows) {
+      cursorMap.set(
+        row.id,
+        typeof row.created_at === 'string' ? new Date(row.created_at) : row.created_at,
       );
+    }
+
+    if (startingAfter && cursorMap.has(startingAfter)) {
+      conditions.push(`created_at < $${paramIndex}`);
+      const cursor = cursorMap.get(startingAfter);
+      if (cursor) values.push(cursor);
       paramIndex++;
     }
-  }
 
-  if (endingBefore) {
-    const cursorResult = await db.executeSql(
-      'SELECT created_at FROM workflow_runs WHERE id = $1 LIMIT 1',
-      [endingBefore],
-    );
-    if (cursorResult.rows[0]?.created_at) {
+    if (endingBefore && cursorMap.has(endingBefore)) {
       conditions.push(`created_at > $${paramIndex}`);
-      values.push(
-        typeof cursorResult.rows[0].created_at === 'string'
-          ? new Date(cursorResult.rows[0].created_at)
-          : cursorResult.rows[0].created_at,
-      );
+      const cursor = cursorMap.get(endingBefore);
+      if (cursor) values.push(cursor);
       paramIndex++;
     }
   }
