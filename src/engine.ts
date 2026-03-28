@@ -477,7 +477,7 @@ export class WorkflowEngine {
       },
     };
 
-    this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+    await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
       expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
     });
 
