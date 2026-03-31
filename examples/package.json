@@ -9,7 +9,8 @@
     "example:basic": "npm run build:lib && dotenvx run -- tsx basic.ts",
     "example:approval-flow": "npm run build:lib && dotenvx run -- tsx approval-flow.ts",
     "example:timeout": "npm run build:lib && dotenvx run -- tsx timeout.ts",
-    "example:polling": "npm run build:lib && dotenvx run -- tsx polling.ts"
+    "example:polling": "npm run build:lib && dotenvx run -- tsx polling.ts",
+    "example:cron": "npm run build:lib && dotenvx run -- tsx cron.ts"
   },
   "dependencies": {
     "pg": "^8.13.1",
