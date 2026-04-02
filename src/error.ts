@@ -1,9 +1,12 @@
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+
 export class WorkflowEngineError extends Error {
   constructor(
     message: string,
     public readonly workflowId?: string,
     public readonly runId?: string,
     public override readonly cause: Error | undefined = undefined,
+    public readonly issues?: StandardSchemaV1.FailureResult['issues'] | undefined,
   ) {
     super(message);
     this.name = 'WorkflowEngineError';

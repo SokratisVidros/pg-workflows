@@ -255,7 +255,13 @@ export class WorkflowEngine {
     if (workflow.inputSchema) {
       const result = await workflow.inputSchema['~standard'].validate(input);
       if (result.issues) {
-        throw new WorkflowEngineError(JSON.stringify(result.issues), workflowId);
+        throw new WorkflowEngineError(
+          JSON.stringify(result.issues),
+          workflowId,
+          undefined,
+          undefined,
+          result.issues,
+        );
       }
     }
 

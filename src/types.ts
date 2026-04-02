@@ -21,8 +21,7 @@ export enum StepType {
 }
 
 export type InputParameters = StandardSchemaV1;
-export type InferInputParameters<P extends InputParameters> =
-  StandardSchemaV1.InferOutput<P>;
+export type InferInputParameters<P extends InputParameters> = StandardSchemaV1.InferOutput<P>;
 
 export type WorkflowOptions<I extends InputParameters> = {
   timeout?: number;
@@ -113,12 +112,10 @@ export type WorkflowInternalDefinition<
  * TStepExt is the accumulated step extension from all plugins (step = StepContext & TStepExt).
  */
 export interface WorkflowFactory<TStepExt = object> {
-  (
+  <I extends InputParameters>(
     id: string,
-    handler: (
-      context: WorkflowContext<InputParameters, StepBaseContext & TStepExt>,
-    ) => Promise<unknown>,
-    options?: WorkflowOptions<InputParameters>,
+    handler: (context: WorkflowContext<I, StepBaseContext & TStepExt>) => Promise<unknown>,
+    options?: WorkflowOptions<I>,
   ): WorkflowDefinition<InputParameters, StepBaseContext & TStepExt>;
   use<TNewExt>(
     plugin: WorkflowPlugin<StepBaseContext & TStepExt, TNewExt>,
