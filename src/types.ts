@@ -1,4 +1,4 @@
-import type { z } from 'zod';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { WorkflowRun } from './db/types';
 import type { Duration } from './duration';
 
@@ -20,10 +20,9 @@ export enum StepType {
   POLL = 'poll',
 }
 
-export type InputParameters = z.ZodTypeAny;
-export type InferInputParameters<P extends InputParameters> = P extends z.ZodTypeAny
-  ? z.infer<P>
-  : never;
+export type InputParameters = StandardSchemaV1;
+export type InferInputParameters<P extends InputParameters> =
+  StandardSchemaV1.InferOutput<P>;
 
 export type WorkflowOptions<I extends InputParameters> = {
   timeout?: number;

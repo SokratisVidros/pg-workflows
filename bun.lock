@@ -5,6 +5,7 @@
     "": {
       "name": "pg-workflows",
       "dependencies": {
+        "@standard-schema/spec": "^1.1.0",
         "es-toolkit": "^1.44.0",
         "ksuid": "^3.0.0",
         "parse-duration": "^2.1.5",
