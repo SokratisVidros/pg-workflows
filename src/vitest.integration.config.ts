@@ -8,7 +8,7 @@ const config: ViteUserConfig = defineConfig({
     reporters: [['default', { summary: true }]],
     testTimeout: 60000,
     bail: 1,
-    include: ['src/integration.test.ts'],
+    include: ['src/integration.test.ts', 'src/migration-lock.integration.test.ts'],
   },
 });
 

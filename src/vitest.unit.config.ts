@@ -8,7 +8,7 @@ const config: ViteUserConfig = defineConfig({
     reporters: [['default', { summary: true }]],
     testTimeout: 20000,
     bail: 1,
-    exclude: ['**/integration.test.ts', '**/node_modules/**'],
+    exclude: ['**/*.integration.test.ts', '**/integration.test.ts', '**/node_modules/**'],
   },
 });
 
