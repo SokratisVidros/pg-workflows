@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import type { PgBoss } from 'pg-boss';
+import * as v from 'valibot';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { workflow } from './definition';
@@ -424,6 +425,41 @@ describe('WorkflowEngine', () => {
         engine.startWorkflow({
           resourceId,
           workflowId: 'test-workflow',
+          input: {},
+        }),
+      ).rejects.toThrow(WorkflowEngineError);
+    });
+
+    it('should throw WorkflowEngineError when input does not match valibot schema', async () => {
+      const valibotWorkflow = workflow(
+        'valibot-workflow',
+        async ({ step, input }) => {
+          return await step.run('step-1', async () => {
+            return { result: input.name };
+          });
+        },
+        {
+          inputSchema: v.object({
+            name: v.string(),
+            age: v.pipe(v.number(), v.integer(), v.minValue(0)),
+          }),
+        },
+      );
+
+      await engine.registerWorkflow(valibotWorkflow);
+
+      await expect(
+        engine.startWorkflow({
+          resourceId,
+          workflowId: 'valibot-workflow',
+          input: { name: 123, age: 'not a number' },
+        }),
+      ).rejects.toThrow(WorkflowEngineError);
+
+      await expect(
+        engine.startWorkflow({
+          resourceId,
+          workflowId: 'valibot-workflow',
           input: {},
         }),
       ).rejects.toThrow(WorkflowEngineError);
@@ -1401,47 +1437,57 @@ describe('WorkflowEngine', () => {
     it.todo('should handle workflow timeout', async () => {});
 
     it('should handle workflow with conditionals and for loops', async () => {
-      const complexWorkflow = workflow('complex-workflow', async ({ step, input }) => {
-        const results: string[] = [];
+      const complexWorkflow = workflow(
+        'complex-workflow',
+        async ({ step, input }) => {
+          const results: string[] = [];
 
-        await step.run('start', async () => {
-          results.push('started');
-          return 'started';
-        });
-
-        // For loop with dynamic step IDs
-        for (let i = 0; i < input.loopCount; i++) {
-          await step.run(`loop-step-${i}`, async () => {
-            results.push(`loop-${i}`);
-            return `loop-result-${i}`;
+          await step.run('start', async () => {
+            results.push('started');
+            return 'started';
           });
-        }
 
-        // Conditional steps
-        if (input.shouldRunConditional) {
-          await step.run('conditional-step', async () => {
-            results.push('conditional');
-            return 'conditional-result';
-          });
-        }
-
-        // Nested conditional and loop
-        if (input.shouldRunNested) {
-          for (let j = 0; j < 2; j++) {
-            await step.run(`nested-${j}`, async () => {
-              results.push(`nested-${j}`);
-              return `nested-result-${j}`;
+          // For loop with dynamic step IDs
+          for (let i = 0; i < input.loopCount; i++) {
+            await step.run(`loop-step-${i}`, async () => {
+              results.push(`loop-${i}`);
+              return `loop-result-${i}`;
             });
           }
-        }
 
-        await step.run('end', async () => {
-          results.push('ended');
-          return 'ended';
-        });
+          // Conditional steps
+          if (input.shouldRunConditional) {
+            await step.run('conditional-step', async () => {
+              results.push('conditional');
+              return 'conditional-result';
+            });
+          }
 
-        return { completed: true, results };
-      });
+          // Nested conditional and loop
+          if (input.shouldRunNested) {
+            for (let j = 0; j < 2; j++) {
+              await step.run(`nested-${j}`, async () => {
+                results.push(`nested-${j}`);
+                return `nested-result-${j}`;
+              });
+            }
+          }
+
+          await step.run('end', async () => {
+            results.push('ended');
+            return 'ended';
+          });
+
+          return { completed: true, results };
+        },
+        {
+          inputSchema: v.object({
+            loopCount: v.number(),
+            shouldRunConditional: v.boolean(),
+            shouldRunNested: v.boolean(),
+          }),
+        },
+      );
 
       await engine.registerWorkflow(complexWorkflow);
 

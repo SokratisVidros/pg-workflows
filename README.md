@@ -51,7 +51,7 @@ If you need enterprise-grade features like distributed tracing, complex DAG sche
 - **Built-in Retries** - Automatic retries with exponential backoff at the workflow level.
 - **Configurable Timeouts** - Set workflow-level and step-level timeouts to prevent runaway executions.
 - **Progress Tracking** - Monitor workflow completion percentage, completed steps, and total steps in real-time.
-- **Input Validation** - Define schemas with Zod for type-safe, validated workflow inputs.
+- **Input Validation** - Define schemas with any [Standard Schema](https://github.com/standard-schema/standard-schema)-compliant library (Zod, Valibot, ArkType, etc.) for type-safe, validated workflow inputs.
 - **Built on pg-boss** - Leverages the battle-tested [pg-boss](https://github.com/timgit/pg-boss) job queue for reliable task scheduling. pg-boss is bundled as a dependency - no separate install or configuration needed.
 
 ---
@@ -357,8 +357,8 @@ const myWorkflow = workflow(
     // Your workflow logic here
   },
   {
-    inputSchema: z.object({ /* ... */ }),
-    timeout: 60000, // milliseconds
+    inputSchema: mySchema,  // any Standard Schema-compliant schema
+    timeout: 60000,          // milliseconds
     retries: 3,
   }
 );
@@ -475,6 +475,96 @@ await engine.fastForwardWorkflow({
 | `step.delay()` / `step.waitUntil()` | Triggers the timeout event to skip the wait |
 | `step.poll()` | Writes `data` as the poll result and triggers resolution |
 | `step.pause()` | Delegates to `resumeWorkflow()` |
+
+### Input Validation
+
+pg-workflows supports any [Standard Schema](https://github.com/standard-schema/standard-schema)-compliant validation library for `inputSchema`. This means you can use Zod, Valibot, ArkType, or any library that implements the Standard Schema spec. When a schema is provided, the workflow input is validated before execution and the handler's `input` parameter is fully typed.
+
+#### With Zod
+
+```typescript
+import { workflow } from 'pg-workflows';
+import { z } from 'zod';
+
+const myWorkflow = workflow(
+  'user-onboarding',
+  async ({ step, input }) => {
+    // input is typed as { email: string; name: string }
+    await step.run('send-welcome', async () => {
+      return await sendEmail(input.email, `Welcome, ${input.name}!`);
+    });
+  },
+  {
+    inputSchema: z.object({
+      email: z.string().email(),
+      name: z.string(),
+    }),
+  }
+);
+```
+
+#### With Valibot
+
+```typescript
+import { workflow } from 'pg-workflows';
+import * as v from 'valibot';
+
+const myWorkflow = workflow(
+  'user-onboarding',
+  async ({ step, input }) => {
+    // input is typed as { email: string; name: string }
+    await step.run('send-welcome', async () => {
+      return await sendEmail(input.email, `Welcome, ${input.name}!`);
+    });
+  },
+  {
+    inputSchema: v.object({
+      email: v.pipe(v.string(), v.email()),
+      name: v.string(),
+    }),
+  }
+);
+```
+
+#### Without a Schema
+
+When no `inputSchema` is provided, input is not validated and `input` is typed as `unknown`. This is because the engine has no guarantee about the shape of the data — it passes through whatever was provided to `startWorkflow()`. You are responsible for narrowing the type yourself, either with a type assertion or runtime checks:
+
+```typescript
+import { workflow } from 'pg-workflows';
+
+const myWorkflow = workflow(
+  'process-order',
+  async ({ step, input }) => {
+    // Option 1: Type assertion — you trust the caller
+    const { orderId, amount } = input as { orderId: string; amount: number };
+
+    await step.run('charge', async () => {
+      return await chargeOrder(orderId, amount);
+    });
+  }
+);
+
+const myDefensiveWorkflow = workflow(
+  'process-order-safe',
+  async ({ step, input }) => {
+    // Option 2: Runtime checks — you verify before using
+    if (typeof input !== 'object' || input === null) {
+      throw new Error('Expected input to be an object');
+    }
+    const { orderId, amount } = input as Record<string, unknown>;
+    if (typeof orderId !== 'string' || typeof amount !== 'number') {
+      throw new Error('Invalid input shape');
+    }
+
+    await step.run('charge', async () => {
+      return await chargeOrder(orderId, amount);
+    });
+  }
+);
+```
+
+Using an `inputSchema` is recommended — it validates input at the engine boundary before your handler runs, and gives you full type inference with no manual work.
 
 ---
 
@@ -726,7 +816,7 @@ npm install pg-workflows pg
 - Node.js >= 18.0.0
 - PostgreSQL >= 10
 - `pg` >= 8.0.0 (peer dependency)
-- `zod` >= 3.0.0 (optional peer dependency, needed only if using `inputSchema`)
+- A [Standard Schema](https://github.com/standard-schema/standard-schema)-compliant validation library (Zod, Valibot, ArkType, etc.) if using `inputSchema`
 
 ## Acknowledgments
 

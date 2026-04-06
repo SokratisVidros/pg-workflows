@@ -1,7 +1,6 @@
 import { merge } from 'es-toolkit';
 import pg from 'pg';
 import { type Db, type Job, PgBoss } from 'pg-boss';
-import type { z } from 'zod';
 import { parseWorkflowHandler } from './ast-parser';
 import { runMigrations } from './db/migration';
 import {
@@ -254,9 +253,15 @@ export class WorkflowEngine {
       throw new WorkflowEngineError(`Workflow ${workflowId} has no steps`, workflowId);
     }
     if (workflow.inputSchema) {
-      const result = workflow.inputSchema.safeParse(input);
-      if (!result.success) {
-        throw new WorkflowEngineError(result.error.message, workflowId);
+      const result = await workflow.inputSchema['~standard'].validate(input);
+      if (result.issues) {
+        throw new WorkflowEngineError(
+          JSON.stringify(result.issues),
+          workflowId,
+          undefined,
+          undefined,
+          result.issues,
+        );
       }
     }
 
@@ -836,7 +841,7 @@ export class WorkflowEngine {
       }
 
       const context: WorkflowContext = {
-        input: run.input as z.ZodTypeAny,
+        input: run.input as InferInputParameters<InputParameters>,
         workflowId: run.workflowId,
         runId: run.id,
         timeline: run.timeline,
