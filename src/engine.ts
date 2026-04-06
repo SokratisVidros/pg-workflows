@@ -181,9 +181,7 @@ export class WorkflowEngine {
     this.logger.log('Workflow engine stopped');
   }
 
-  async registerWorkflow<TStep extends StepBaseContext>(
-    definition: WorkflowDefinition<InputParameters, TStep>,
-  ): Promise<WorkflowEngine> {
+  async registerWorkflow(definition: WorkflowDefinition<InputParameters>): Promise<WorkflowEngine> {
     if (this.workflows.has(definition.id)) {
       throw new WorkflowEngineError(
         `Workflow ${definition.id} is already registered`,

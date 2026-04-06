@@ -15,9 +15,11 @@ function createWorkflowFactory<TStepExt extends object = object>(
     id: string,
     handler: (context: WorkflowContext<I, StepBaseContext & TStepExt>) => Promise<unknown>,
     { inputSchema, timeout, retries }: WorkflowOptions<I> = {},
-  ): WorkflowDefinition<I, StepBaseContext & TStepExt> => ({
+  ): WorkflowDefinition<I> => ({
     id,
-    handler,
+    handler: handler as (
+      context: WorkflowContext<InputParameters, StepBaseContext>,
+    ) => Promise<unknown>,
     inputSchema,
     timeout,
     retries,

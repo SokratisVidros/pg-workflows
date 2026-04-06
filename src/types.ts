@@ -80,12 +80,10 @@ export type WorkflowContext<
   logger: WorkflowLogger;
 };
 
-export type WorkflowDefinition<
-  TInput extends InputParameters = InputParameters,
-  TStep extends StepBaseContext = StepBaseContext,
-> = {
+export type WorkflowDefinition<TInput extends InputParameters = InputParameters> = {
   id: string;
-  handler: (context: WorkflowContext<TInput, TStep>) => Promise<unknown>;
+  /** Widest context avoids contravariance when collecting definitions; `workflow()` still types the handler narrowly. */
+  handler: (context: WorkflowContext<InputParameters, StepBaseContext>) => Promise<unknown>;
   inputSchema?: TInput;
   timeout?: number; // milliseconds
   retries?: number;
@@ -100,12 +98,10 @@ export type StepInternalDefinition = {
   isDynamic: boolean;
 };
 
-export type WorkflowInternalDefinition<
-  TInput extends InputParameters = InputParameters,
-  TStep extends StepBaseContext = StepBaseContext,
-> = WorkflowDefinition<TInput, TStep> & {
-  steps: StepInternalDefinition[];
-};
+export type WorkflowInternalDefinition<TInput extends InputParameters = InputParameters> =
+  WorkflowDefinition<TInput> & {
+    steps: StepInternalDefinition[];
+  };
 
 /**
  * Chainable workflow factory: call as (id, handler, options) and/or use .use(plugin).
@@ -116,7 +112,7 @@ export interface WorkflowFactory<TStepExt = object> {
     id: string,
     handler: (context: WorkflowContext<I, StepBaseContext & TStepExt>) => Promise<unknown>,
     options?: WorkflowOptions<I>,
-  ): WorkflowDefinition<I, StepBaseContext & TStepExt>;
+  ): WorkflowDefinition<I>;
   use<TNewExt>(
     plugin: WorkflowPlugin<StepBaseContext & TStepExt, TNewExt>,
   ): WorkflowFactory<TStepExt & TNewExt>;
