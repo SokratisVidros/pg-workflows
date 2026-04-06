@@ -14,11 +14,12 @@
   "dependencies": {
     "pg": "^8.13.1",
     "pg-boss": ">=12.0.0",
-    "pg-workflows": "file:.."
+    "pg-workflows": "file:..",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@dotenvx/dotenvx": "^1.52.0",
-    "tsx": "^4.19.0",
-    "@types/pg": "^8.11.10"
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.0"
   }
 }

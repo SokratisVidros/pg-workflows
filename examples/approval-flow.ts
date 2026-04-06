@@ -1,38 +1,39 @@
-import pg from 'pg';
-import { PgBoss } from 'pg-boss';
 import { WorkflowEngine, type WorkflowRunProgress, workflow } from 'pg-workflows';
+import { z } from 'zod';
 
 // 1. Define a workflow
-const approvalWorkflow = workflow('approval-workflow', async ({ step, input }) => {
-  const draft = await step.run('create-draft', async () => {
-    console.log(`Creating draft for ${input.title}...`);
-    return { id: 'draft_1', title: input.title, content: 'This is a draft document!' };
-  });
+const approvalWorkflow = workflow(
+  'approval-workflow',
+  async ({ step, input }) => {
+    const draft = await step.run('create-draft', async () => {
+      console.log(`Creating draft for ${input.title}...`);
+      return { id: 'draft_1', title: input.title, content: 'This is a draft document!' };
+    });
 
-  const approval = await step.waitFor('wait-approval', {
-    eventName: 'approved',
-    timeout: 60000,
-  });
+    const approval = await step.waitFor('wait-approval', {
+      eventName: 'approved',
+      timeout: 60000,
+      schema: z.object({ approved: z.boolean() }),
+    });
 
-  await step.run('publish', async () => {
-    console.log(`Publishing draft ${draft?.id} with approval:`, approval);
-    return { published: true };
-  });
+    await step.run('publish', async () => {
+      console.log(`Publishing draft ${draft?.id} with approval:`, approval);
+      return { published: true };
+    });
 
-  return { draftId: draft?.id, status: 'published', approvedBy: approval?.approved };
-});
+    return { draftId: draft?.id, status: 'published', approvedBy: approval?.approved };
+  },
+  {
+    inputSchema: z.object({ title: z.string() }),
+  },
+);
 
 // 2. Start the engine
 async function main() {
   const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://localhost:5432/pg_workflows_example';
 
-  const pool = new pg.Pool({ connectionString: DATABASE_URL });
-  const boss = new PgBoss({
-    db: { executeSql: (text, values) => pool.query(text, values) },
-  });
-
   const engine = new WorkflowEngine({
-    boss,
+    connectionString: DATABASE_URL,
     workflows: [approvalWorkflow],
   });
 
@@ -69,7 +70,6 @@ async function main() {
   } while (progress.status === 'running' || progress.status === 'paused');
 
   await engine.stop();
-  await pool.end();
 }
 
 main().catch((err) => {

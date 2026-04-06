@@ -1,24 +1,31 @@
 import { WorkflowEngine, type WorkflowRunProgress, workflow } from 'pg-workflows';
+import { z } from 'zod';
 
 // 1. Define a workflow
-const onboardUser = workflow('onboard-user', async ({ step, input }) => {
-  const user = await step.run('create-account', async () => {
-    console.log(`Creating account for ${input.email}...`);
-    return { id: 'usr_123', email: input.email };
-  });
+const onboardUser = workflow(
+  'onboard-user',
+  async ({ step, input }) => {
+    const user = await step.run('create-account', async () => {
+      console.log(`Creating account for ${input.email}...`);
+      return { id: 'usr_123', email: input.email };
+    });
 
-  await step.run('send-welcome-email', async () => {
-    console.log(`Sending welcome email to ${user?.email}...`);
-    return { sent: true };
-  });
+    await step.run('send-welcome-email', async () => {
+      console.log(`Sending welcome email to ${user?.email}...`);
+      return { sent: true };
+    });
 
-  await step.run('provision-resources', async () => {
-    console.log(`Provisioning resources for user ${user?.id}...`);
-    return { provisioned: true };
-  });
+    await step.run('provision-resources', async () => {
+      console.log(`Provisioning resources for user ${user?.id}...`);
+      return { provisioned: true };
+    });
 
-  return { userId: user?.id, status: 'onboarded' };
-});
+    return { userId: user?.id, status: 'onboarded' };
+  },
+  {
+    inputSchema: z.object({ email: z.string() }),
+  },
+);
 
 // 2. Start the engine
 async function main() {

@@ -17,7 +17,6 @@ import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
 import {
   type InferInputParameters,
   type InputParameters,
-  type StepBaseContext,
   StepType,
   type WorkflowContext,
   type WorkflowDefinition,
