@@ -26,7 +26,7 @@
     "build": "bunup",
     "dev": "bunup --watch",
     "test": "bun run test:unit && bun run test:integration",
-    "test:unit": "vitest run --config src/vitest.unit.config.ts",
+    "test:unit": "vitest --typecheck run --config src/vitest.unit.config.ts ",
     "test:integration": "vitest run --config src/vitest.integration.config.ts",
     "test:watch": "vitest watch --config src/vitest.unit.config.ts",
     "lint": "biome check .",
