@@ -433,7 +433,7 @@ const { items } = await engine.getRuns({
 
 Pass an optional `idempotencyKey` to `startWorkflow()` when the same logical start might be requested more than once (user double-clicks, API retries, or at-least-once webhooks). The engine stores the key on the run; a second `startWorkflow` with the **same** key returns the **existing** run and does **not** enqueue a second job.
 
-Keys are **globally unique** in the database (up to 256 characters), not scoped per workflow or resource. Prefer stable, namespaced strings so different workflows never collide—for example `send-welcome-email:order-123` instead of a bare order id.
+Keys are **globally unique** in the database (up to 256 characters), not scoped per workflow or resource. Prefer stable, namespaced strings so different workflows never collide-for example `send-welcome-email:order-123` instead of a bare order id.
 
 ```typescript
 const run = await engine.startWorkflow({
@@ -445,7 +445,7 @@ const run = await engine.startWorkflow({
 // Idempotent: returns the same run and run.id as above
 const again = await engine.startWorkflow({
   workflowId: 'send-welcome-email',
-  input: { email: 'other@example.com' }, // ignored for deduplication — existing run wins
+  input: { email: 'other@example.com' }, // ignored for deduplication - existing run wins
   idempotencyKey: 'send-welcome-email:checkout-session_cs_abc123',
 });
 ```
@@ -469,7 +469,7 @@ await engine.resumeWorkflow({
 
 ### Fast-Forward
 
-Skip the current waiting step and immediately resume execution. `fastForwardWorkflow` inspects the paused step and dispatches the right internal action — `triggerEvent` for `waitFor`, timeout triggers for `delay`/`waitUntil`, resume for `pause`, and direct output writes for `poll`. If the workflow is not paused, it's a no-op.
+Skip the current waiting step and immediately resume execution. `fastForwardWorkflow` inspects the paused step and dispatches the right internal action - `triggerEvent` for `waitFor`, timeout triggers for `delay`/`waitUntil`, resume for `pause`, and direct output writes for `poll`. If the workflow is not paused, it's a no-op.
 
 This is useful for testing, debugging, or manually advancing workflows past long waits.
 
@@ -554,7 +554,7 @@ const myWorkflow = workflow(
 
 #### Without a Schema
 
-When no `inputSchema` is provided, input is not validated and `input` is typed as `unknown`. This is because the engine has no guarantee about the shape of the data — it passes through whatever was provided to `startWorkflow()`. You are responsible for narrowing the type yourself, either with a type assertion or runtime checks:
+When no `inputSchema` is provided, input is not validated and `input` is typed as `unknown`. This is because the engine has no guarantee about the shape of the data - it passes through whatever was provided to `startWorkflow()`. You are responsible for narrowing the type yourself, either with a type assertion or runtime checks:
 
 ```typescript
 import { workflow } from 'pg-workflows';
@@ -562,7 +562,7 @@ import { workflow } from 'pg-workflows';
 const myWorkflow = workflow(
   'process-order',
   async ({ step, input }) => {
-    // Option 1: Type assertion — you trust the caller
+    // Option 1: Type assertion - you trust the caller
     const { orderId, amount } = input as { orderId: string; amount: number };
 
     await step.run('charge', async () => {
@@ -574,7 +574,7 @@ const myWorkflow = workflow(
 const myDefensiveWorkflow = workflow(
   'process-order-safe',
   async ({ step, input }) => {
-    // Option 2: Runtime checks — you verify before using
+    // Option 2: Runtime checks - you verify before using
     if (typeof input !== 'object' || input === null) {
       throw new Error('Expected input to be an object');
     }
@@ -590,7 +590,7 @@ const myDefensiveWorkflow = workflow(
 );
 ```
 
-Using an `inputSchema` is recommended — it validates input at the engine boundary before your handler runs, and gives you full type inference with no manual work.
+Using an `inputSchema` is recommended - it validates input at the engine boundary before your handler runs, and gives you full type inference with no manual work.
 
 ---
 
