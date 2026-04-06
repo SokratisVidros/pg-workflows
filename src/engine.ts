@@ -635,43 +635,46 @@ export class WorkflowEngine {
   }
 
   private async handleWorkflowRun([job]: Job<WorkflowRunJobParameters>[]) {
-    const { runId, resourceId, workflowId, input, event } = job?.data ?? {};
+    const { runId = '', resourceId, workflowId = '', input, event } = job?.data ?? {};
 
-    if (!runId) {
-      throw new WorkflowEngineError('Invalid workflow run job, missing runId', workflowId);
-    }
-
-    if (!workflowId) {
-      throw new WorkflowEngineError(
-        'Invalid workflow run job, missing workflowId',
-        undefined,
-        runId,
-      );
-    }
-
-    const workflow = this.workflows.get(workflowId);
-    if (!workflow) {
-      throw new WorkflowEngineError(`Workflow ${workflowId} not found`, workflowId, runId);
-    }
-
-    this.logger.log('Processing workflow run...', {
-      runId,
-      workflowId,
-    });
-
-    let run = await this.getRun({ runId });
-
-    if (run.workflowId !== workflowId) {
-      throw new WorkflowEngineError(
-        `Workflow run ${runId} does not match job workflowId ${workflowId}`,
-        workflowId,
-        runId,
-      );
-    }
-
-    const scopedResourceId = this.resolveScopedResourceId(resourceId, run);
+    let run: WorkflowRun | undefined;
+    let scopedResourceId: string | undefined;
 
     try {
+      if (!runId) {
+        throw new WorkflowEngineError('Invalid workflow run job, missing runId', workflowId);
+      }
+
+      if (!workflowId) {
+        throw new WorkflowEngineError(
+          'Invalid workflow run job, missing workflowId',
+          undefined,
+          runId,
+        );
+      }
+
+      const workflow = this.workflows.get(workflowId);
+      if (!workflow) {
+        throw new WorkflowEngineError(`Workflow ${workflowId} not found`, workflowId, runId);
+      }
+
+      this.logger.log('Processing workflow run...', {
+        runId,
+        workflowId,
+      });
+
+      run = await this.getRun({ runId });
+
+      if (run.workflowId !== workflowId) {
+        throw new WorkflowEngineError(
+          `Workflow run ${runId} does not match job workflowId ${workflowId}`,
+          workflowId,
+          runId,
+        );
+      }
+
+      scopedResourceId = this.resolveScopedResourceId(resourceId, run);
+
       if (run.status === WorkflowStatus.CANCELLED) {
         this.logger.log(`Workflow run ${runId} is cancelled, skipping`);
         return;
@@ -880,7 +883,7 @@ export class WorkflowEngine {
         });
       }
     } catch (error) {
-      if (run.retryCount < run.maxRetries) {
+      if (run && run.retryCount < run.maxRetries) {
         await this.updateRun({
           runId,
           resourceId: scopedResourceId,
@@ -908,15 +911,17 @@ export class WorkflowEngine {
       }
 
       // TODO: Ensure that this code always runs, even if worker is stopped unexpectedly.
-      await this.updateRun({
-        runId,
-        resourceId: scopedResourceId,
-        data: {
-          status: WorkflowStatus.FAILED,
-          error: error instanceof Error ? error.message : String(error),
-          jobId: job?.id,
-        },
-      });
+      if (runId) {
+        await this.updateRun({
+          runId,
+          resourceId: scopedResourceId,
+          data: {
+            status: WorkflowStatus.FAILED,
+            error: error instanceof Error ? error.message : String(error),
+            jobId: job?.id,
+          },
+        });
+      }
 
       throw error;
     }

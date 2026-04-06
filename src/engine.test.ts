@@ -1049,6 +1049,31 @@ describe('WorkflowEngine', () => {
       });
     });
 
+    it('should mark workflow run as failed when workflow is unregistered before worker processes it', async () => {
+      const ephemeralWorkflow = workflow('ephemeral-workflow', async ({ step }) => {
+        await step.run('step-1', async () => 'done');
+      });
+
+      await engine.registerWorkflow(ephemeralWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'ephemeral-workflow',
+        input: {},
+      });
+
+      // Unregister before worker picks up the job
+      await engine.unregisterWorkflow('ephemeral-workflow');
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id, resourceId }), {
+          timeout: 5000,
+        })
+        .toMatchObject({
+          status: WorkflowStatus.FAILED,
+          error: expect.stringContaining('Workflow ephemeral-workflow not found'),
+        });
+    });
+
     it('should handle workflow with error and retry', async () => {
       let attemptCount = 0;
       const errorRetryWorkflow = workflow('error-retry-workflow', async ({ step }) => {
@@ -1601,6 +1626,38 @@ describe('WorkflowEngine', () => {
             results: ['started', 'loop-0', 'loop-1', 'ended'],
           },
         });
+    });
+
+    // TODO: This workflow syntax is not supported yet, but must be fixed
+    it.skip('should handle workflow with early guards', async () => {
+      const w = workflow('conditional-loop-workflow', async ({ step }) => {
+        const result = await step.run('step-1', async () => {
+          return 'step-1-result';
+        });
+
+        // Workflow should exit early here
+        if (result === 'step-2-result') {
+          return 'early-exit';
+        }
+
+        await step.run('step-2', async () => {
+          return 'final-exit';
+        });
+      });
+
+      await engine.registerWorkflow(w);
+
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'conditional-loop-workflow',
+        input: {},
+      });
+
+      const runResult = await engine.getRun({ runId: run.id, resourceId });
+      expect(runResult).toMatchObject({
+        status: WorkflowStatus.COMPLETED,
+        output: 'final-exit',
+      });
     });
   });
 
