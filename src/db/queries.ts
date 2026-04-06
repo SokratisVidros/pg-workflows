@@ -25,6 +25,7 @@ type WorkflowRunRow = {
   retry_count: number;
   max_retries: number;
   job_id: string | null;
+  idempotency_key: string | null;
 };
 
 function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
@@ -52,6 +53,7 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
     retryCount: row.retry_count,
     maxRetries: row.max_retries,
     jobId: row.job_id,
+    idempotencyKey: row.idempotency_key,
   };
 }
 
@@ -64,6 +66,7 @@ export async function insertWorkflowRun(
     input,
     maxRetries,
     timeoutAt,
+    idempotencyKey,
   }: {
     resourceId?: string;
     workflowId: string;
@@ -72,9 +75,10 @@ export async function insertWorkflowRun(
     input: unknown;
     maxRetries: number;
     timeoutAt: Date | null;
+    idempotencyKey?: string;
   },
   db: Db,
-): Promise<WorkflowRun> {
+): Promise<{ run: WorkflowRun; created: boolean }> {
   const runId = generateKSUID('run');
   const now = new Date();
 
@@ -91,9 +95,11 @@ export async function insertWorkflowRun(
       created_at,
       updated_at,
       timeline,
-      retry_count
+      retry_count,
+      idempotency_key
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
     RETURNING *`,
     [
       runId,
@@ -108,16 +114,24 @@ export async function insertWorkflowRun(
       now,
       '{}',
       0,
+      idempotencyKey ?? null,
     ],
   );
 
-  const insertedRun = result.rows[0];
-
-  if (!insertedRun) {
-    throw new Error('Failed to insert workflow run');
+  if (result.rows[0]) {
+    return { run: mapRowToWorkflowRun(result.rows[0]), created: true };
   }
 
-  return mapRowToWorkflowRun(insertedRun);
+  // Conflict — fetch the existing row
+  const existing = await db.executeSql('SELECT * FROM workflow_runs WHERE idempotency_key = $1', [
+    idempotencyKey,
+  ]);
+
+  if (!existing.rows[0]) {
+    throw new Error(`Idempotency conflict: existing run not found for key "${idempotencyKey}"`);
+  }
+
+  return { run: mapRowToWorkflowRun(existing.rows[0]), created: false };
 }
 
 export async function getWorkflowRun(

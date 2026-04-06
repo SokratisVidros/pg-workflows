@@ -156,6 +156,7 @@ const run = await engine.startWorkflow({
   workflowId: 'workflow-id',
   resourceId: 'user-123',            // optional, for scoping/multi-tenancy
   input: { email: 'user@example.com' },
+  idempotencyKey: 'unique-key-123',  // optional, for deduplication
   options: { timeout, retries, expireInSeconds, batchSize }, // all optional
 });
 

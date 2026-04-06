@@ -52,6 +52,7 @@ If you need enterprise-grade features like distributed tracing, complex DAG sche
 - **Configurable Timeouts** - Set workflow-level and step-level timeouts to prevent runaway executions.
 - **Progress Tracking** - Monitor workflow completion percentage, completed steps, and total steps in real-time.
 - **Input Validation** - Define schemas with any [Standard Schema](https://github.com/standard-schema/standard-schema)-compliant library (Zod, Valibot, ArkType, etc.) for type-safe, validated workflow inputs.
+- **Idempotent starts** - Optional `idempotencyKey` on `startWorkflow()` so duplicate API calls or retries return the same run instead of enqueueing another job.
 - **Built on pg-boss** - Leverages the battle-tested [pg-boss](https://github.com/timgit/pg-boss) job queue for reliable task scheduling. pg-boss is bundled as a dependency - no separate install or configuration needed.
 
 ---
@@ -151,6 +152,8 @@ const run = await engine.startWorkflow({
   workflowId: 'send-welcome-email',
   resourceId: 'user-123',
   input: { email: 'user@example.com' },
+  // Optional: same key returns the existing run (deduplicates double-submits / retries)
+  idempotencyKey: 'welcome:user-123',
 });
 
 // Send an event to resume the waiting workflow
@@ -425,6 +428,29 @@ const { items } = await engine.getRuns({
   resourceId: 'user-123',
 });
 ```
+
+### Idempotency key
+
+Pass an optional `idempotencyKey` to `startWorkflow()` when the same logical start might be requested more than once (user double-clicks, API retries, or at-least-once webhooks). The engine stores the key on the run; a second `startWorkflow` with the **same** key returns the **existing** run and does **not** enqueue a second job.
+
+Keys are **globally unique** in the database (up to 256 characters), not scoped per workflow or resource. Prefer stable, namespaced strings so different workflows never collide—for example `send-welcome-email:order-123` instead of a bare order id.
+
+```typescript
+const run = await engine.startWorkflow({
+  workflowId: 'send-welcome-email',
+  input: { email: 'user@example.com' },
+  idempotencyKey: 'send-welcome-email:checkout-session_cs_abc123',
+});
+
+// Idempotent: returns the same run and run.id as above
+const again = await engine.startWorkflow({
+  workflowId: 'send-welcome-email',
+  input: { email: 'other@example.com' }, // ignored for deduplication — existing run wins
+  idempotencyKey: 'send-welcome-email:checkout-session_cs_abc123',
+});
+```
+
+The returned `WorkflowRun` includes `idempotencyKey` (or `null` if omitted).
 
 ### Pause and Resume
 
@@ -708,7 +734,7 @@ When `boss` is omitted, pg-boss is created automatically with an isolated schema
 | `start(asEngine?, options?)` | Start the engine and workers |
 | `stop()` | Stop the engine gracefully |
 | `registerWorkflow(definition)` | Register a workflow definition |
-| `startWorkflow({ workflowId, resourceId?, input, options? })` | Start a new workflow run. `resourceId` optionally ties the run to an external entity (see [Resource ID](#resource-id)). |
+| `startWorkflow({ workflowId, resourceId?, input, idempotencyKey?, options? })` | Start a new workflow run. `resourceId` optionally ties the run to an external entity (see [Resource ID](#resource-id)). `idempotencyKey` optionally deduplicates starts (see [Idempotency key](#idempotency-key)). |
 | `pauseWorkflow({ runId, resourceId? })` | Pause a running workflow |
 | `resumeWorkflow({ runId, resourceId?, options? })` | Resume a paused workflow |
 | `cancelWorkflow({ runId, resourceId? })` | Cancel a workflow |
@@ -789,7 +815,7 @@ enum WorkflowStatus {
 
 The engine automatically runs migrations on startup to create the required tables:
 
-- `workflow_runs` - Stores workflow execution state, step results, and timeline in the `public` schema. The optional `resource_id` column (indexed) associates each run with an external entity in your application. See [Resource ID](#resource-id).
+- `workflow_runs` - Stores workflow execution state, step results, and timeline in the `public` schema. The optional `resource_id` column (indexed) associates each run with an external entity in your application. See [Resource ID](#resource-id). The optional `idempotency_key` column has a unique partial index for [idempotent starts](#idempotency-key).
 - `pgboss_v12_pgworkflow.*` - pg-boss job queue tables for reliable task scheduling (isolated schema to avoid conflicts)
 
 ---

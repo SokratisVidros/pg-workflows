@@ -226,11 +226,13 @@ export class WorkflowEngine {
     resourceId,
     workflowId,
     input,
+    idempotencyKey,
     options,
   }: {
     resourceId?: string;
     workflowId: string;
     input: unknown;
+    idempotencyKey?: string;
     options?: {
       timeout?: number;
       retries?: number;
@@ -276,7 +278,7 @@ export class WorkflowEngine {
             ? new Date(Date.now() + workflow.timeout)
             : null;
 
-        const insertedRun = await insertWorkflowRun(
+        const { run: insertedRun, created } = await insertWorkflowRun(
           {
             resourceId,
             workflowId,
@@ -285,21 +287,24 @@ export class WorkflowEngine {
             input,
             maxRetries: options?.retries ?? workflow.retries ?? 0,
             timeoutAt,
+            idempotencyKey,
           },
           _db,
         );
 
-        const job: WorkflowRunJobParameters = {
-          runId: insertedRun.id,
-          resourceId,
-          workflowId,
-          input,
-        };
+        if (created) {
+          const job: WorkflowRunJobParameters = {
+            runId: insertedRun.id,
+            resourceId,
+            workflowId,
+            input,
+          };
 
-        await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
-          startAfter: new Date(),
-          expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
-        });
+          await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+            startAfter: new Date(),
+            expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
+          });
+        }
 
         return insertedRun;
       },

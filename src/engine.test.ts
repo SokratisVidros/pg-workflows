@@ -477,6 +477,66 @@ describe('WorkflowEngine', () => {
         }),
       ).rejects.toThrow(WorkflowEngineError);
     });
+
+    describe('idempotency', () => {
+      it('should return the same run when called twice with the same idempotencyKey', async () => {
+        const run1 = await engine.startWorkflow({
+          resourceId,
+          workflowId: 'test-workflow',
+          input: { data: 'hello' },
+          idempotencyKey: 'test-key-1',
+        });
+
+        const run2 = await engine.startWorkflow({
+          resourceId,
+          workflowId: 'test-workflow',
+          input: { data: 'hello' },
+          idempotencyKey: 'test-key-1',
+        });
+
+        expect(run1.id).toBe(run2.id);
+        expect(run1.idempotencyKey).toBe('test-key-1');
+        expect(run2.idempotencyKey).toBe('test-key-1');
+      });
+
+      it('should create two runs when no idempotencyKey is provided', async () => {
+        const run1 = await engine.startWorkflow({
+          resourceId,
+          workflowId: 'test-workflow',
+          input: { data: 'a' },
+        });
+
+        const run2 = await engine.startWorkflow({
+          resourceId,
+          workflowId: 'test-workflow',
+          input: { data: 'b' },
+        });
+
+        expect(run1.id).not.toBe(run2.id);
+        expect(run1.idempotencyKey).toBeNull();
+        expect(run2.idempotencyKey).toBeNull();
+      });
+
+      it('should create two runs when different idempotencyKeys are provided', async () => {
+        const run1 = await engine.startWorkflow({
+          resourceId,
+          workflowId: 'test-workflow',
+          input: { data: 'x' },
+          idempotencyKey: 'key-a',
+        });
+
+        const run2 = await engine.startWorkflow({
+          resourceId,
+          workflowId: 'test-workflow',
+          input: { data: 'y' },
+          idempotencyKey: 'key-b',
+        });
+
+        expect(run1.id).not.toBe(run2.id);
+        expect(run1.idempotencyKey).toBe('key-a');
+        expect(run2.idempotencyKey).toBe('key-b');
+      });
+    });
   });
 
   describe('pauseWorkflow(runId)', () => {

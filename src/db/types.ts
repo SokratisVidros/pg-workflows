@@ -17,4 +17,5 @@ export type WorkflowRun = {
   retryCount: number;
   maxRetries: number;
   jobId: string | null;
+  idempotencyKey: string | null;
 };

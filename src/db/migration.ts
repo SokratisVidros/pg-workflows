@@ -33,7 +33,8 @@ export async function runMigrations(db: Db): Promise<void> {
         timeout_at timestamp with time zone,
         retry_count integer DEFAULT 0 NOT NULL,
         max_retries integer DEFAULT 0 NOT NULL,
-        job_id varchar(256)
+        job_id varchar(256),
+        idempotency_key varchar(256)
       );
     `,
       [],
@@ -46,6 +47,7 @@ export async function runMigrations(db: Db): Promise<void> {
       CREATE INDEX workflow_runs_status_created_at_idx ON workflow_runs USING btree (status, created_at DESC);
       CREATE INDEX workflow_runs_workflow_id_created_at_idx ON workflow_runs USING btree (workflow_id, created_at DESC);
       CREATE INDEX workflow_runs_resource_id_workflow_id_created_at_idx ON workflow_runs USING btree (resource_id, workflow_id, created_at DESC);
+      CREATE UNIQUE INDEX workflow_runs_idempotency_key_idx ON workflow_runs (idempotency_key) WHERE idempotency_key IS NOT NULL;
     `,
       [],
     );
@@ -61,6 +63,8 @@ export async function runMigrations(db: Db): Promise<void> {
       CREATE INDEX IF NOT EXISTS workflow_runs_status_created_at_idx ON workflow_runs USING btree (status, created_at DESC);
       CREATE INDEX IF NOT EXISTS workflow_runs_workflow_id_created_at_idx ON workflow_runs USING btree (workflow_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS workflow_runs_resource_id_workflow_id_created_at_idx ON workflow_runs USING btree (resource_id, workflow_id, created_at DESC);
+      ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS idempotency_key varchar(256);
+      CREATE UNIQUE INDEX IF NOT EXISTS workflow_runs_idempotency_key_idx ON workflow_runs (idempotency_key) WHERE idempotency_key IS NOT NULL;
       `,
       [],
     );
