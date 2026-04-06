@@ -116,6 +116,26 @@ export interface WorkflowFactory<TStepExt = object> {
   use<TNewExt>(
     plugin: WorkflowPlugin<StepBaseContext & TStepExt, TNewExt>,
   ): WorkflowFactory<TStepExt & TNewExt>;
+  ref<TInput extends InputParameters = InputParameters>(
+    id: string,
+    options?: { inputSchema?: TInput },
+  ): WorkflowRef<TInput>;
+}
+
+/**
+ * Lightweight workflow reference — carries the workflow ID and input type
+ * but no handler code. Safe to import in API services without pulling in
+ * heavy worker dependencies.
+ *
+ * Callable: pass a handler to create a full WorkflowDefinition.
+ */
+export interface WorkflowRef<TInput extends InputParameters = InputParameters> {
+  (
+    handler: (context: WorkflowContext<TInput, StepBaseContext>) => Promise<unknown>,
+    options?: Omit<WorkflowOptions<TInput>, 'inputSchema'>,
+  ): WorkflowDefinition<TInput>;
+  readonly id: string;
+  readonly inputSchema?: TInput;
 }
 
 export type WorkflowRunProgress = WorkflowRun & {
