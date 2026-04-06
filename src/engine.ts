@@ -687,7 +687,6 @@ export class WorkflowEngine {
               { runId, resourceId: scopedResourceId },
               { exclusiveLock: true, db },
             );
-
             if (lockedRun.status !== WorkflowStatus.PAUSED) {
               return lockedRun;
             }

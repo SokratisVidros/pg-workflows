@@ -4,8 +4,8 @@ export async function runMigrations(db: Db): Promise<void> {
   const tableExistsResult = await db.executeSql(
     `
     SELECT EXISTS (
-      SELECT FROM information_schema.tables 
-      WHERE table_schema = 'public' 
+      SELECT FROM information_schema.tables
+      WHERE table_schema = 'public'
       AND table_name = 'workflow_runs'
     );
   `,

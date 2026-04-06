@@ -112,11 +112,11 @@ export type WorkflowInternalDefinition<
  * TStepExt is the accumulated step extension from all plugins (step = StepContext & TStepExt).
  */
 export interface WorkflowFactory<TStepExt = object> {
-  <I extends InputParameters>(
+  <I extends InputParameters = InputParameters>(
     id: string,
     handler: (context: WorkflowContext<I, StepBaseContext & TStepExt>) => Promise<unknown>,
     options?: WorkflowOptions<I>,
-  ): WorkflowDefinition<InputParameters, StepBaseContext & TStepExt>;
+  ): WorkflowDefinition<I, StepBaseContext & TStepExt>;
   use<TNewExt>(
     plugin: WorkflowPlugin<StepBaseContext & TStepExt, TNewExt>,
   ): WorkflowFactory<TStepExt & TNewExt>;
