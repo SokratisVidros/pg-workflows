@@ -106,7 +106,7 @@ describe('Migration advisory lock (real PostgreSQL)', () => {
       const db = makeDb(client);
       await runMigrations(db);
 
-      // The lock should be released — try_advisory_lock should succeed immediately
+      // The xact lock is auto-released on COMMIT — try_advisory_lock should succeed
       const result = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [
         MIGRATION_LOCK_ID,
       ]);
@@ -119,31 +119,42 @@ describe('Migration advisory lock (real PostgreSQL)', () => {
     }
   });
 
-  it('should release the advisory lock even if migration fails', async () => {
+  it('should rollback migration on failure (transactional DDL)', async () => {
     const client = await pool.connect();
     try {
-      let callCount = 0;
+      // Simulate a failure by using a db wrapper that corrupts one DDL statement
       const db = {
         executeSql: async (text: string, values?: unknown[]) => {
-          callCount++;
-          // Let the fast-path check (1), advisory lock (2), and version table setup (3) through,
-          // then fail on the 4th call (version SELECT inside the lock)
-          if (callCount === 4) {
-            throw new Error('Simulated migration failure');
+          // Inject an error into the migration transaction by replacing a valid
+          // DDL statement with an invalid one. This tests that BEGIN/COMMIT wrapping
+          // ensures all-or-nothing migration.
+          if (text.includes('CREATE TABLE IF NOT EXISTS workflow_runs')) {
+            const corrupted = text.replace(
+              'CREATE TABLE IF NOT EXISTS workflow_runs',
+              'CREATE TABLE IF NOT EXISTS workflow_runs_BROKEN(',
+            );
+            return client.query(corrupted, values) as Promise<{ rows: unknown[] }>;
           }
           return client.query(text, values) as Promise<{ rows: unknown[] }>;
         },
       };
 
-      await expect(runMigrations(db)).rejects.toThrow('Simulated migration failure');
+      await expect(runMigrations(db)).rejects.toThrow();
 
-      // The advisory lock should still be released thanks to the finally block
-      const result = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [
+      // The transaction should have rolled back — no tables should exist
+      const tableExists = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = 'workflow_runs'
+        )
+      `);
+      expect(tableExists.rows[0].exists).toBe(false);
+
+      // The advisory lock should be released (xact lock auto-releases on rollback)
+      const lockResult = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [
         MIGRATION_LOCK_ID,
       ]);
-      expect(result.rows[0].acquired).toBe(true);
-
-      // Clean up
+      expect(lockResult.rows[0].acquired).toBe(true);
       await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]);
     } finally {
       client.release();

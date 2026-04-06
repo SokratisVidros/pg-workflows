@@ -14,93 +14,90 @@ export async function runMigrations(db: Db): Promise<void> {
     return;
   }
 
-  // Slow path: acquire advisory lock and run migrations.
-  await db.executeSql('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_ID]);
+  // Slow path: build migration SQL based on current version, then execute
+  // everything in a single transaction with an advisory lock.
+  // This mirrors pg-boss's approach: one executeSql call ensures all DDL
+  // runs on a single connection inside BEGIN/COMMIT, and pg_advisory_xact_lock
+  // auto-releases on commit or rollback (no manual unlock needed).
+  const currentVersion = await getCurrentVersion(db);
 
-  try {
-    await db.executeSql(
-      'CREATE TABLE IF NOT EXISTS workflow_schema_version (version integer NOT NULL)',
-      [],
-    );
+  const commands: string[] = [];
 
-    const versionResult = await db.executeSql(
-      'SELECT version FROM workflow_schema_version LIMIT 1',
-      [],
-    );
-    const currentVersion = (versionResult.rows[0] as { version: number } | undefined)?.version ?? 0;
-
-    // Re-check after acquiring lock — another process may have migrated while we waited
-    if (currentVersion >= CURRENT_SCHEMA_VERSION) {
-      return;
-    }
-
-    // Version 0 → 1: Create the workflow_runs table and indexes
-    if (currentVersion < 1) {
-      await db.executeSql(
-        `
-        CREATE TABLE IF NOT EXISTS workflow_runs (
-          id varchar(32) PRIMARY KEY NOT NULL,
-          created_at timestamp with time zone DEFAULT now() NOT NULL,
-          updated_at timestamp with time zone DEFAULT now() NOT NULL,
-          resource_id varchar(32),
-          workflow_id varchar(32) NOT NULL,
-          status text DEFAULT 'pending' NOT NULL,
-          input jsonb NOT NULL,
-          output jsonb,
-          error text,
-          current_step_id varchar(256) NOT NULL,
-          timeline jsonb DEFAULT '{}'::jsonb NOT NULL,
-          paused_at timestamp with time zone,
-          resumed_at timestamp with time zone,
-          completed_at timestamp with time zone,
-          timeout_at timestamp with time zone,
-          retry_count integer DEFAULT 0 NOT NULL,
-          max_retries integer DEFAULT 0 NOT NULL,
-          job_id varchar(256)
-        );
-        `,
-        [],
-      );
-
-      await db.executeSql(
-        `
-        CREATE INDEX IF NOT EXISTS workflow_runs_created_at_idx ON workflow_runs USING btree (created_at);
-        CREATE INDEX IF NOT EXISTS workflow_runs_resource_id_created_at_idx ON workflow_runs USING btree (resource_id, created_at DESC);
-        CREATE INDEX IF NOT EXISTS workflow_runs_status_created_at_idx ON workflow_runs USING btree (status, created_at DESC);
-        CREATE INDEX IF NOT EXISTS workflow_runs_workflow_id_created_at_idx ON workflow_runs USING btree (workflow_id, created_at DESC);
-        CREATE INDEX IF NOT EXISTS workflow_runs_resource_id_workflow_id_created_at_idx ON workflow_runs USING btree (resource_id, workflow_id, created_at DESC);
-        `,
-        [],
-      );
-    }
-
-    // Version 1 → 2: Drop legacy single-column indexes,
-    // add idempotency_key column and unique index.
-    if (currentVersion < 2) {
-      await db.executeSql(
-        `
-        DROP INDEX IF EXISTS workflow_runs_workflow_id_idx;
-        DROP INDEX IF EXISTS workflow_runs_resource_id_idx;
-        ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS idempotency_key varchar(256);
-        CREATE UNIQUE INDEX IF NOT EXISTS workflow_runs_idempotency_key_idx ON workflow_runs (idempotency_key) WHERE idempotency_key IS NOT NULL;
-        `,
-        [],
-      );
-    }
-
-    // Upsert the schema version
-    if (currentVersion === 0) {
-      await db.executeSql('INSERT INTO workflow_schema_version (version) VALUES ($1)', [
-        CURRENT_SCHEMA_VERSION,
-      ]);
-    } else {
-      await db.executeSql('UPDATE workflow_schema_version SET version = $1', [
-        CURRENT_SCHEMA_VERSION,
-      ]);
-    }
-  } finally {
-    await db.executeSql('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]);
+  if (currentVersion < 1) {
+    commands.push(`
+      CREATE TABLE IF NOT EXISTS workflow_runs (
+        id varchar(32) PRIMARY KEY NOT NULL,
+        created_at timestamp with time zone DEFAULT now() NOT NULL,
+        updated_at timestamp with time zone DEFAULT now() NOT NULL,
+        resource_id varchar(32),
+        workflow_id varchar(32) NOT NULL,
+        status text DEFAULT 'pending' NOT NULL,
+        input jsonb NOT NULL,
+        output jsonb,
+        error text,
+        current_step_id varchar(256) NOT NULL,
+        timeline jsonb DEFAULT '{}'::jsonb NOT NULL,
+        paused_at timestamp with time zone,
+        resumed_at timestamp with time zone,
+        completed_at timestamp with time zone,
+        timeout_at timestamp with time zone,
+        retry_count integer DEFAULT 0 NOT NULL,
+        max_retries integer DEFAULT 0 NOT NULL,
+        job_id varchar(256)
+      )
+    `);
+    commands.push(`
+      CREATE INDEX IF NOT EXISTS workflow_runs_created_at_idx ON workflow_runs USING btree (created_at)
+    `);
+    commands.push(`
+      CREATE INDEX IF NOT EXISTS workflow_runs_resource_id_created_at_idx ON workflow_runs USING btree (resource_id, created_at DESC)
+    `);
+    commands.push(`
+      CREATE INDEX IF NOT EXISTS workflow_runs_status_created_at_idx ON workflow_runs USING btree (status, created_at DESC)
+    `);
+    commands.push(`
+      CREATE INDEX IF NOT EXISTS workflow_runs_workflow_id_created_at_idx ON workflow_runs USING btree (workflow_id, created_at DESC)
+    `);
+    commands.push(`
+      CREATE INDEX IF NOT EXISTS workflow_runs_resource_id_workflow_id_created_at_idx ON workflow_runs USING btree (resource_id, workflow_id, created_at DESC)
+    `);
   }
+
+  if (currentVersion < 2) {
+    commands.push('DROP INDEX IF EXISTS workflow_runs_workflow_id_idx');
+    commands.push('DROP INDEX IF EXISTS workflow_runs_resource_id_idx');
+    commands.push(
+      'ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS idempotency_key varchar(256)',
+    );
+    commands.push(`
+      CREATE UNIQUE INDEX IF NOT EXISTS workflow_runs_idempotency_key_idx ON workflow_runs (idempotency_key) WHERE idempotency_key IS NOT NULL
+    `);
+  }
+
+  // Upsert the schema version
+  if (currentVersion === 0) {
+    commands.push(
+      `INSERT INTO workflow_schema_version (version) VALUES (${CURRENT_SCHEMA_VERSION})`,
+    );
+  } else {
+    commands.push(`UPDATE workflow_schema_version SET version = ${CURRENT_SCHEMA_VERSION}`);
+  }
+
+  if (commands.length === 0) {
+    return;
+  }
+
+  const sql = [
+    'BEGIN',
+    "SET LOCAL lock_timeout = '30s'",
+    "SET LOCAL idle_in_transaction_session_timeout = '30s'",
+    `SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_ID})`,
+    'CREATE TABLE IF NOT EXISTS workflow_schema_version (version integer NOT NULL)',
+    ...commands,
+    'COMMIT',
+  ].join(';\n');
+
+  await db.executeSql(sql, []);
 }
 
 async function isSchemaUpToDate(db: Db): Promise<boolean> {
@@ -112,5 +109,14 @@ async function isSchemaUpToDate(db: Db): Promise<boolean> {
   } catch {
     // Table doesn't exist yet — needs migration
     return false;
+  }
+}
+
+async function getCurrentVersion(db: Db): Promise<number> {
+  try {
+    const result = await db.executeSql('SELECT version FROM workflow_schema_version LIMIT 1', []);
+    return (result.rows[0] as { version: number } | undefined)?.version ?? 0;
+  } catch {
+    return 0;
   }
 }
