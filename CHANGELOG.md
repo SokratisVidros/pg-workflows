@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.8.1 - 2026-04-15
+
+### Added
+
+- Exposed `idempotencyKey` on `WorkflowClient.startWorkflow()` to support safer client-side deduplication when starting runs.
+
+### Changed
+
+- Added a deterministic release skill so version bumps, changelog updates, tags, and GitHub releases follow a single repeatable process.
+
 ## v0.8.0 - 2026-04-15
 
 ### Added
@@ -18,3 +28,4 @@ All notable changes to this project will be documented in this file.
 - Split the README into focused documentation pages under `docs/` to make architecture, configuration, API usage, and examples easier to navigate.
 
 [v0.8.0]: https://github.com/SokratisVidros/pg-workflows/compare/v0.7.2...v0.8.0
+[v0.8.1]: https://github.com/SokratisVidros/pg-workflows/compare/v0.8.0...v0.8.1
