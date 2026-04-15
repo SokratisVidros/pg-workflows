@@ -36,6 +36,13 @@ type WorkflowRunJobParameters = {
 
 export type WorkflowClientOptions = {
   logger?: WorkflowLogger;
+  /**
+   * Pre-configured pg-boss instance. Pass this when the engine side uses a
+   * non-default pg-boss config (schema, retention, logger, etc.) so the
+   * client enqueues jobs where the engine reads them. Mirrors the same
+   * option on `WorkflowEngineOptions`.
+   */
+  boss?: PgBoss;
 } & ({ pool: pg.Pool; connectionString?: never } | { connectionString: string; pool?: never });
 
 export type StartWorkflowOptions = {
@@ -63,7 +70,7 @@ export class WorkflowClient {
   private _started = false;
   private logger: WorkflowLogger;
 
-  constructor({ logger, ...connectionOptions }: WorkflowClientOptions) {
+  constructor({ logger, boss, ...connectionOptions }: WorkflowClientOptions) {
     this.logger = logger ?? defaultLogger;
 
     if ('pool' in connectionOptions && connectionOptions.pool) {
@@ -80,7 +87,11 @@ export class WorkflowClient {
         this.pool.query(text, values) as Promise<{ rows: unknown[] }>,
     };
 
-    this.boss = new PgBoss({ db, schema: DEFAULT_PGBOSS_SCHEMA });
+    if (boss) {
+      this.boss = boss;
+    } else {
+      this.boss = new PgBoss({ db, schema: DEFAULT_PGBOSS_SCHEMA });
+    }
     this.db = db;
   }
 
