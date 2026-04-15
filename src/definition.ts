@@ -6,7 +6,35 @@ import type {
   WorkflowFactory,
   WorkflowOptions,
   WorkflowPlugin,
+  WorkflowRef,
 } from './types';
+
+/**
+ * Create a lightweight workflow reference.
+ * Safe to import from `pg-workflows/client` — no engine or handler code.
+ */
+export function createWorkflowRef<TInput extends InputParameters = InputParameters>(
+  id: string,
+  options?: { inputSchema?: TInput },
+): WorkflowRef<TInput> {
+  const ref = ((
+    handler: (context: WorkflowContext<TInput, StepBaseContext>) => Promise<unknown>,
+    defineOptions?: Omit<WorkflowOptions<TInput>, 'inputSchema'>,
+  ): WorkflowDefinition<TInput> => ({
+    id,
+    handler: handler as (
+      context: WorkflowContext<InputParameters, StepBaseContext>,
+    ) => Promise<unknown>,
+    inputSchema: options?.inputSchema,
+    timeout: defineOptions?.timeout,
+    retries: defineOptions?.retries,
+  })) as WorkflowRef<TInput>;
+
+  Object.defineProperty(ref, 'id', { value: id, enumerable: true });
+  Object.defineProperty(ref, 'inputSchema', { value: options?.inputSchema, enumerable: true });
+
+  return ref;
+}
 
 function createWorkflowFactory<TStepExt extends object = object>(
   plugins: Array<WorkflowPlugin<unknown, object>> = [],
@@ -33,6 +61,8 @@ function createWorkflowFactory<TStepExt extends object = object>(
       ...plugins,
       plugin as WorkflowPlugin<unknown, object>,
     ]);
+
+  factory.ref = createWorkflowRef;
 
   return factory;
 }

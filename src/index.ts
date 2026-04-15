@@ -1,3 +1,4 @@
+export * from './client';
 export * from './definition';
 export * from './duration';
 export * from './engine';

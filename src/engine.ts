@@ -2,6 +2,7 @@ import { merge } from 'es-toolkit';
 import pg from 'pg';
 import { type Db, type Job, PgBoss } from 'pg-boss';
 import { parseWorkflowHandler } from './ast-parser';
+import { DEFAULT_PGBOSS_SCHEMA, PAUSE_EVENT_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constants';
 import { runMigrations } from './db/migration';
 import {
   getWorkflowRun,
@@ -24,14 +25,21 @@ import {
   type WorkflowInternalLogger,
   type WorkflowInternalLoggerContext,
   type WorkflowLogger,
+  type WorkflowRef,
   type WorkflowRunProgress,
   WorkflowStatus,
 } from './types';
 
-const PAUSE_EVENT_NAME = '__internal_pause';
-const WORKFLOW_RUN_QUEUE_NAME = 'workflow-run';
 const LOG_PREFIX = '[WorkflowEngine]';
-const DEFAULT_PGBOSS_SCHEMA = 'pgboss_v12_pgworkflow';
+
+type StartWorkflowOptions = {
+  resourceId?: string;
+  timeout?: number;
+  retries?: number;
+  expireInSeconds?: number;
+  batchSize?: number;
+  idempotencyKey?: string;
+};
 
 export type WorkflowEngineOptions = {
   workflows?: WorkflowDefinition[];
@@ -219,24 +227,60 @@ export class WorkflowEngine {
     return this;
   }
 
-  async startWorkflow({
-    resourceId,
-    workflowId,
-    input,
-    idempotencyKey,
-    options,
-  }: {
+  async startWorkflow<TInput extends InputParameters>(
+    ref: WorkflowRef<TInput>,
+    input: InferInputParameters<TInput>,
+    options?: StartWorkflowOptions,
+  ): Promise<WorkflowRun>;
+
+  async startWorkflow(params: {
     resourceId?: string;
     workflowId: string;
     input: unknown;
     idempotencyKey?: string;
-    options?: {
-      timeout?: number;
-      retries?: number;
-      expireInSeconds?: number;
-      batchSize?: number;
-    };
-  }): Promise<WorkflowRun> {
+    options?: StartWorkflowOptions;
+  }): Promise<WorkflowRun>;
+
+  async startWorkflow<TInput extends InputParameters>(
+    refOrParams:
+      | WorkflowRef<TInput>
+      | {
+          resourceId?: string;
+          workflowId: string;
+          input: unknown;
+          idempotencyKey?: string;
+          options?: StartWorkflowOptions;
+        },
+    inputArg?: InferInputParameters<TInput>,
+    optionsArg?: StartWorkflowOptions,
+  ): Promise<WorkflowRun> {
+    let workflowId: string;
+    let input: unknown;
+    let resourceId: string | undefined;
+    let idempotencyKey: string | undefined;
+    let options: StartWorkflowOptions | undefined;
+
+    if (typeof refOrParams === 'function' && 'id' in refOrParams) {
+      workflowId = refOrParams.id;
+      input = inputArg;
+      options = optionsArg;
+      resourceId = optionsArg?.resourceId;
+      idempotencyKey = optionsArg?.idempotencyKey;
+    } else {
+      const params = refOrParams as {
+        resourceId?: string;
+        workflowId: string;
+        input: unknown;
+        idempotencyKey?: string;
+        options?: StartWorkflowOptions;
+      };
+      workflowId = params.workflowId;
+      input = params.input;
+      resourceId = params.resourceId;
+      idempotencyKey = params.idempotencyKey;
+      options = params.options;
+    }
+
     if (!this._started) {
       await this.start(false, { batchSize: options?.batchSize ?? 1 });
     }
