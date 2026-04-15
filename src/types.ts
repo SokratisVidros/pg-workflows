@@ -123,7 +123,7 @@ export interface WorkflowFactory<TStepExt = object> {
 }
 
 /**
- * Lightweight workflow reference — carries the workflow ID and input type
+ * Lightweight workflow reference - carries the workflow ID and input type
  * but no handler code. Safe to import in API services without pulling in
  * heavy worker dependencies.
  *

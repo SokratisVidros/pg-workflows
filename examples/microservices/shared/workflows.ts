@@ -1,5 +1,5 @@
 /**
- * Shared workflow refs — imported by both API and worker services.
+ * Shared workflow refs - imported by both API and worker services.
  *
  * These carry only the workflow ID and input schema.
  * No handler code, no heavy dependencies.

@@ -11,7 +11,7 @@ import type {
 
 /**
  * Create a lightweight workflow reference.
- * Safe to import from `pg-workflows/client` — no engine or handler code.
+ * Safe to import from `pg-workflows/client` - no engine or handler code.
  */
 export function createWorkflowRef<TInput extends InputParameters = InputParameters>(
   id: string,

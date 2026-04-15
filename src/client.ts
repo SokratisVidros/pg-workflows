@@ -336,12 +336,12 @@ export class WorkflowClient {
       waitForEntry as { waitFor: { eventName?: string; timeoutEvent?: string; skipOutput?: true } }
     ).waitFor;
 
-    // step.pause() — delegate to resumeWorkflow
+    // step.pause() - delegate to resumeWorkflow
     if (eventName === PAUSE_EVENT_NAME) {
       return this.resumeWorkflow({ runId, resourceId });
     }
 
-    // step.poll() — write output to timeline first, then trigger resume
+    // step.poll() - write output to timeline first, then trigger resume
     if (skipOutput && timeoutEvent) {
       await withPostgresTransaction(
         this.db,
@@ -370,12 +370,12 @@ export class WorkflowClient {
       return this.triggerEvent({ runId, resourceId, eventName: timeoutEvent });
     }
 
-    // waitFor steps — trigger the event with data
+    // waitFor steps - trigger the event with data
     if (eventName) {
       return this.triggerEvent({ runId, resourceId, eventName, data: data ?? {} });
     }
 
-    // delay/waitUntil steps — trigger the timeout event
+    // delay/waitUntil steps - trigger the timeout event
     if (timeoutEvent) {
       return this.triggerEvent({ runId, resourceId, eventName: timeoutEvent, data: data ?? {} });
     }

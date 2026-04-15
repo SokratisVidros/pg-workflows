@@ -9,7 +9,7 @@ const CURRENT_SCHEMA_VERSION = 2;
 
 export async function runMigrations(db: Db): Promise<void> {
   // Fast path: skip the advisory lock if schema is already current.
-  // This is the common case — every engine.start() after initial setup.
+  // This is the common case - every engine.start() after initial setup.
   if (await isSchemaUpToDate(db)) {
     return;
   }
@@ -107,7 +107,7 @@ async function isSchemaUpToDate(db: Db): Promise<boolean> {
       ((result.rows[0] as { version: number } | undefined)?.version ?? 0) >= CURRENT_SCHEMA_VERSION
     );
   } catch {
-    // Table doesn't exist yet — needs migration
+    // Table doesn't exist yet - needs migration
     return false;
   }
 }

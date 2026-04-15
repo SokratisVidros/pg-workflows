@@ -33,7 +33,7 @@ describe('Migration advisory lock (real PostgreSQL)', () => {
   });
 
   it('should serialize concurrent migrations with advisory lock instead of deadlocking', async () => {
-    // Run 5 concurrent migrations — before the advisory lock fix,
+    // Run 5 concurrent migrations - before the advisory lock fix,
     // this would deadlock when multiple processes ran DDL concurrently.
     const concurrency = 5;
     const results = await Promise.allSettled(
@@ -106,7 +106,7 @@ describe('Migration advisory lock (real PostgreSQL)', () => {
       const db = makeDb(client);
       await runMigrations(db);
 
-      // The xact lock is auto-released on COMMIT — try_advisory_lock should succeed
+      // The xact lock is auto-released on COMMIT - try_advisory_lock should succeed
       const result = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [
         MIGRATION_LOCK_ID,
       ]);
@@ -141,7 +141,7 @@ describe('Migration advisory lock (real PostgreSQL)', () => {
 
       await expect(runMigrations(db)).rejects.toThrow();
 
-      // The transaction should have rolled back — no tables should exist
+      // The transaction should have rolled back - no tables should exist
       const tableExists = await client.query(`
         SELECT EXISTS (
           SELECT FROM information_schema.tables

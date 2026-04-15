@@ -1,7 +1,7 @@
 /**
- * API Service — lightweight process that starts and manages workflows.
+ * API Service - lightweight process that starts and manages workflows.
  *
- * Imports only from `pg-workflows/client` — no handler code, no AST parser,
+ * Imports only from `pg-workflows/client` - no handler code, no AST parser,
  * no heavy worker dependencies. In a real app this would be your Express,
  * Fastify, or Hono server.
  */
@@ -14,7 +14,7 @@ async function main() {
   const client = new WorkflowClient({ connectionString: DATABASE_URL });
   await client.start();
 
-  // Start a workflow using the typed ref — input is validated against the schema
+  // Start a workflow using the typed ref - input is validated against the schema
   const run = await client.startWorkflow(onboardUser, {
     email: 'alice@example.com',
     name: 'Alice',

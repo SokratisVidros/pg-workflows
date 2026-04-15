@@ -122,7 +122,7 @@ export async function insertWorkflowRun(
     return { run: mapRowToWorkflowRun(result.rows[0]), created: true };
   }
 
-  // Conflict — fetch the existing row
+  // Conflict - fetch the existing row
   const existing = await db.executeSql('SELECT * FROM workflow_runs WHERE idempotency_key = $1', [
     idempotencyKey,
   ]);

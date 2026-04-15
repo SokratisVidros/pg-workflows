@@ -1,9 +1,9 @@
 /**
- * Worker Service — full engine that registers handlers and executes steps.
+ * Worker Service - full engine that registers handlers and executes steps.
  *
  * Imports from `pg-workflows` (the full engine) and defines the actual
  * workflow logic. This is where heavy dependencies (LLM SDKs, email
- * services, etc.) live — they never get loaded in the API service.
+ * services, etc.) live - they never get loaded in the API service.
  */
 import { WorkflowEngine } from 'pg-workflows';
 import { onboardUser, processPayment } from './shared/workflows';
