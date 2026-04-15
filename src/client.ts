@@ -43,6 +43,7 @@ export type StartWorkflowOptions = {
   timeout?: number;
   retries?: number;
   expireInSeconds?: number;
+  idempotencyKey?: string;
 };
 
 const defaultLogger: WorkflowLogger = {
@@ -118,6 +119,7 @@ export class WorkflowClient {
     workflowId: string;
     input: unknown;
     resourceId?: string;
+    idempotencyKey?: string;
     options?: StartWorkflowOptions;
   }): Promise<WorkflowRun>;
 
@@ -128,6 +130,7 @@ export class WorkflowClient {
           workflowId: string;
           input: unknown;
           resourceId?: string;
+          idempotencyKey?: string;
           options?: StartWorkflowOptions;
         },
     inputArg?: InferInputParameters<TInput>,
@@ -138,6 +141,7 @@ export class WorkflowClient {
     let workflowId: string;
     let input: unknown;
     let resourceId: string | undefined;
+    let idempotencyKey: string | undefined;
     let options: StartWorkflowOptions | undefined;
 
     if (typeof refOrParams === 'function' && 'id' in refOrParams) {
@@ -146,6 +150,7 @@ export class WorkflowClient {
       input = inputArg;
       options = optionsArg;
       resourceId = optionsArg?.resourceId;
+      idempotencyKey = optionsArg?.idempotencyKey;
 
       if (ref.inputSchema) {
         const result = await ref.inputSchema['~standard'].validate(input);
@@ -164,11 +169,13 @@ export class WorkflowClient {
         workflowId: string;
         input: unknown;
         resourceId?: string;
+        idempotencyKey?: string;
         options?: StartWorkflowOptions;
       };
       workflowId = params.workflowId;
       input = params.input;
       resourceId = params.resourceId;
+      idempotencyKey = params.idempotencyKey;
       options = params.options;
     }
 
@@ -186,6 +193,7 @@ export class WorkflowClient {
             input,
             maxRetries: options?.retries ?? 0,
             timeoutAt,
+            idempotencyKey,
           },
           _db,
         );
