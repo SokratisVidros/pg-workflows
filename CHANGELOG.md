@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.8.2 - 2026-04-16
+
+### Added
+
+- Allowed `WorkflowClientOptions` to accept a pre-configured `pg-boss` instance so clients can reuse existing queue configuration.
+
 ## v0.8.1 - 2026-04-15
 
 ### Added
@@ -29,3 +35,4 @@ All notable changes to this project will be documented in this file.
 
 [v0.8.0]: https://github.com/SokratisVidros/pg-workflows/compare/v0.7.2...v0.8.0
 [v0.8.1]: https://github.com/SokratisVidros/pg-workflows/compare/v0.8.0...v0.8.1
+[v0.8.2]: https://github.com/SokratisVidros/pg-workflows/compare/v0.8.1...v0.8.2
