@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { PgBoss } from 'pg-boss';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { WorkflowClient } from './client';
@@ -106,6 +107,32 @@ describe('WorkflowClient', () => {
       expect(run1.id).not.toBe(run2.id);
       expect(run1.idempotencyKey).toBe('client-key-a');
       expect(run2.idempotencyKey).toBe('client-key-b');
+    });
+  });
+
+  describe('boss option', () => {
+    it('uses the provided pg-boss instance (and its schema)', async () => {
+      const customSchema = 'custom_client_schema';
+      const customBoss = new PgBoss({
+        db: {
+          executeSql: (text: string, values?: unknown[]) =>
+            testPool.query(text, values) as Promise<{ rows: unknown[] }>,
+        },
+        schema: customSchema,
+      });
+
+      const customClient = new WorkflowClient({
+        pool: testPool,
+        boss: customBoss,
+      });
+      await customClient.start();
+
+      const schemas = await testPool.query('SELECT nspname FROM pg_namespace WHERE nspname = $1', [
+        customSchema,
+      ]);
+      expect(schemas.rows).toHaveLength(1);
+
+      await customClient.stop();
     });
   });
 });
