@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.8.3 - 2026-04-22
+
+### Fixed
+
+- Upgraded `pg-boss` to `^12.16.0` to fix a bug where `start()` could silently leave the queue cache uninitialized, poisoning the boss instance for its entire lifetime ([timgit/pg-boss#768](https://github.com/timgit/pg-boss/issues/768)).
+
 ## v0.8.2 - 2026-04-16
 
 ### Added
@@ -36,3 +42,4 @@ All notable changes to this project will be documented in this file.
 [v0.8.0]: https://github.com/SokratisVidros/pg-workflows/compare/v0.7.2...v0.8.0
 [v0.8.1]: https://github.com/SokratisVidros/pg-workflows/compare/v0.8.0...v0.8.1
 [v0.8.2]: https://github.com/SokratisVidros/pg-workflows/compare/v0.8.1...v0.8.2
+[v0.8.3]: https://github.com/SokratisVidros/pg-workflows/compare/v0.8.2...v0.8.3
