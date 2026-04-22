@@ -4,7 +4,7 @@ This is the single source of truth for deterministic releases in this repository
 
 ## Scope
 
-- Release type: **minor** by default
+- Release type: **patch** by default
 - Release artifacts:
   - `package.json` version
   - `package-lock.json` version
