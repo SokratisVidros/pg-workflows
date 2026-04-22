@@ -81,7 +81,7 @@
     "es-toolkit": "^1.44.0",
     "ksuid": "^3.0.0",
     "parse-duration": "^2.1.5",
-    "pg-boss": "^12.14.0",
+    "pg-boss": "^12.16.0",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
