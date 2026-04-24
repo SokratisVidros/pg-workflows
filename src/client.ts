@@ -11,7 +11,12 @@ import {
   withPostgresTransaction,
 } from './db/queries';
 import type { WorkflowRun } from './db/types';
-import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
+import {
+  validateResourceId,
+  validateWorkflowId,
+  WorkflowEngineError,
+  WorkflowRunNotFoundError,
+} from './error';
 import {
   type InferInputParameters,
   type InputParameters,
@@ -189,6 +194,9 @@ export class WorkflowClient {
       idempotencyKey = params.idempotencyKey;
       options = params.options;
     }
+
+    validateWorkflowId(workflowId);
+    validateResourceId(resourceId);
 
     const run = await withPostgresTransaction(
       this.db,
@@ -506,6 +514,9 @@ export class WorkflowClient {
     hasPrev: boolean;
   }> {
     await this.ensureStarted();
+
+    if (workflowId) validateWorkflowId(workflowId);
+    validateResourceId(resourceId);
 
     return getWorkflowRuns(
       {

@@ -55,7 +55,7 @@ describe('Migration advisory lock (real PostgreSQL)', () => {
 
     // Verify the final schema state is correct
     const versionResult = await pool.query('SELECT version FROM workflow_schema_version LIMIT 1');
-    expect(versionResult.rows[0].version).toBe(2);
+    expect(versionResult.rows[0].version).toBe(3);
 
     const tableExists = await pool.query(`
       SELECT EXISTS (
