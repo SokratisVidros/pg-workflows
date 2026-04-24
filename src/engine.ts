@@ -14,7 +14,12 @@ import {
 import type { WorkflowRun } from './db/types';
 import type { Duration } from './duration';
 import { parseDuration } from './duration';
-import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
+import {
+  validateResourceId,
+  validateWorkflowId,
+  WorkflowEngineError,
+  WorkflowRunNotFoundError,
+} from './error';
 import {
   type InferInputParameters,
   type InputParameters,
@@ -280,6 +285,9 @@ export class WorkflowEngine {
       idempotencyKey = params.idempotencyKey;
       options = params.options;
     }
+
+    validateWorkflowId(workflowId);
+    validateResourceId(resourceId);
 
     if (!this._started) {
       await this.start(false, { batchSize: options?.batchSize ?? 1 });
@@ -1422,6 +1430,9 @@ export class WorkflowEngine {
     hasMore: boolean;
     hasPrev: boolean;
   }> {
+    if (workflowId) validateWorkflowId(workflowId);
+    validateResourceId(resourceId);
+
     return getWorkflowRuns(
       {
         resourceId,
