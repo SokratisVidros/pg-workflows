@@ -1,6 +1,8 @@
 import pg from 'pg';
+import type { PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { DEFAULT_PGBOSS_SCHEMA, WORKFLOW_RUN_DLQ_QUEUE_NAME } from './constants';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
 import { WorkflowStatus } from './types';
@@ -410,6 +412,171 @@ describe('WorkflowEngine Integration (real PostgreSQL)', () => {
       expect(item.status).toBe(WorkflowStatus.COMPLETED);
       expect(item.resourceId).toBe(resourceId);
     }
+  });
+
+  describe('dead-letter recovery for stuck runs', () => {
+    const insertStuckRun = async ({
+      workflowId,
+      retryCount,
+      maxRetries,
+      status,
+      resourceId,
+    }: {
+      workflowId: string;
+      retryCount: number;
+      maxRetries: number;
+      status: WorkflowStatus;
+      resourceId: string;
+    }) => {
+      const runId = `run_dlq_${Math.random().toString(36).slice(2, 12)}`;
+      const now = new Date();
+      await pool.query(
+        `INSERT INTO workflow_runs (
+          id, resource_id, workflow_id, current_step_id, status, input,
+          max_retries, retry_count, timeline, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          runId,
+          resourceId,
+          workflowId,
+          'step-1',
+          status,
+          JSON.stringify({}),
+          maxRetries,
+          retryCount,
+          '{}',
+          now,
+          now,
+        ],
+      );
+      return runId;
+    };
+
+    const sendToDlq = async (runId: string, resourceId: string, workflowId: string) => {
+      // Reuse the engine's pg-boss instance so we send to the same schema
+      // that the DLQ worker is listening on.
+      const boss = (engine as unknown as { boss: PgBoss }).boss;
+      await boss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
+        runId,
+        resourceId,
+        workflowId,
+        input: {},
+      });
+    };
+
+    it('should configure the workflow-run queue with the DLQ + heartbeat options', async () => {
+      const { rows } = await pool.query<{
+        retry_limit: number;
+        dead_letter: string | null;
+        heartbeat_seconds: number | null;
+      }>(
+        `SELECT retry_limit, dead_letter, heartbeat_seconds
+           FROM ${DEFAULT_PGBOSS_SCHEMA}.queue
+          WHERE name = $1`,
+        ['workflow-run'],
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].retry_limit).toBe(0);
+      expect(rows[0].dead_letter).toBe(WORKFLOW_RUN_DLQ_QUEUE_NAME);
+      expect(rows[0].heartbeat_seconds).toBe(30);
+    });
+
+    it('should retry a stuck RUNNING run when retries are available', async () => {
+      const resourceId = `test-dlq-retry-${Date.now()}`;
+      const runId = await insertStuckRun({
+        workflowId: 'integration-sequential',
+        retryCount: 0,
+        maxRetries: 3,
+        status: WorkflowStatus.RUNNING,
+        resourceId,
+      });
+
+      await sendToDlq(runId, resourceId, 'integration-sequential');
+
+      // DLQ worker bumps retryCount and re-enqueues; main worker resumes the
+      // workflow from scratch and completes it.
+      const result = await waitForStatus(runId, resourceId, ['completed'], 15_000);
+      expect(result.status).toBe(WorkflowStatus.COMPLETED);
+      expect(result.retryCount).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should mark a stuck RUNNING run as FAILED when retries are exhausted', async () => {
+      const resourceId = `test-dlq-fail-${Date.now()}`;
+      const runId = await insertStuckRun({
+        workflowId: 'integration-sequential',
+        retryCount: 2,
+        maxRetries: 2,
+        status: WorkflowStatus.RUNNING,
+        resourceId,
+      });
+
+      await sendToDlq(runId, resourceId, 'integration-sequential');
+
+      const result = await waitForStatus(runId, resourceId, ['failed'], 10_000);
+      expect(result.status).toBe(WorkflowStatus.FAILED);
+      expect(result.error).toContain('worker died');
+    });
+
+    it('should not modify runs that are no longer in RUNNING status', async () => {
+      const resourceId = `test-dlq-noop-${Date.now()}`;
+      const runId = await insertStuckRun({
+        workflowId: 'integration-sequential',
+        retryCount: 0,
+        maxRetries: 2,
+        status: WorkflowStatus.COMPLETED,
+        resourceId,
+      });
+
+      await sendToDlq(runId, resourceId, 'integration-sequential');
+
+      // Give the DLQ worker time to process and confirm no state change.
+      await sleep(2000);
+
+      const after = await engine.getRun({ runId, resourceId });
+      expect(after.status).toBe(WorkflowStatus.COMPLETED);
+      expect(after.retryCount).toBe(0);
+    });
+
+    it('should route a real failed job to the DLQ via pg-boss when handler re-throws', async () => {
+      // Define a workflow that always fails; with retries=0 the engine catch
+      // marks the run FAILED then re-throws, which makes pg-boss fail the job.
+      // Because retryLimit: 0 + deadLetter is set on the queue, pg-boss copies
+      // the payload to workflow_run_dlq. The DLQ worker sees status=FAILED and
+      // no-ops — verifying the entire pipeline wires up correctly.
+      const alwaysFails = workflow(
+        'integration-dlq-route',
+        async ({ step }) => {
+          await step.run('boom', async () => {
+            throw new Error('intentional boom');
+          });
+        },
+        { retries: 0 },
+      );
+      await engine.registerWorkflow(alwaysFails);
+
+      const resourceId = `test-dlq-route-${Date.now()}`;
+      const run = await engine.startWorkflow({
+        workflowId: 'integration-dlq-route',
+        resourceId,
+        input: {},
+      });
+
+      const result = await waitForStatus(run.id, resourceId, ['failed'], 10_000);
+      expect(result.status).toBe(WorkflowStatus.FAILED);
+
+      // Confirm pg-boss actually routed the failed job to the DLQ table by
+      // checking that a DLQ job exists with this runId.
+      const { rows } = await pool.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+           FROM ${DEFAULT_PGBOSS_SCHEMA}.job
+          WHERE name = $1 AND data->>'runId' = $2`,
+        [WORKFLOW_RUN_DLQ_QUEUE_NAME, run.id],
+      );
+      expect(Number(rows[0].count)).toBeGreaterThanOrEqual(1);
+
+      await engine.unregisterWorkflow('integration-dlq-route');
+    });
   });
 
   it('should persist step results in timeline', async () => {

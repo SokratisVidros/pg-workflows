@@ -1203,7 +1203,7 @@ describe('WorkflowEngine', () => {
           status: WorkflowStatus.RUNNING,
         });
 
-        await testBoss.send('workflow-run-stuck', {
+        await testBoss.send('workflow_run_dlq', {
           runId,
           resourceId,
           workflowId: 'test-workflow',
@@ -1230,7 +1230,7 @@ describe('WorkflowEngine', () => {
           status: WorkflowStatus.RUNNING,
         });
 
-        await testBoss.send('workflow-run-stuck', {
+        await testBoss.send('workflow_run_dlq', {
           runId,
           resourceId,
           workflowId: 'test-workflow',
@@ -1255,7 +1255,7 @@ describe('WorkflowEngine', () => {
           status: WorkflowStatus.COMPLETED,
         });
 
-        await testBoss.send('workflow-run-stuck', {
+        await testBoss.send('workflow_run_dlq', {
           runId,
           resourceId,
           workflowId: 'test-workflow',

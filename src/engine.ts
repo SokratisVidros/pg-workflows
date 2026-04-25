@@ -5,7 +5,7 @@ import { parseWorkflowHandler } from './ast-parser';
 import {
   DEFAULT_PGBOSS_SCHEMA,
   PAUSE_EVENT_NAME,
-  STUCK_WORKFLOW_RUN_QUEUE_NAME,
+  WORKFLOW_RUN_DLQ_QUEUE_NAME,
   WORKFLOW_RUN_QUEUE_NAME,
 } from './constants';
 import { runMigrations } from './db/migration';
@@ -175,7 +175,7 @@ export class WorkflowEngine {
     // failed after the expireInSeconds timeout. The DLQ worker reconciles
     // the orphaned workflow_runs row (retry with backoff or mark FAILED)
     // so it never gets stuck in RUNNING state forever.
-    await this.boss.createQueue(STUCK_WORKFLOW_RUN_QUEUE_NAME, {
+    await this.boss.createQueue(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
       retryLimit: 0,
     });
 
@@ -187,7 +187,7 @@ export class WorkflowEngine {
     // + monitorInterval (≈60s) instead of waiting for the full expireInSeconds.
     await this.boss.createQueue(WORKFLOW_RUN_QUEUE_NAME, {
       retryLimit: 0,
-      deadLetter: STUCK_WORKFLOW_RUN_QUEUE_NAME,
+      deadLetter: WORKFLOW_RUN_DLQ_QUEUE_NAME,
       heartbeatSeconds: defaultHeartbeatSeconds,
     });
 
@@ -195,7 +195,7 @@ export class WorkflowEngine {
     // settings to ensure installations that predate the DLQ pick it up.
     await this.boss.updateQueue(WORKFLOW_RUN_QUEUE_NAME, {
       retryLimit: 0,
-      deadLetter: STUCK_WORKFLOW_RUN_QUEUE_NAME,
+      deadLetter: WORKFLOW_RUN_DLQ_QUEUE_NAME,
       heartbeatSeconds: defaultHeartbeatSeconds,
     });
 
@@ -214,11 +214,11 @@ export class WorkflowEngine {
       }
 
       await this.boss.work<WorkflowRunJobParameters>(
-        STUCK_WORKFLOW_RUN_QUEUE_NAME,
+        WORKFLOW_RUN_DLQ_QUEUE_NAME,
         { pollingIntervalSeconds: 0.5, batchSize: 1 },
         (job) => this.handleStuckWorkflowRun(job),
       );
-      this.logger.log(`Worker started for queue ${STUCK_WORKFLOW_RUN_QUEUE_NAME}`);
+      this.logger.log(`Worker started for queue ${WORKFLOW_RUN_DLQ_QUEUE_NAME}`);
     }
 
     this._started = true;
