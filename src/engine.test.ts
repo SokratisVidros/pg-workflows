@@ -1159,6 +1159,118 @@ describe('WorkflowEngine', () => {
       sendSpy.mockRestore();
     });
 
+    describe('dead-letter recovery for stuck runs', () => {
+      const insertStuckRun = async ({
+        workflowId,
+        retryCount,
+        maxRetries,
+        status,
+      }: {
+        workflowId: string;
+        retryCount: number;
+        maxRetries: number;
+        status: WorkflowStatus;
+      }) => {
+        const runId = `run_stuck_${Math.random().toString(36).slice(2, 10)}`;
+        const now = new Date();
+        await testPool.query(
+          `INSERT INTO workflow_runs (
+            id, resource_id, workflow_id, current_step_id, status, input,
+            max_retries, retry_count, timeline, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            runId,
+            resourceId,
+            workflowId,
+            'step-1',
+            status,
+            JSON.stringify({ data: 'stuck' }),
+            maxRetries,
+            retryCount,
+            '{}',
+            now,
+            now,
+          ],
+        );
+        return runId;
+      };
+
+      it('should retry a stuck RUNNING run when retries are available', async () => {
+        const runId = await insertStuckRun({
+          workflowId: 'test-workflow',
+          retryCount: 0,
+          maxRetries: 3,
+          status: WorkflowStatus.RUNNING,
+        });
+
+        await testBoss.send('workflow-run-stuck', {
+          runId,
+          resourceId,
+          workflowId: 'test-workflow',
+          input: { data: 'stuck' },
+        });
+
+        // The DLQ worker should bump retryCount and re-enqueue, then the main
+        // worker picks it up and completes the workflow.
+        await expect
+          .poll(async () => (await engine.getRun({ runId, resourceId })).status, {
+            timeout: 10000,
+          })
+          .toBe(WorkflowStatus.COMPLETED);
+
+        const recovered = await engine.getRun({ runId, resourceId });
+        expect(recovered.retryCount).toBeGreaterThanOrEqual(1);
+      });
+
+      it('should mark a stuck RUNNING run as FAILED when retries are exhausted', async () => {
+        const runId = await insertStuckRun({
+          workflowId: 'test-workflow',
+          retryCount: 2,
+          maxRetries: 2,
+          status: WorkflowStatus.RUNNING,
+        });
+
+        await testBoss.send('workflow-run-stuck', {
+          runId,
+          resourceId,
+          workflowId: 'test-workflow',
+          input: { data: 'stuck' },
+        });
+
+        await expect
+          .poll(async () => (await engine.getRun({ runId, resourceId })).status, {
+            timeout: 5000,
+          })
+          .toBe(WorkflowStatus.FAILED);
+
+        const failed = await engine.getRun({ runId, resourceId });
+        expect(failed.error).toContain('worker died');
+      });
+
+      it('should not modify runs that are no longer in RUNNING status', async () => {
+        const runId = await insertStuckRun({
+          workflowId: 'test-workflow',
+          retryCount: 0,
+          maxRetries: 2,
+          status: WorkflowStatus.COMPLETED,
+        });
+
+        await testBoss.send('workflow-run-stuck', {
+          runId,
+          resourceId,
+          workflowId: 'test-workflow',
+          input: { data: 'stuck' },
+        });
+
+        // Give the DLQ worker time to process and confirm no state change.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+
+        const after = await engine.getRun({ runId, resourceId });
+        expect(after.status).toBe(WorkflowStatus.COMPLETED);
+        expect(after.retryCount).toBe(0);
+      });
+    });
+
     it('should handle workflow with waitUntil step', async () => {
       const waitUntilWorkflow = workflow('wait-until-workflow', async ({ step }) => {
         await step.run('step-1', async () => 'result-1');

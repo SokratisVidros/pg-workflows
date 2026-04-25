@@ -2,7 +2,12 @@ import { merge } from 'es-toolkit';
 import pg from 'pg';
 import { type Db, type Job, PgBoss } from 'pg-boss';
 import { parseWorkflowHandler } from './ast-parser';
-import { DEFAULT_PGBOSS_SCHEMA, PAUSE_EVENT_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constants';
+import {
+  DEFAULT_PGBOSS_SCHEMA,
+  PAUSE_EVENT_NAME,
+  STUCK_WORKFLOW_RUN_QUEUE_NAME,
+  WORKFLOW_RUN_QUEUE_NAME,
+} from './constants';
 import { runMigrations } from './db/migration';
 import {
   getWorkflowRun,
@@ -159,7 +164,28 @@ export class WorkflowEngine {
       }
     }
 
-    await this.boss.createQueue(WORKFLOW_RUN_QUEUE_NAME);
+    // Dead-letter queue for jobs whose worker died or that pg-boss marked
+    // failed after the expireInSeconds timeout. The DLQ worker reconciles
+    // the orphaned workflow_runs row (retry with backoff or mark FAILED)
+    // so it never gets stuck in RUNNING state forever.
+    await this.boss.createQueue(STUCK_WORKFLOW_RUN_QUEUE_NAME, {
+      retryLimit: 0,
+    });
+
+    // retryLimit: 0 disables pg-boss's built-in retries so the engine fully
+    // owns retry logic. Any failure (including timeout from a dead worker)
+    // immediately routes the job to the dead-letter queue.
+    await this.boss.createQueue(WORKFLOW_RUN_QUEUE_NAME, {
+      retryLimit: 0,
+      deadLetter: STUCK_WORKFLOW_RUN_QUEUE_NAME,
+    });
+
+    // createQueue is a no-op for existing queues, so explicitly update
+    // settings to ensure installations that predate the DLQ pick it up.
+    await this.boss.updateQueue(WORKFLOW_RUN_QUEUE_NAME, {
+      retryLimit: 0,
+      deadLetter: STUCK_WORKFLOW_RUN_QUEUE_NAME,
+    });
 
     const numWorkers: number = +(process.env.WORKFLOW_RUN_WORKERS ?? 3);
 
@@ -174,6 +200,13 @@ export class WorkflowEngine {
           `Worker ${i + 1}/${numWorkers} started for queue ${WORKFLOW_RUN_QUEUE_NAME}`,
         );
       }
+
+      await this.boss.work<WorkflowRunJobParameters>(
+        STUCK_WORKFLOW_RUN_QUEUE_NAME,
+        { pollingIntervalSeconds: 0.5, batchSize: 1 },
+        (job) => this.handleStuckWorkflowRun(job),
+      );
+      this.logger.log(`Worker started for queue ${STUCK_WORKFLOW_RUN_QUEUE_NAME}`);
     }
 
     this._started = true;
@@ -977,6 +1010,81 @@ export class WorkflowEngine {
 
       throw error;
     }
+  }
+
+  /**
+   * Reconciles workflow runs whose worker died mid-execution. pg-boss routes
+   * jobs that time out (or otherwise fail without the handler running to
+   * completion) to the dead-letter queue, with the original job payload
+   * preserved. We use that payload to find the orphaned workflow_runs row
+   * and either retry it with the engine's exponential backoff or mark it
+   * FAILED if retries are exhausted.
+   */
+  private async handleStuckWorkflowRun([job]: Job<WorkflowRunJobParameters>[]) {
+    const { runId, resourceId, workflowId, input } = job?.data ?? {};
+
+    if (!runId) {
+      return;
+    }
+
+    let run: WorkflowRun;
+    try {
+      run = await this.getRun({ runId });
+    } catch (error) {
+      if (error instanceof WorkflowRunNotFoundError) {
+        return;
+      }
+      throw error;
+    }
+
+    // Only RUNNING runs are stuck. Terminal states (completed/failed/cancelled)
+    // and PAUSED runs need no recovery — a failed catch handler will have
+    // already marked the run FAILED, and a paused run isn't waiting on this job.
+    if (run.status !== WorkflowStatus.RUNNING) {
+      return;
+    }
+
+    const scopedResourceId = this.resolveScopedResourceId(resourceId, run);
+
+    if (run.retryCount < run.maxRetries) {
+      await this.updateRun({
+        runId,
+        resourceId: scopedResourceId,
+        data: { retryCount: run.retryCount + 1 },
+      });
+
+      const retryDelay = 2 ** run.retryCount * 1000;
+      const retryJob: WorkflowRunJobParameters = {
+        runId,
+        resourceId: scopedResourceId,
+        workflowId: workflowId ?? run.workflowId,
+        input: input ?? run.input,
+      };
+      await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, retryJob, {
+        startAfter: new Date(Date.now() + retryDelay),
+        expireInSeconds: defaultExpireInSeconds,
+      });
+
+      this.logger.log(
+        `Retrying stuck workflow run (attempt ${run.retryCount + 1}/${run.maxRetries})`,
+        { runId, workflowId: run.workflowId },
+      );
+      return;
+    }
+
+    await this.updateRun({
+      runId,
+      resourceId: scopedResourceId,
+      data: {
+        status: WorkflowStatus.FAILED,
+        error: 'Workflow run worker died or job expired before completion',
+      },
+    });
+
+    this.logger.log('Marked stuck workflow run as failed', {
+      runId,
+      workflowId: run.workflowId,
+    });
   }
 
   private getCachedStepEntry(
