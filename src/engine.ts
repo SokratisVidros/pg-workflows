@@ -102,6 +102,13 @@ const defaultExpireInSeconds = process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS
   ? Number.parseInt(process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS, 10)
   : 5 * 60; // 5 minutes
 
+// pg-boss workers auto-touch heartbeat_on every heartbeatSeconds / 2 seconds
+// while the process is alive. If the worker dies, heartbeats stop and pg-boss's
+// monitor (~60s ticks) routes the job to the dead-letter queue. Minimum is 10.
+const defaultHeartbeatSeconds = process.env.WORKFLOW_RUN_HEARTBEAT_SECONDS
+  ? Number.parseInt(process.env.WORKFLOW_RUN_HEARTBEAT_SECONDS, 10)
+  : 30;
+
 export class WorkflowEngine {
   private boss: PgBoss;
   private db: Db;
@@ -174,10 +181,14 @@ export class WorkflowEngine {
 
     // retryLimit: 0 disables pg-boss's built-in retries so the engine fully
     // owns retry logic. Any failure (including timeout from a dead worker)
-    // immediately routes the job to the dead-letter queue.
+    // immediately routes the job to the dead-letter queue. heartbeatSeconds
+    // makes pg-boss workers auto-touch the job while alive; if the process
+    // dies, the missed heartbeats trigger DLQ routing in ~heartbeatSeconds
+    // + monitorInterval (≈60s) instead of waiting for the full expireInSeconds.
     await this.boss.createQueue(WORKFLOW_RUN_QUEUE_NAME, {
       retryLimit: 0,
       deadLetter: STUCK_WORKFLOW_RUN_QUEUE_NAME,
+      heartbeatSeconds: defaultHeartbeatSeconds,
     });
 
     // createQueue is a no-op for existing queues, so explicitly update
@@ -185,6 +196,7 @@ export class WorkflowEngine {
     await this.boss.updateQueue(WORKFLOW_RUN_QUEUE_NAME, {
       retryLimit: 0,
       deadLetter: STUCK_WORKFLOW_RUN_QUEUE_NAME,
+      heartbeatSeconds: defaultHeartbeatSeconds,
     });
 
     const numWorkers: number = +(process.env.WORKFLOW_RUN_WORKERS ?? 3);
