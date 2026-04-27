@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.9.0 - 2026-04-27
+
+### Added
+
+- Raised the `resource_id` and `workflow_id` column limit from 32 to 256 characters (schema v3) and added early input validation so callers see a clear error instead of a database failure.
+
+### Fixed
+
+- Recovered stuck workflow runs by routing failed or expired jobs through a dedicated pg-boss dead-letter queue (`workflow_run_dlq`); orphaned runs are now retried with the engine's exponential backoff or marked `FAILED` once retries are exhausted instead of staying `RUNNING` forever.
+- Detected dead workers faster via a configurable pg-boss heartbeat (`WORKFLOW_RUN_HEARTBEAT_SECONDS`, default 30s), so crashed workers surface in roughly a minute instead of waiting for the full job expiration window.
+
 ## v0.8.3 - 2026-04-22
 
 ### Fixed
@@ -43,3 +54,4 @@ All notable changes to this project will be documented in this file.
 [v0.8.1]: https://github.com/SokratisVidros/pg-workflows/compare/v0.8.0...v0.8.1
 [v0.8.2]: https://github.com/SokratisVidros/pg-workflows/compare/v0.8.1...v0.8.2
 [v0.8.3]: https://github.com/SokratisVidros/pg-workflows/compare/v0.8.2...v0.8.3
+[v0.9.0]: https://github.com/SokratisVidros/pg-workflows/compare/v0.8.3...v0.9.0
