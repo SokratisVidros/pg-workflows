@@ -187,7 +187,7 @@ export class WorkflowEngine {
     // per-job from the workflow's `retries` option. Failures (thrown error,
     // expired job, missed heartbeats) re-enqueue automatically; once a job's
     // retries are exhausted, pg-boss routes it to the DLQ where
-    // handleStuckWorkflowRun marks the run FAILED. heartbeatSeconds lets
+    // handleWorkflowRunDlq marks the run FAILED. heartbeatSeconds lets
     // pg-boss detect dead workers in ~heartbeatSeconds + monitorInterval
     // (≈60s) instead of waiting for the full expireInSeconds.
     const mainQueueOptions = {
@@ -225,7 +225,7 @@ export class WorkflowEngine {
       await this.boss.work<WorkflowRunJobParameters>(
         WORKFLOW_RUN_DLQ_QUEUE_NAME,
         { pollingIntervalSeconds: 0.5, batchSize: 1 },
-        (jobs) => this.handleStuckWorkflowRun(jobs),
+        (jobs) => this.handleWorkflowRunDlq(jobs),
       );
       this.logger.log(`Worker started for queue ${WORKFLOW_RUN_DLQ_QUEUE_NAME}`);
     }
@@ -1027,7 +1027,7 @@ export class WorkflowEngine {
    * we mark it FAILED with whatever error message the catch block last
    * persisted, falling back to a worker-death message.
    */
-  private async handleStuckWorkflowRun([job]: { data?: WorkflowRunJobParameters }[]) {
+  private async handleWorkflowRunDlq([job]: { data?: WorkflowRunJobParameters }[]) {
     const { runId } = job?.data ?? {};
     if (!runId) return;
 
