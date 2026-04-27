@@ -179,12 +179,20 @@ export class WorkflowEngine {
       retryLimit: 0,
     });
 
-    // retryLimit: 0 disables pg-boss's built-in retries so the engine fully
-    // owns retry logic. Any failure (including timeout from a dead worker)
-    // immediately routes the job to the dead-letter queue. heartbeatSeconds
-    // makes pg-boss workers auto-touch the job while alive; if the process
-    // dies, the missed heartbeats trigger DLQ routing in ~heartbeatSeconds
-    // + monitorInterval (≈60s) instead of waiting for the full expireInSeconds.
+    // retryLimit: 0 makes the engine the sole authority on retry policy.
+    // The engine tracks attempts on workflow_runs.retryCount/maxRetries and
+    // re-enqueues with its own exponential backoff (see handleWorkflowRun).
+    // If pg-boss also retried (default 2), a single failure would burn
+    // pg-boss retries without the engine's bookkeeping ever seeing them —
+    // retryCount would stay at 0 while pg-boss silently retried under its
+    // own backoff, drifting workflow_runs.status out of sync with the queue.
+    // With retryLimit: 0, any failure (thrown error, expired job from a
+    // dead worker, missed heartbeats) routes straight to workflow_run_dlq
+    // where handleStuckWorkflowRun reconciles the run against the canonical
+    // workflow_runs row and decides retry-vs-fail. heartbeatSeconds makes
+    // pg-boss workers auto-touch the job while alive; if the process dies,
+    // missed heartbeats trigger DLQ routing in ~heartbeatSeconds +
+    // monitorInterval (≈60s) instead of waiting for the full expireInSeconds.
     await this.boss.createQueue(WORKFLOW_RUN_QUEUE_NAME, {
       retryLimit: 0,
       deadLetter: WORKFLOW_RUN_DLQ_QUEUE_NAME,
@@ -992,7 +1000,11 @@ export class WorkflowEngine {
 
         const retryDelay = 2 ** run.retryCount * 1000;
 
-        // NOTE: Do not use pg-boss retryLimit and retryBackoff so that we can fully control the retry logic from the WorkflowEngine and not PGBoss.
+        // Re-enqueue with engine-controlled backoff. The queue is configured
+        // with retryLimit: 0 so pg-boss never retries on its own — retries
+        // always flow through this path (or via workflow_run_dlq when a
+        // worker dies before this catch block can run), keeping
+        // workflow_runs.retryCount in sync with the queue.
         const pgBossJob: WorkflowRunJobParameters = {
           runId,
           resourceId: scopedResourceId,
