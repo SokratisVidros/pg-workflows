@@ -3,6 +3,7 @@ import type { PgBoss } from 'pg-boss';
 import * as v from 'valibot';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { WORKFLOW_RUN_DLQ_QUEUE_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constants';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
@@ -1191,7 +1192,7 @@ describe('WorkflowEngine', () => {
 
       const retryCalls = sendSpy.mock.calls.filter(
         ([queue, data]) =>
-          queue === 'workflow-run' &&
+          queue === WORKFLOW_RUN_QUEUE_NAME &&
           (data as JobData).runId === run.id &&
           (data as JobData).workflowId === 'backoff-workflow',
       );
@@ -1252,7 +1253,7 @@ describe('WorkflowEngine', () => {
           status: WorkflowStatus.RUNNING,
         });
 
-        await testBoss.send('workflow_run_dlq', {
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
           runId,
           resourceId,
           workflowId: 'test-workflow',
@@ -1279,7 +1280,7 @@ describe('WorkflowEngine', () => {
           status: WorkflowStatus.RUNNING,
         });
 
-        await testBoss.send('workflow_run_dlq', {
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
           runId,
           resourceId,
           workflowId: 'test-workflow',
@@ -1304,7 +1305,7 @@ describe('WorkflowEngine', () => {
           status: WorkflowStatus.COMPLETED,
         });
 
-        await testBoss.send('workflow_run_dlq', {
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
           runId,
           resourceId,
           workflowId: 'test-workflow',
@@ -1322,13 +1323,13 @@ describe('WorkflowEngine', () => {
       it('should silently no-op for DLQ jobs with missing or unknown runId', async () => {
         // The DLQ worker must not crash on malformed/orphaned messages,
         // otherwise a single bad payload poisons the entire DLQ pipeline.
-        await testBoss.send('workflow_run_dlq', {
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
           resourceId,
           workflowId: 'test-workflow',
           input: {},
         });
 
-        await testBoss.send('workflow_run_dlq', {
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
           runId: 'run_does_not_exist_xyz',
           resourceId,
           workflowId: 'test-workflow',
@@ -1343,7 +1344,7 @@ describe('WorkflowEngine', () => {
           maxRetries: 3,
           status: WorkflowStatus.RUNNING,
         });
-        await testBoss.send('workflow_run_dlq', {
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
           runId: liveRunId,
           resourceId,
           workflowId: 'test-workflow',

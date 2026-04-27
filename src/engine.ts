@@ -171,55 +171,42 @@ export class WorkflowEngine {
       }
     }
 
-    // Dead-letter queue for jobs whose worker died or that pg-boss marked
-    // failed after the expireInSeconds timeout. The DLQ worker reconciles
-    // the orphaned workflow_runs row (retry with backoff or mark FAILED)
-    // so it never gets stuck in RUNNING state forever.
-    await this.boss.createQueue(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
-      retryLimit: 0,
-    });
-
-    // retryLimit: 0 makes the engine the sole authority on retry policy.
-    // The engine tracks attempts on workflow_runs.retryCount/maxRetries and
-    // re-enqueues with its own exponential backoff (see handleWorkflowRun).
-    // If pg-boss also retried (default 2), a single failure would burn
-    // pg-boss retries without the engine's bookkeeping ever seeing them —
-    // retryCount would stay at 0 while pg-boss silently retried under its
-    // own backoff, drifting workflow_runs.status out of sync with the queue.
-    // With retryLimit: 0, any failure (thrown error, expired job from a
-    // dead worker, missed heartbeats) routes straight to workflow_run_dlq
-    // where handleStuckWorkflowRun reconciles the run against the canonical
-    // workflow_runs row and decides retry-vs-fail. heartbeatSeconds makes
-    // pg-boss workers auto-touch the job while alive; if the process dies,
-    // missed heartbeats trigger DLQ routing in ~heartbeatSeconds +
-    // monitorInterval (≈60s) instead of waiting for the full expireInSeconds.
-    await this.boss.createQueue(WORKFLOW_RUN_QUEUE_NAME, {
+    // The engine owns retry policy via workflow_runs.retryCount, so pg-boss
+    // must not retry on its own — otherwise its silent retries would drift
+    // retryCount/status out of sync with the queue. retryLimit: 0 routes any
+    // failure (thrown error, expired job, missed heartbeats) straight to the
+    // DLQ where handleStuckWorkflowRun reconciles the run. heartbeatSeconds
+    // lets pg-boss detect dead workers in ~heartbeatSeconds + monitorInterval
+    // (≈60s) instead of waiting for the full expireInSeconds.
+    const mainQueueOptions = {
       retryLimit: 0,
       deadLetter: WORKFLOW_RUN_DLQ_QUEUE_NAME,
       heartbeatSeconds: defaultHeartbeatSeconds,
-    });
-
-    // createQueue is a no-op for existing queues, so explicitly update
-    // settings to ensure installations that predate the DLQ pick it up.
-    await this.boss.updateQueue(WORKFLOW_RUN_QUEUE_NAME, {
-      retryLimit: 0,
-      deadLetter: WORKFLOW_RUN_DLQ_QUEUE_NAME,
-      heartbeatSeconds: defaultHeartbeatSeconds,
-    });
+    };
+    await this.boss.createQueue(WORKFLOW_RUN_DLQ_QUEUE_NAME, { retryLimit: 0 });
+    await this.boss.createQueue(WORKFLOW_RUN_QUEUE_NAME, mainQueueOptions);
+    // createQueue is a no-op for existing queues; updateQueue ensures
+    // installations that predate the DLQ adopt these settings on next start.
+    await this.boss.updateQueue(WORKFLOW_RUN_QUEUE_NAME, mainQueueOptions);
 
     const numWorkers: number = +(process.env.WORKFLOW_RUN_WORKERS ?? 3);
 
     if (asEngine) {
-      for (let i = 0; i < numWorkers; i++) {
-        await this.boss.work<WorkflowRunJobParameters>(
-          WORKFLOW_RUN_QUEUE_NAME,
-          { pollingIntervalSeconds: 0.5, batchSize },
-          (job) => this.handleWorkflowRun(job),
-        );
-        this.logger.log(
-          `Worker ${i + 1}/${numWorkers} started for queue ${WORKFLOW_RUN_QUEUE_NAME}`,
-        );
-      }
+      await Promise.all(
+        Array.from({ length: numWorkers }, (_, i) =>
+          this.boss
+            .work<WorkflowRunJobParameters>(
+              WORKFLOW_RUN_QUEUE_NAME,
+              { pollingIntervalSeconds: 0.5, batchSize },
+              (job) => this.handleWorkflowRun(job),
+            )
+            .then(() => {
+              this.logger.log(
+                `Worker ${i + 1}/${numWorkers} started for queue ${WORKFLOW_RUN_QUEUE_NAME}`,
+              );
+            }),
+        ),
+      );
 
       await this.boss.work<WorkflowRunJobParameters>(
         WORKFLOW_RUN_DLQ_QUEUE_NAME,
@@ -988,34 +975,7 @@ export class WorkflowEngine {
         });
       }
     } catch (error) {
-      if (run && run.retryCount < run.maxRetries) {
-        await this.updateRun({
-          runId,
-          resourceId: scopedResourceId,
-          data: {
-            retryCount: run.retryCount + 1,
-            jobId: job?.id,
-          },
-        });
-
-        const retryDelay = 2 ** run.retryCount * 1000;
-
-        // Re-enqueue with engine-controlled backoff. The queue is configured
-        // with retryLimit: 0 so pg-boss never retries on its own — retries
-        // always flow through this path (or via workflow_run_dlq when a
-        // worker dies before this catch block can run), keeping
-        // workflow_runs.retryCount in sync with the queue.
-        const pgBossJob: WorkflowRunJobParameters = {
-          runId,
-          resourceId: scopedResourceId,
-          workflowId,
-          input,
-        };
-        await this.boss?.send('workflow-run', pgBossJob, {
-          startAfter: new Date(Date.now() + retryDelay),
-          expireInSeconds: defaultExpireInSeconds,
-        });
-
+      if (run && (await this.enqueueRetry(run, { workflowId, input, jobId: job?.id }))) {
         return;
       }
 
@@ -1037,6 +997,41 @@ export class WorkflowEngine {
   }
 
   /**
+   * Schedules the next attempt for a workflow run using the engine's
+   * exponential backoff. Returns true if a retry was enqueued, false when
+   * retries are exhausted — callers decide how to mark FAILED.
+   */
+  private async enqueueRetry(
+    run: WorkflowRun,
+    { workflowId, input, jobId }: { workflowId: string; input: unknown; jobId?: string },
+  ): Promise<boolean> {
+    if (run.retryCount >= run.maxRetries) {
+      return false;
+    }
+
+    const scopedResourceId = run.resourceId ?? undefined;
+    await this.updateRun({
+      runId: run.id,
+      resourceId: scopedResourceId,
+      data: {
+        retryCount: run.retryCount + 1,
+        ...(jobId ? { jobId } : {}),
+      },
+    });
+
+    const retryDelay = 2 ** run.retryCount * 1000;
+    await this.boss.send(
+      WORKFLOW_RUN_QUEUE_NAME,
+      { runId: run.id, resourceId: scopedResourceId, workflowId, input },
+      {
+        startAfter: new Date(Date.now() + retryDelay),
+        expireInSeconds: defaultExpireInSeconds,
+      },
+    );
+    return true;
+  }
+
+  /**
    * Reconciles workflow runs whose worker died mid-execution. pg-boss routes
    * jobs that time out (or otherwise fail without the handler running to
    * completion) to the dead-letter queue, with the original job payload
@@ -1045,50 +1040,18 @@ export class WorkflowEngine {
    * FAILED if retries are exhausted.
    */
   private async handleStuckWorkflowRun([job]: Job<WorkflowRunJobParameters>[]) {
-    const { runId, resourceId, workflowId, input } = job?.data ?? {};
+    const { runId, workflowId, input } = job?.data ?? {};
+    if (!runId) return;
 
-    if (!runId) {
-      return;
-    }
+    const run = await getWorkflowRun({ runId }, { db: this.db });
+    if (!run || run.status !== WorkflowStatus.RUNNING) return;
 
-    let run: WorkflowRun;
-    try {
-      run = await this.getRun({ runId });
-    } catch (error) {
-      if (error instanceof WorkflowRunNotFoundError) {
-        return;
-      }
-      throw error;
-    }
+    const retried = await this.enqueueRetry(run, {
+      workflowId: workflowId ?? run.workflowId,
+      input: input ?? run.input,
+    });
 
-    // Only RUNNING runs are stuck. Terminal states (completed/failed/cancelled)
-    // and PAUSED runs need no recovery — a failed catch handler will have
-    // already marked the run FAILED, and a paused run isn't waiting on this job.
-    if (run.status !== WorkflowStatus.RUNNING) {
-      return;
-    }
-
-    const scopedResourceId = this.resolveScopedResourceId(resourceId, run);
-
-    if (run.retryCount < run.maxRetries) {
-      await this.updateRun({
-        runId,
-        resourceId: scopedResourceId,
-        data: { retryCount: run.retryCount + 1 },
-      });
-
-      const retryDelay = 2 ** run.retryCount * 1000;
-      const retryJob: WorkflowRunJobParameters = {
-        runId,
-        resourceId: scopedResourceId,
-        workflowId: workflowId ?? run.workflowId,
-        input: input ?? run.input,
-      };
-      await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, retryJob, {
-        startAfter: new Date(Date.now() + retryDelay),
-        expireInSeconds: defaultExpireInSeconds,
-      });
-
+    if (retried) {
       this.logger.log(
         `Retrying stuck workflow run (attempt ${run.retryCount + 1}/${run.maxRetries})`,
         { runId, workflowId: run.workflowId },
@@ -1098,7 +1061,7 @@ export class WorkflowEngine {
 
     await this.updateRun({
       runId,
-      resourceId: scopedResourceId,
+      resourceId: run.resourceId ?? undefined,
       data: {
         status: WorkflowStatus.FAILED,
         error: 'Workflow run worker died or job expired before completion',
