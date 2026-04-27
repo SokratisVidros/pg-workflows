@@ -154,7 +154,10 @@ export class WorkflowEngine {
 
   async start(
     asEngine = true,
-    { batchSize }: { batchSize?: number } = { batchSize: 1 },
+    {
+      batchSize = 1,
+      heartbeatSeconds = defaultHeartbeatSeconds,
+    }: { batchSize?: number; heartbeatSeconds?: number } = {},
   ): Promise<void> {
     if (this._started) {
       return;
@@ -181,7 +184,7 @@ export class WorkflowEngine {
     const mainQueueOptions = {
       retryLimit: 0,
       deadLetter: WORKFLOW_RUN_DLQ_QUEUE_NAME,
-      heartbeatSeconds: defaultHeartbeatSeconds,
+      heartbeatSeconds,
     };
     await this.boss.createQueue(WORKFLOW_RUN_DLQ_QUEUE_NAME, { retryLimit: 0 });
     await this.boss.createQueue(WORKFLOW_RUN_QUEUE_NAME, mainQueueOptions);
