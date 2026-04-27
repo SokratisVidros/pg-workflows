@@ -1,6 +1,8 @@
 import pg from 'pg';
+import type { PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { WORKFLOW_RUN_DLQ_QUEUE_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constants';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
 import { WorkflowStatus } from './types';
@@ -410,6 +412,49 @@ describe('WorkflowEngine Integration (real PostgreSQL)', () => {
       expect(item.status).toBe(WorkflowStatus.COMPLETED);
       expect(item.resourceId).toBe(resourceId);
     }
+  });
+
+  describe('dead-letter recovery for stuck runs', () => {
+    it('should configure the workflow-run queue with the DLQ + heartbeat options', async () => {
+      const boss = (engine as unknown as { boss: PgBoss }).boss;
+      const queue = await boss.getQueue(WORKFLOW_RUN_QUEUE_NAME);
+
+      expect(queue).not.toBeNull();
+      expect(queue?.retryLimit).toBe(0);
+      expect(queue?.deadLetter).toBe(WORKFLOW_RUN_DLQ_QUEUE_NAME);
+      expect(queue?.heartbeatSeconds).toBe(30);
+    });
+
+    it('should route a real failed job to the DLQ via pg-boss when handler re-throws', async () => {
+      // retries=0 means a thrown handler error exhausts pg-boss retries
+      // immediately, routing the job to the DLQ. status=FAILED proves
+      // handleWorkflowRunDlq ran (only path that flips RUNNING→FAILED), and
+      // the preserved error message proves the catch block persisted it
+      // before pg-boss routed the failure.
+      const alwaysFails = workflow(
+        'integration-dlq-route',
+        async ({ step }) => {
+          await step.run('boom', async () => {
+            throw new Error('intentional boom');
+          });
+        },
+        { retries: 0 },
+      );
+      await engine.registerWorkflow(alwaysFails);
+
+      const resourceId = `test-dlq-route-${Date.now()}`;
+      const run = await engine.startWorkflow({
+        workflowId: 'integration-dlq-route',
+        resourceId,
+        input: {},
+      });
+
+      const result = await waitForStatus(run.id, resourceId, ['failed'], 10_000);
+      expect(result.status).toBe(WorkflowStatus.FAILED);
+      expect(result.error).toBe('intentional boom');
+
+      await engine.unregisterWorkflow('integration-dlq-route');
+    });
   });
 
   it('should persist step results in timeline', async () => {

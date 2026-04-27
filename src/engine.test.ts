@@ -3,6 +3,7 @@ import type { PgBoss } from 'pg-boss';
 import * as v from 'valibot';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { WORKFLOW_RUN_DLQ_QUEUE_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constants';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
@@ -1114,7 +1115,52 @@ describe('WorkflowEngine', () => {
         });
     });
 
-    it('should use exponential backoff for retries', async () => {
+    it('should not re-execute completed steps when a later step fails and retries', async () => {
+      // Durability promise: on retry, step.run reads cached results from the
+      // timeline and skips the handler. If step-1 has side effects (e.g. a
+      // payment), it MUST run exactly once even if step-2 fails repeatedly.
+      let stepOneRuns = 0;
+      let stepTwoRuns = 0;
+      const cachingWorkflow = workflow(
+        'retry-caching-workflow',
+        async ({ step }) => {
+          const first = await step.run('step-1', async () => {
+            stepOneRuns++;
+            return { value: 'first' };
+          });
+          const second = await step.run('step-2', async () => {
+            stepTwoRuns++;
+            if (stepTwoRuns < 3) {
+              throw new Error(`step-2 boom #${stepTwoRuns}`);
+            }
+            return { value: `${first.value}+second` };
+          });
+          return second;
+        },
+        { retries: 5 },
+      );
+
+      await engine.registerWorkflow(cachingWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'retry-caching-workflow',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+          timeout: 10000,
+        })
+        .toBe(WorkflowStatus.COMPLETED);
+
+      expect(stepOneRuns).toBe(1);
+      expect(stepTwoRuns).toBe(3);
+
+      const finished = await engine.getRun({ runId: run.id, resourceId });
+      expect(finished.output).toEqual({ value: 'first+second' });
+    });
+
+    it('should delegate retries to pg-boss with exponential backoff', async () => {
       const failingWorkflow = workflow('backoff-workflow', async ({ step }) => {
         await step.run('step-1', async () => {
           throw new Error('always fails');
@@ -1132,31 +1178,129 @@ describe('WorkflowEngine', () => {
         options: { retries: 2 },
       });
 
+      // pg-boss handles retries internally, so only ONE boss.send call is
+      // made — the retry options on it tell pg-boss to retry up to 2 times
+      // with exponential backoff.
+      type JobData = { runId: string; workflowId: string };
+      const sentCalls = sendSpy.mock.calls.filter(
+        ([queue, data]) =>
+          queue === WORKFLOW_RUN_QUEUE_NAME &&
+          (data as JobData).runId === run.id &&
+          (data as JobData).workflowId === 'backoff-workflow',
+      );
+      expect(sentCalls.length).toBe(1);
+      const opts = sentCalls[0][2] as {
+        retryLimit?: number;
+        retryBackoff?: boolean;
+        retryDelay?: number;
+      };
+      expect(opts.retryLimit).toBe(2);
+      expect(opts.retryBackoff).toBe(true);
+      expect(opts.retryDelay).toBe(1);
+
       await expect
         .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
           timeout: 10000,
         })
         .toBe(WorkflowStatus.FAILED);
 
-      type JobData = { runId: string; workflowId: string };
-
-      const retryCalls = sendSpy.mock.calls.filter(
-        ([queue, data]) =>
-          queue === 'workflow-run' &&
-          (data as JobData).runId === run.id &&
-          (data as JobData).workflowId === 'backoff-workflow',
-      );
-
-      // 1 initial send from startWorkflow + 2 retry sends
-      expect(retryCalls.length).toBe(3);
-
-      for (const [, , options] of retryCalls.slice(1)) {
-        const opts = options as { startAfter?: Date; retryDelay?: number };
-        expect(opts.startAfter).toBeInstanceOf(Date);
-        expect(opts).not.toHaveProperty('retryDelay');
-      }
+      const finalRun = await engine.getRun({ runId: run.id, resourceId });
+      expect(finalRun.retryCount).toBe(2);
+      expect(finalRun.error).toBe('always fails');
 
       sendSpy.mockRestore();
+    });
+
+    describe('dead-letter recovery for stuck runs', () => {
+      const insertStuckRun = async ({
+        workflowId,
+        retryCount,
+        maxRetries,
+        status,
+      }: {
+        workflowId: string;
+        retryCount: number;
+        maxRetries: number;
+        status: WorkflowStatus;
+      }) => {
+        const runId = `run_stuck_${Math.random().toString(36).slice(2, 10)}`;
+        const now = new Date();
+        await testPool.query(
+          `INSERT INTO workflow_runs (
+            id, resource_id, workflow_id, current_step_id, status, input,
+            max_retries, retry_count, timeline, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            runId,
+            resourceId,
+            workflowId,
+            'step-1',
+            status,
+            JSON.stringify({ data: 'stuck' }),
+            maxRetries,
+            retryCount,
+            '{}',
+            now,
+            now,
+          ],
+        );
+        return runId;
+      };
+
+      it('should mark a stuck RUNNING run as FAILED when DLQ fires', async () => {
+        const runId = await insertStuckRun({
+          workflowId: 'test-workflow',
+          retryCount: 2,
+          maxRetries: 2,
+          status: WorkflowStatus.RUNNING,
+        });
+
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, { runId });
+
+        await expect
+          .poll(async () => (await engine.getRun({ runId, resourceId })).status, {
+            timeout: 5000,
+          })
+          .toBe(WorkflowStatus.FAILED);
+
+        const failed = await engine.getRun({ runId, resourceId });
+        expect(failed.error).toContain('worker died');
+      });
+
+      it('should ignore DLQ jobs that need no recovery and stay alive', async () => {
+        // Three no-op cases the DLQ worker must skip without crashing:
+        // (1) terminal status, (2) missing runId, (3) unknown runId.
+        // A bad payload that crashes the worker would poison the pipeline.
+        const completedRunId = await insertStuckRun({
+          workflowId: 'test-workflow',
+          retryCount: 0,
+          maxRetries: 2,
+          status: WorkflowStatus.COMPLETED,
+        });
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, { runId: completedRunId });
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {});
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, { runId: 'run_does_not_exist_xyz' });
+
+        // A follow-up valid DLQ message proves the worker stayed alive past
+        // all three no-ops once it advances the live run to FAILED.
+        const liveRunId = await insertStuckRun({
+          workflowId: 'test-workflow',
+          retryCount: 2,
+          maxRetries: 2,
+          status: WorkflowStatus.RUNNING,
+        });
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, { runId: liveRunId });
+
+        await expect
+          .poll(async () => (await engine.getRun({ runId: liveRunId, resourceId })).status, {
+            timeout: 10000,
+          })
+          .toBe(WorkflowStatus.FAILED);
+
+        const completed = await engine.getRun({ runId: completedRunId, resourceId });
+        expect(completed.status).toBe(WorkflowStatus.COMPLETED);
+        expect(completed.retryCount).toBe(0);
+      });
     });
 
     it('should handle workflow with waitUntil step', async () => {
