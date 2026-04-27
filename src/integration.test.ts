@@ -117,6 +117,27 @@ const retryWorkflow = workflow(
   { retries: 5 },
 );
 
+let cachedStepOneRuns = 0;
+let cachedStepTwoRuns = 0;
+const cachedRetryWorkflow = workflow(
+  'integration-cached-retry',
+  async ({ step }) => {
+    const first = await step.run('charge', async () => {
+      cachedStepOneRuns++;
+      return { charged: true };
+    });
+    const second = await step.run('notify', async () => {
+      cachedStepTwoRuns++;
+      if (cachedStepTwoRuns < 3) {
+        throw new Error(`notify boom #${cachedStepTwoRuns}`);
+      }
+      return { notified: true, prevCharged: first.charged };
+    });
+    return second;
+  },
+  { retries: 5 },
+);
+
 const pauseResumeWorkflow = workflow('integration-pause-resume', async ({ step }) => {
   const before = await step.run('before-pause', async () => {
     return { phase: 'before' };
@@ -162,6 +183,7 @@ describe('WorkflowEngine Integration (real PostgreSQL)', () => {
         inputValidationWorkflow,
         waitForEventWorkflow,
         retryWorkflow,
+        cachedRetryWorkflow,
         pauseResumeWorkflow,
         cancelWorkflow,
       ],
@@ -314,6 +336,29 @@ describe('WorkflowEngine Integration (real PostgreSQL)', () => {
 
     expect(result.status).toBe(WorkflowStatus.COMPLETED);
     expect(result.output).toEqual({ attempt: 3 });
+    expect(result.retryCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it('should not re-execute completed steps when retries occur', async () => {
+    // End-to-end durability proof: step 'charge' must run exactly once even
+    // though step 'notify' fails twice. On retries, the engine reads the
+    // 'charge' result from the timeline and skips its handler.
+    cachedStepOneRuns = 0;
+    cachedStepTwoRuns = 0;
+
+    const resourceId = `test-cached-retry-${Date.now()}`;
+    const run = await engine.startWorkflow({
+      workflowId: 'integration-cached-retry',
+      resourceId,
+      input: {},
+    });
+
+    const result = await waitForStatus(run.id, resourceId, ['completed', 'failed']);
+
+    expect(result.status).toBe(WorkflowStatus.COMPLETED);
+    expect(cachedStepOneRuns).toBe(1);
+    expect(cachedStepTwoRuns).toBe(3);
+    expect(result.output).toEqual({ notified: true, prevCharged: true });
     expect(result.retryCount).toBeGreaterThanOrEqual(2);
   });
 
