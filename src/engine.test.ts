@@ -1160,7 +1160,7 @@ describe('WorkflowEngine', () => {
       expect(finished.output).toEqual({ value: 'first+second' });
     });
 
-    it('should use exponential backoff for retries', async () => {
+    it('should delegate retries to pg-boss with exponential backoff', async () => {
       const failingWorkflow = workflow('backoff-workflow', async ({ step }) => {
         await step.run('step-1', async () => {
           throw new Error('always fails');
@@ -1178,6 +1178,26 @@ describe('WorkflowEngine', () => {
         options: { retries: 2 },
       });
 
+      // pg-boss handles retries internally, so only ONE boss.send call is
+      // made — the retry options on it tell pg-boss to retry up to 2 times
+      // with exponential backoff.
+      type JobData = { runId: string; workflowId: string };
+      const sentCalls = sendSpy.mock.calls.filter(
+        ([queue, data]) =>
+          queue === WORKFLOW_RUN_QUEUE_NAME &&
+          (data as JobData).runId === run.id &&
+          (data as JobData).workflowId === 'backoff-workflow',
+      );
+      expect(sentCalls.length).toBe(1);
+      const opts = sentCalls[0][2] as {
+        retryLimit?: number;
+        retryBackoff?: boolean;
+        retryDelay?: number;
+      };
+      expect(opts.retryLimit).toBe(2);
+      expect(opts.retryBackoff).toBe(true);
+      expect(opts.retryDelay).toBe(1);
+
       await expect
         .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
           timeout: 10000,
@@ -1187,24 +1207,6 @@ describe('WorkflowEngine', () => {
       const finalRun = await engine.getRun({ runId: run.id, resourceId });
       expect(finalRun.retryCount).toBe(2);
       expect(finalRun.error).toBe('always fails');
-
-      type JobData = { runId: string; workflowId: string };
-
-      const retryCalls = sendSpy.mock.calls.filter(
-        ([queue, data]) =>
-          queue === WORKFLOW_RUN_QUEUE_NAME &&
-          (data as JobData).runId === run.id &&
-          (data as JobData).workflowId === 'backoff-workflow',
-      );
-
-      // 1 initial send from startWorkflow + 2 retry sends
-      expect(retryCalls.length).toBe(3);
-
-      for (const [, , options] of retryCalls.slice(1)) {
-        const opts = options as { startAfter?: Date; retryDelay?: number };
-        expect(opts.startAfter).toBeInstanceOf(Date);
-        expect(opts).not.toHaveProperty('retryDelay');
-      }
 
       sendSpy.mockRestore();
     });
@@ -1245,34 +1247,7 @@ describe('WorkflowEngine', () => {
         return runId;
       };
 
-      it('should retry a stuck RUNNING run when retries are available', async () => {
-        const runId = await insertStuckRun({
-          workflowId: 'test-workflow',
-          retryCount: 0,
-          maxRetries: 3,
-          status: WorkflowStatus.RUNNING,
-        });
-
-        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
-          runId,
-          resourceId,
-          workflowId: 'test-workflow',
-          input: { data: 'stuck' },
-        });
-
-        // The DLQ worker should bump retryCount and re-enqueue, then the main
-        // worker picks it up and completes the workflow.
-        await expect
-          .poll(async () => (await engine.getRun({ runId, resourceId })).status, {
-            timeout: 10000,
-          })
-          .toBe(WorkflowStatus.COMPLETED);
-
-        const recovered = await engine.getRun({ runId, resourceId });
-        expect(recovered.retryCount).toBeGreaterThanOrEqual(1);
-      });
-
-      it('should mark a stuck RUNNING run as FAILED when retries are exhausted', async () => {
+      it('should mark a stuck RUNNING run as FAILED when DLQ fires', async () => {
         const runId = await insertStuckRun({
           workflowId: 'test-workflow',
           retryCount: 2,
@@ -1352,10 +1327,10 @@ describe('WorkflowEngine', () => {
         });
 
         await expect
-          .poll(async () => (await engine.getRun({ runId: liveRunId, resourceId })).retryCount, {
+          .poll(async () => (await engine.getRun({ runId: liveRunId, resourceId })).status, {
             timeout: 10000,
           })
-          .toBeGreaterThanOrEqual(1);
+          .toBe(WorkflowStatus.FAILED);
       });
     });
 

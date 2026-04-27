@@ -1,6 +1,6 @@
 import { merge } from 'es-toolkit';
 import pg from 'pg';
-import { type Db, type Job, PgBoss } from 'pg-boss';
+import { type Db, type JobWithMetadata, PgBoss } from 'pg-boss';
 import { parseWorkflowHandler } from './ast-parser';
 import {
   DEFAULT_PGBOSS_SCHEMA,
@@ -102,6 +102,15 @@ const defaultExpireInSeconds = process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS
   ? Number.parseInt(process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS, 10)
   : 5 * 60; // 5 minutes
 
+// retryDelay is the base for pg-boss's exponential backoff:
+// `retryDelay * 2^retryCount` seconds (with up to ±50% jitter), so a base
+// of 1 second yields ~1s, ~2s, ~4s, ~8s, … between attempts.
+const retrySendOptions = (maxRetries: number) => ({
+  retryLimit: maxRetries,
+  retryBackoff: true,
+  retryDelay: 1,
+});
+
 // pg-boss workers auto-touch heartbeat_on every heartbeatSeconds / 2 seconds
 // while the process is alive. If the worker dies, heartbeats stop and pg-boss's
 // monitor (~60s ticks) routes the job to the dead-letter queue. Minimum is 10.
@@ -174,12 +183,12 @@ export class WorkflowEngine {
       }
     }
 
-    // The engine owns retry policy via workflow_runs.retryCount, so pg-boss
-    // must not retry on its own — otherwise its silent retries would drift
-    // retryCount/status out of sync with the queue. retryLimit: 0 routes any
-    // failure (thrown error, expired job, missed heartbeats) straight to the
-    // DLQ where handleStuckWorkflowRun reconciles the run. heartbeatSeconds
-    // lets pg-boss detect dead workers in ~heartbeatSeconds + monitorInterval
+    // pg-boss handles retries: every send sets retryLimit + retryBackoff
+    // per-job from the workflow's `retries` option. Failures (thrown error,
+    // expired job, missed heartbeats) re-enqueue automatically; once a job's
+    // retries are exhausted, pg-boss routes it to the DLQ where
+    // handleStuckWorkflowRun marks the run FAILED. heartbeatSeconds lets
+    // pg-boss detect dead workers in ~heartbeatSeconds + monitorInterval
     // (≈60s) instead of waiting for the full expireInSeconds.
     const mainQueueOptions = {
       retryLimit: 0,
@@ -195,13 +204,15 @@ export class WorkflowEngine {
     const numWorkers: number = +(process.env.WORKFLOW_RUN_WORKERS ?? 3);
 
     if (asEngine) {
+      // includeMetadata exposes job.retryCount so we can mirror pg-boss's
+      // attempt counter into workflow_runs.retryCount.
       await Promise.all(
         Array.from({ length: numWorkers }, (_, i) =>
           this.boss
             .work<WorkflowRunJobParameters>(
               WORKFLOW_RUN_QUEUE_NAME,
-              { pollingIntervalSeconds: 0.5, batchSize },
-              (job) => this.handleWorkflowRun(job),
+              { pollingIntervalSeconds: 0.5, batchSize, includeMetadata: true },
+              (jobs) => this.handleWorkflowRun(jobs),
             )
             .then(() => {
               this.logger.log(
@@ -214,7 +225,7 @@ export class WorkflowEngine {
       await this.boss.work<WorkflowRunJobParameters>(
         WORKFLOW_RUN_DLQ_QUEUE_NAME,
         { pollingIntervalSeconds: 0.5, batchSize: 1 },
-        (job) => this.handleStuckWorkflowRun(job),
+        (jobs) => this.handleStuckWorkflowRun(jobs),
       );
       this.logger.log(`Worker started for queue ${WORKFLOW_RUN_DLQ_QUEUE_NAME}`);
     }
@@ -395,6 +406,7 @@ export class WorkflowEngine {
           await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
             startAfter: new Date(),
             expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
+            ...retrySendOptions(insertedRun.maxRetries),
           });
         }
 
@@ -597,6 +609,7 @@ export class WorkflowEngine {
 
     await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
       expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
+      ...retrySendOptions(run.maxRetries),
     });
 
     this.logger.log(`event ${eventName} sent for workflow run with id ${runId}`);
@@ -729,8 +742,8 @@ export class WorkflowEngine {
     return run.resourceId ?? undefined;
   }
 
-  private async handleWorkflowRun([job]: Job<WorkflowRunJobParameters>[]) {
-    const { runId = '', resourceId, workflowId = '', input, event } = job?.data ?? {};
+  private async handleWorkflowRun([job]: JobWithMetadata<WorkflowRunJobParameters>[]) {
+    const { runId = '', resourceId, workflowId = '', event } = job?.data ?? {};
 
     let run: WorkflowRun | undefined;
     let scopedResourceId: string | undefined;
@@ -769,6 +782,17 @@ export class WorkflowEngine {
       }
 
       scopedResourceId = this.resolveScopedResourceId(resourceId, run);
+
+      // Mirror pg-boss's attempt counter so workflow_runs.retryCount stays
+      // observable to API consumers across retries.
+      if (job?.retryCount !== undefined && run.retryCount !== job.retryCount) {
+        await this.updateRun({
+          runId,
+          resourceId: scopedResourceId,
+          data: { retryCount: job.retryCount },
+        });
+        run = { ...run, retryCount: job.retryCount };
+      }
 
       if (run.status === WorkflowStatus.CANCELLED) {
         this.logger.log(`Workflow run ${runId} is cancelled, skipping`);
@@ -978,17 +1002,14 @@ export class WorkflowEngine {
         });
       }
     } catch (error) {
-      if (run && (await this.enqueueRetry(run, { workflowId, input, jobId: job?.id }))) {
-        return;
-      }
-
-      // TODO: Ensure that this code always runs, even if worker is stopped unexpectedly.
+      // Persist the error so the DLQ handler can surface it after retries
+      // are exhausted. pg-boss handles the retry-vs-DLQ decision based on
+      // the per-job retryLimit set when the job was enqueued.
       if (runId) {
         await this.updateRun({
           runId,
           resourceId: scopedResourceId,
           data: {
-            status: WorkflowStatus.FAILED,
             error: error instanceof Error ? error.message : String(error),
             jobId: job?.id,
           },
@@ -1000,74 +1021,25 @@ export class WorkflowEngine {
   }
 
   /**
-   * Schedules the next attempt for a workflow run using the engine's
-   * exponential backoff. Returns true if a retry was enqueued, false when
-   * retries are exhausted — callers decide how to mark FAILED.
+   * Reconciles workflow runs whose retries pg-boss has exhausted (handler
+   * threw on the final attempt, or worker died and missed the heartbeat
+   * past the retry budget). The DLQ entry tells us the run is unrecoverable;
+   * we mark it FAILED with whatever error message the catch block last
+   * persisted, falling back to a worker-death message.
    */
-  private async enqueueRetry(
-    run: WorkflowRun,
-    { workflowId, input, jobId }: { workflowId: string; input: unknown; jobId?: string },
-  ): Promise<boolean> {
-    if (run.retryCount >= run.maxRetries) {
-      return false;
-    }
-
-    const scopedResourceId = run.resourceId ?? undefined;
-    await this.updateRun({
-      runId: run.id,
-      resourceId: scopedResourceId,
-      data: {
-        retryCount: run.retryCount + 1,
-        ...(jobId ? { jobId } : {}),
-      },
-    });
-
-    const retryDelay = 2 ** run.retryCount * 1000;
-    await this.boss.send(
-      WORKFLOW_RUN_QUEUE_NAME,
-      { runId: run.id, resourceId: scopedResourceId, workflowId, input },
-      {
-        startAfter: new Date(Date.now() + retryDelay),
-        expireInSeconds: defaultExpireInSeconds,
-      },
-    );
-    return true;
-  }
-
-  /**
-   * Reconciles workflow runs whose worker died mid-execution. pg-boss routes
-   * jobs that time out (or otherwise fail without the handler running to
-   * completion) to the dead-letter queue, with the original job payload
-   * preserved. We use that payload to find the orphaned workflow_runs row
-   * and either retry it with the engine's exponential backoff or mark it
-   * FAILED if retries are exhausted.
-   */
-  private async handleStuckWorkflowRun([job]: Job<WorkflowRunJobParameters>[]) {
-    const { runId, workflowId, input } = job?.data ?? {};
+  private async handleStuckWorkflowRun([job]: { data?: WorkflowRunJobParameters }[]) {
+    const { runId } = job?.data ?? {};
     if (!runId) return;
 
     const run = await getWorkflowRun({ runId }, { db: this.db });
     if (!run || run.status !== WorkflowStatus.RUNNING) return;
-
-    const retried = await this.enqueueRetry(run, {
-      workflowId: workflowId ?? run.workflowId,
-      input: input ?? run.input,
-    });
-
-    if (retried) {
-      this.logger.log(
-        `Retrying stuck workflow run (attempt ${run.retryCount + 1}/${run.maxRetries})`,
-        { runId, workflowId: run.workflowId },
-      );
-      return;
-    }
 
     await this.updateRun({
       runId,
       resourceId: run.resourceId ?? undefined,
       data: {
         status: WorkflowStatus.FAILED,
-        error: 'Workflow run worker died or job expired before completion',
+        error: run.error ?? 'Workflow run worker died or job expired before completion',
       },
     });
 
@@ -1272,6 +1244,7 @@ export class WorkflowEngine {
         await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
           startAfter: timeoutDate.getTime() <= Date.now() ? new Date() : timeoutDate,
           expireInSeconds: defaultExpireInSeconds,
+          ...retrySendOptions(run.maxRetries),
         });
       } catch (error) {
         // Revert PAUSED status so the workflow can retry this step
@@ -1466,6 +1439,7 @@ export class WorkflowEngine {
         {
           startAfter: new Date(Date.now() + intervalMs),
           expireInSeconds: defaultExpireInSeconds,
+          ...retrySendOptions(run.maxRetries),
         },
       );
     } catch (error) {
