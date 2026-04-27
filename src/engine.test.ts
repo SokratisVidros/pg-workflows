@@ -1255,12 +1255,7 @@ describe('WorkflowEngine', () => {
           status: WorkflowStatus.RUNNING,
         });
 
-        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
-          runId,
-          resourceId,
-          workflowId: 'test-workflow',
-          input: { data: 'stuck' },
-        });
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, { runId });
 
         await expect
           .poll(async () => (await engine.getRun({ runId, resourceId })).status, {
@@ -1272,65 +1267,39 @@ describe('WorkflowEngine', () => {
         expect(failed.error).toContain('worker died');
       });
 
-      it('should not modify runs that are no longer in RUNNING status', async () => {
-        const runId = await insertStuckRun({
+      it('should ignore DLQ jobs that need no recovery and stay alive', async () => {
+        // Three no-op cases the DLQ worker must skip without crashing:
+        // (1) terminal status, (2) missing runId, (3) unknown runId.
+        // A bad payload that crashes the worker would poison the pipeline.
+        const completedRunId = await insertStuckRun({
           workflowId: 'test-workflow',
           retryCount: 0,
           maxRetries: 2,
           status: WorkflowStatus.COMPLETED,
         });
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, { runId: completedRunId });
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {});
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, { runId: 'run_does_not_exist_xyz' });
 
-        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
-          runId,
-          resourceId,
-          workflowId: 'test-workflow',
-          input: { data: 'stuck' },
-        });
-
-        // Give the DLQ worker time to process and confirm no state change.
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-
-        const after = await engine.getRun({ runId, resourceId });
-        expect(after.status).toBe(WorkflowStatus.COMPLETED);
-        expect(after.retryCount).toBe(0);
-      });
-
-      it('should silently no-op for DLQ jobs with missing or unknown runId', async () => {
-        // The DLQ worker must not crash on malformed/orphaned messages,
-        // otherwise a single bad payload poisons the entire DLQ pipeline.
-        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
-          resourceId,
-          workflowId: 'test-workflow',
-          input: {},
-        });
-
-        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
-          runId: 'run_does_not_exist_xyz',
-          resourceId,
-          workflowId: 'test-workflow',
-          input: {},
-        });
-
-        // A subsequent valid DLQ message should still be processed, proving
-        // the worker stayed alive through the previous two no-ops.
+        // A follow-up valid DLQ message proves the worker stayed alive past
+        // all three no-ops once it advances the live run to FAILED.
         const liveRunId = await insertStuckRun({
           workflowId: 'test-workflow',
-          retryCount: 0,
-          maxRetries: 3,
+          retryCount: 2,
+          maxRetries: 2,
           status: WorkflowStatus.RUNNING,
         });
-        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, {
-          runId: liveRunId,
-          resourceId,
-          workflowId: 'test-workflow',
-          input: { data: 'stuck' },
-        });
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, { runId: liveRunId });
 
         await expect
           .poll(async () => (await engine.getRun({ runId: liveRunId, resourceId })).status, {
             timeout: 10000,
           })
           .toBe(WorkflowStatus.FAILED);
+
+        const completed = await engine.getRun({ runId: completedRunId, resourceId });
+        expect(completed.status).toBe(WorkflowStatus.COMPLETED);
+        expect(completed.retryCount).toBe(0);
       });
     });
 

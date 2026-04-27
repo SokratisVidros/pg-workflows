@@ -1,7 +1,8 @@
 import pg from 'pg';
+import type { PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { DEFAULT_PGBOSS_SCHEMA, WORKFLOW_RUN_DLQ_QUEUE_NAME } from './constants';
+import { WORKFLOW_RUN_DLQ_QUEUE_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constants';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
 import { WorkflowStatus } from './types';
@@ -415,28 +416,21 @@ describe('WorkflowEngine Integration (real PostgreSQL)', () => {
 
   describe('dead-letter recovery for stuck runs', () => {
     it('should configure the workflow-run queue with the DLQ + heartbeat options', async () => {
-      const { rows } = await pool.query<{
-        retry_limit: number;
-        dead_letter: string | null;
-        heartbeat_seconds: number | null;
-      }>(
-        `SELECT retry_limit, dead_letter, heartbeat_seconds
-           FROM ${DEFAULT_PGBOSS_SCHEMA}.queue
-          WHERE name = $1`,
-        ['workflow-run'],
-      );
+      const boss = (engine as unknown as { boss: PgBoss }).boss;
+      const queue = await boss.getQueue(WORKFLOW_RUN_QUEUE_NAME);
 
-      expect(rows).toHaveLength(1);
-      expect(rows[0].retry_limit).toBe(0);
-      expect(rows[0].dead_letter).toBe(WORKFLOW_RUN_DLQ_QUEUE_NAME);
-      expect(rows[0].heartbeat_seconds).toBe(30);
+      expect(queue).not.toBeNull();
+      expect(queue?.retryLimit).toBe(0);
+      expect(queue?.deadLetter).toBe(WORKFLOW_RUN_DLQ_QUEUE_NAME);
+      expect(queue?.heartbeatSeconds).toBe(30);
     });
 
     it('should route a real failed job to the DLQ via pg-boss when handler re-throws', async () => {
-      // retries=0 + retryLimit=0 on the queue means a thrown handler error
-      // causes pg-boss to copy the payload to workflow_run_dlq. The DLQ
-      // worker sees status=FAILED and no-ops — verifying the pipeline wires
-      // up correctly end-to-end on real PostgreSQL.
+      // retries=0 means a thrown handler error exhausts pg-boss retries
+      // immediately, routing the job to the DLQ. status=FAILED proves
+      // handleWorkflowRunDlq ran (only path that flips RUNNING→FAILED), and
+      // the preserved error message proves the catch block persisted it
+      // before pg-boss routed the failure.
       const alwaysFails = workflow(
         'integration-dlq-route',
         async ({ step }) => {
@@ -457,14 +451,7 @@ describe('WorkflowEngine Integration (real PostgreSQL)', () => {
 
       const result = await waitForStatus(run.id, resourceId, ['failed'], 10_000);
       expect(result.status).toBe(WorkflowStatus.FAILED);
-
-      const { rows } = await pool.query<{ count: string }>(
-        `SELECT COUNT(*)::text AS count
-           FROM ${DEFAULT_PGBOSS_SCHEMA}.job
-          WHERE name = $1 AND data->>'runId' = $2`,
-        [WORKFLOW_RUN_DLQ_QUEUE_NAME, run.id],
-      );
-      expect(Number(rows[0].count)).toBeGreaterThanOrEqual(1);
+      expect(result.error).toBe('intentional boom');
 
       await engine.unregisterWorkflow('integration-dlq-route');
     });
