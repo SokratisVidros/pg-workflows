@@ -4,6 +4,7 @@ import * as v from 'valibot';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { WORKFLOW_RUN_DLQ_QUEUE_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constants';
+import type { WorkflowRun } from './db/types';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
@@ -852,6 +853,674 @@ describe('WorkflowEngine', () => {
           async () => (await engine.getRun({ runId: run.id, resourceId: scopedResource })).status,
         )
         .toBe(WorkflowStatus.COMPLETED);
+    });
+
+    it('should invoke a child workflow and resume the parent with child output', async () => {
+      const childWorkflow = workflow('invoke-child-success', async ({ step }) => {
+        const event = await step.waitFor('child-wait', { eventName: 'child-ready' });
+        return { child: event };
+      });
+
+      const parentWorkflow = workflow('invoke-parent-success', async ({ step }) => {
+        const childOutput = await step.invokeWorkflow<{ child: { message: string } }>(
+          'call-child',
+          {
+            workflowId: 'invoke-child-success',
+            input: {},
+          },
+        );
+        return { childOutput };
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'invoke-parent-success',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: parentRun.id, resourceId }))
+        .toMatchObject({
+          status: WorkflowStatus.PAUSED,
+          currentStepId: 'call-child',
+          timeline: {
+            'call-child-invoke-workflow': {
+              invokeWorkflow: {
+                childWorkflowId: 'invoke-child-success',
+              },
+            },
+            'call-child-wait-for': {
+              waitFor: {},
+            },
+          },
+        });
+
+      const childRuns = await engine.getRuns({ resourceId, workflowId: 'invoke-child-success' });
+      expect(childRuns.items).toHaveLength(1);
+      const childRun = childRuns.items[0];
+      expect(childRun.parentRunId).toBe(parentRun.id);
+      expect(childRun.parentStepId).toBe('call-child');
+      expect(childRun.parentResourceId).toBe(resourceId);
+      expect(childRun.idempotencyKey).toBeNull();
+
+      const sendSpy = vi.spyOn(testBoss, 'send');
+      try {
+        const resumeAttempt = await engine.resumeWorkflow({
+          runId: parentRun.id,
+          resourceId,
+        });
+        expect(resumeAttempt.status).toBe(WorkflowStatus.PAUSED);
+        expect(sendSpy).not.toHaveBeenCalled();
+      } finally {
+        sendSpy.mockRestore();
+      }
+
+      await engine.triggerEvent({
+        runId: childRun.id,
+        resourceId,
+        eventName: 'child-ready',
+        data: { message: 'done' },
+      });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: parentRun.id, resourceId }))
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: { childOutput: { child: { message: 'done' } } },
+          timeline: {
+            'call-child': {
+              output: { child: { message: 'done' } },
+            },
+          },
+        });
+    });
+
+    it('should enqueue child workflow only after parent invoke wait is committed', async () => {
+      const childWorkflow = workflow('invoke-child-post-commit', async ({ step }) => {
+        await step.waitFor('child-wait', { eventName: 'child-ready' });
+        return { ok: true };
+      });
+
+      const parentWorkflow = workflow('invoke-parent-post-commit', async ({ step }) => {
+        return await step.invokeWorkflow('call-child', {
+          workflowId: 'invoke-child-post-commit',
+          input: {},
+        });
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const originalSend = testBoss.send.bind(testBoss);
+      let observedCommittedParentWait = false;
+      const sendSpy = vi
+        .spyOn(testBoss, 'send')
+        .mockImplementation(async (queue, data, options) => {
+          const job = data as { runId?: string; workflowId?: string };
+          if (queue === WORKFLOW_RUN_QUEUE_NAME && job.workflowId === 'invoke-child-post-commit') {
+            const childRun = await engine.getRun({ runId: job.runId ?? '' });
+            expect(childRun.parentRunId).toBeTruthy();
+
+            const parentRun = await engine.getRun({
+              runId: childRun.parentRunId ?? '',
+              resourceId: childRun.parentResourceId ?? undefined,
+            });
+            expect(parentRun.status).toBe(WorkflowStatus.PAUSED);
+            expect(parentRun.timeline).toMatchObject({
+              'call-child-invoke-workflow': {
+                invokeWorkflow: {
+                  childRunId: childRun.id,
+                  childWorkflowId: 'invoke-child-post-commit',
+                },
+              },
+              'call-child-wait-for': {
+                waitFor: {
+                  eventName: `__invoke_workflow_completed:${childRun.id}`,
+                },
+              },
+            });
+            observedCommittedParentWait = true;
+          }
+
+          return await originalSend(queue, data, options);
+        });
+
+      try {
+        const parentRun = await engine.startWorkflow({
+          resourceId,
+          workflowId: 'invoke-parent-post-commit',
+          input: {},
+        });
+
+        await expect.poll(() => observedCommittedParentWait).toBe(true);
+        await expect
+          .poll(async () => (await engine.getRun({ runId: parentRun.id, resourceId })).status)
+          .toBe(WorkflowStatus.PAUSED);
+      } finally {
+        sendSpy.mockRestore();
+      }
+    });
+
+    it('should preserve null output from an invoked child workflow', async () => {
+      const childWorkflow = workflow('invoke-child-null-output', async ({ step }) => {
+        return await step.run('child-step', async () => null);
+      });
+
+      const parentWorkflow = workflow('invoke-parent-null-output', async ({ step }) => {
+        const childOutput = await step.invokeWorkflow<null>('call-child', {
+          workflowId: 'invoke-child-null-output',
+          input: {},
+        });
+        return { childOutput };
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'invoke-parent-null-output',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: parentRun.id, resourceId }), {
+          timeout: 10_000,
+        })
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: { childOutput: null },
+          timeline: {
+            'call-child': {
+              output: null,
+            },
+          },
+        });
+    });
+
+    it('should not start duplicate child workflows when an invoke step replays', async () => {
+      const childWorkflow = workflow('invoke-child-idempotent', async ({ step }) => {
+        await step.waitFor('child-wait', { eventName: 'child-ready' });
+        return { ok: true };
+      });
+
+      const parentWorkflow = workflow('invoke-parent-idempotent', async ({ step }) => {
+        return await step.invokeWorkflow('call-child', {
+          workflowId: 'invoke-child-idempotent',
+          input: {},
+        });
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'invoke-parent-idempotent',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: parentRun.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      await testBoss.send(WORKFLOW_RUN_QUEUE_NAME, {
+        runId: parentRun.id,
+        resourceId,
+        workflowId: 'invoke-parent-idempotent',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: parentRun.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      const childRuns = await engine.getRuns({ resourceId, workflowId: 'invoke-child-idempotent' });
+      expect(childRuns.items).toHaveLength(1);
+      expect(childRuns.items[0].idempotencyKey).toBeNull();
+    });
+
+    it('should return invokeWorkflow output cached after acquiring the parent lock', async () => {
+      const now = new Date();
+      const parentRun: WorkflowRun = {
+        id: 'invoke-parent-lock-race',
+        createdAt: now,
+        updatedAt: now,
+        resourceId,
+        workflowId: 'invoke-parent-lock-race',
+        status: WorkflowStatus.RUNNING,
+        input: {},
+        output: null,
+        error: null,
+        currentStepId: 'call-child',
+        timeline: {},
+        pausedAt: null,
+        resumedAt: null,
+        completedAt: null,
+        timeoutAt: null,
+        retryCount: 0,
+        maxRetries: 0,
+        jobId: null,
+        idempotencyKey: null,
+        parentRunId: null,
+        parentStepId: null,
+        parentResourceId: null,
+      };
+      const lockedParentRun: WorkflowRun = {
+        ...parentRun,
+        timeline: {
+          'call-child': {
+            output: { ok: true },
+            timestamp: now,
+          },
+        },
+      };
+      const engineWithInvokeWorkflowStep = engine as unknown as {
+        invokeWorkflowStep(args: {
+          run: WorkflowRun;
+          stepId: string;
+          workflowId: string;
+          input: unknown;
+        }): Promise<unknown>;
+      };
+      const getRunSpy = vi.spyOn(engine, 'getRun').mockImplementation(async (_params, options) => {
+        return options?.exclusiveLock ? lockedParentRun : parentRun;
+      });
+
+      try {
+        await expect(
+          engineWithInvokeWorkflowStep.invokeWorkflowStep({
+            run: parentRun,
+            stepId: 'call-child',
+            workflowId: 'invoke-child-lock-race',
+            input: {},
+          }),
+        ).resolves.toEqual({ ok: true });
+      } finally {
+        getRunSpy.mockRestore();
+      }
+    });
+
+    it('should fail instead of linking an explicit invoke idempotency key to an unrelated run', async () => {
+      const childWorkflow = workflow('invoke-child-key-conflict', async ({ step }) => {
+        await step.waitFor('child-wait', { eventName: 'child-ready' });
+        return { ok: true };
+      });
+
+      const parentWorkflow = workflow('invoke-parent-key-conflict', async ({ step }) => {
+        await step.invokeWorkflow('call-child', {
+          workflowId: 'invoke-child-key-conflict',
+          input: {},
+          idempotencyKey: 'invoke-child-conflict-key',
+        });
+        return { unreachable: true };
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const unrelatedChild = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'invoke-child-key-conflict',
+        input: {},
+        idempotencyKey: 'invoke-child-conflict-key',
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: unrelatedChild.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'invoke-parent-key-conflict',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: parentRun.id, resourceId }), {
+          timeout: 10_000,
+        })
+        .toMatchObject({
+          status: WorkflowStatus.FAILED,
+          error: expect.stringContaining('does not belong to invokeWorkflow step'),
+        });
+    });
+
+    it('should retry cleanly when child enqueue fails after parent pause is prepared', async () => {
+      const childWorkflow = workflow('invoke-child-enqueue-retry', async ({ step }) => {
+        return await step.run('child-step', async () => ({ ok: true }));
+      });
+
+      const parentWorkflow = workflow('invoke-parent-enqueue-retry', async ({ step }) => {
+        return await step.invokeWorkflow('call-child', {
+          workflowId: 'invoke-child-enqueue-retry',
+          input: {},
+        });
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const originalSend = testBoss.send.bind(testBoss);
+      let rejectedChildEnqueue = false;
+      let childEnqueueAttempts = 0;
+      const sendSpy = vi
+        .spyOn(testBoss, 'send')
+        .mockImplementation(async (queue, data, options) => {
+          const job = data as { workflowId?: string };
+          if (
+            queue === WORKFLOW_RUN_QUEUE_NAME &&
+            job.workflowId === 'invoke-child-enqueue-retry'
+          ) {
+            childEnqueueAttempts++;
+            if (!rejectedChildEnqueue) {
+              rejectedChildEnqueue = true;
+              throw new Error('simulated child enqueue failure');
+            }
+          }
+
+          return await originalSend(queue, data, options);
+        });
+
+      try {
+        const parentRun = await engine.startWorkflow({
+          resourceId,
+          workflowId: 'invoke-parent-enqueue-retry',
+          input: {},
+          options: { retries: 1 },
+        });
+
+        await expect
+          .poll(async () => await engine.getRun({ runId: parentRun.id, resourceId }), {
+            timeout: 15_000,
+          })
+          .toMatchObject({
+            status: WorkflowStatus.COMPLETED,
+            output: { ok: true },
+          });
+
+        expect(rejectedChildEnqueue).toBe(true);
+        expect(childEnqueueAttempts).toBe(2);
+        const childRuns = await engine.getRuns({
+          resourceId,
+          workflowId: 'invoke-child-enqueue-retry',
+        });
+        expect(childRuns.items).toHaveLength(1);
+      } finally {
+        sendSpy.mockRestore();
+      }
+    });
+
+    it('should fail the parent when an invoked child workflow fails', async () => {
+      const childWorkflow = workflow('invoke-child-fails', async ({ step }) => {
+        await step.run('fail', async () => {
+          throw new Error('child exploded');
+        });
+      });
+
+      const parentWorkflow = workflow('invoke-parent-child-fails', async ({ step }) => {
+        await step.invokeWorkflow('call-child', {
+          workflowId: 'invoke-child-fails',
+          input: {},
+        });
+        return { unreachable: true };
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'invoke-parent-child-fails',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: parentRun.id, resourceId }), {
+          timeout: 10000,
+        })
+        .toMatchObject({
+          status: WorkflowStatus.FAILED,
+          error: expect.stringContaining('child exploded'),
+        });
+    });
+
+    it('should fail the parent when an invoked child workflow is cancelled', async () => {
+      const childWorkflow = workflow('invoke-child-cancelled', async ({ step }) => {
+        await step.waitFor('child-wait', { eventName: 'child-ready' });
+        return { ok: true };
+      });
+
+      const parentWorkflow = workflow('invoke-parent-child-cancelled', async ({ step }) => {
+        await step.invokeWorkflow('call-child', {
+          workflowId: 'invoke-child-cancelled',
+          input: {},
+        });
+        return { unreachable: true };
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'invoke-parent-child-cancelled',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: parentRun.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      const childRuns = await engine.getRuns({ resourceId, workflowId: 'invoke-child-cancelled' });
+      expect(childRuns.items).toHaveLength(1);
+
+      await engine.cancelWorkflow({ runId: childRuns.items[0].id, resourceId });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: parentRun.id, resourceId }), {
+          timeout: 10000,
+        })
+        .toMatchObject({
+          status: WorkflowStatus.FAILED,
+          error: expect.stringContaining('cancelled'),
+        });
+    });
+
+    it('should resume from cached child output even if fastForwardWorkflow is called after the child completes', async () => {
+      const childWorkflow = workflow('invoke-child-ff-after-complete', async ({ step }) => {
+        await step.waitFor('child-wait', { eventName: 'child-ready' });
+        return { ok: true };
+      });
+
+      const parentWorkflow = workflow('invoke-parent-ff-after-complete', async ({ step }) => {
+        return await step.invokeWorkflow('call-child', {
+          workflowId: 'invoke-child-ff-after-complete',
+          input: {},
+        });
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'invoke-parent-ff-after-complete',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: parentRun.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      const childRuns = await engine.getRuns({
+        resourceId,
+        workflowId: 'invoke-child-ff-after-complete',
+      });
+      expect(childRuns.items).toHaveLength(1);
+      const childRun = childRuns.items[0];
+
+      // Calling fastForwardWorkflow on an invokeWorkflow wait must always be a
+      // no-op; only the real invoke-completion event drives the parent forward.
+      const ffWhilePending = await engine.fastForwardWorkflow({
+        runId: parentRun.id,
+        resourceId,
+        data: { fake: true },
+      });
+      expect(ffWhilePending.status).toBe(WorkflowStatus.PAUSED);
+
+      await engine.triggerEvent({
+        runId: childRun.id,
+        resourceId,
+        eventName: 'child-ready',
+      });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: parentRun.id, resourceId }), {
+          timeout: 10_000,
+        })
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: { ok: true },
+        });
+    });
+
+    it('should fail the parent when its timeout fires while the child is still running', async () => {
+      const childWorkflow = workflow('invoke-child-parent-timeout', async ({ step }) => {
+        await step.waitFor('child-wait', { eventName: 'child-ready' });
+        return { ok: true };
+      });
+
+      const parentWorkflow = workflow('invoke-parent-parent-timeout', async ({ step }) => {
+        return await step.invokeWorkflow('call-child', {
+          workflowId: 'invoke-child-parent-timeout',
+          input: {},
+        });
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'invoke-parent-parent-timeout',
+        input: {},
+        // Short parent timeout so the parent times out while the child is
+        // still waiting for `child-ready`.
+        options: { timeout: 200 },
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: parentRun.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      // Simulate the parent timeout firing: cancel the parent, which is the
+      // engine's terminal "give up" path. Children are intentionally not
+      // cancelled (documented behaviour) - the child should remain in PAUSED
+      // and the parent's wakeup event should be dropped.
+      await engine.cancelWorkflow({ runId: parentRun.id, resourceId });
+
+      const parentAfterCancel = await engine.getRun({ runId: parentRun.id, resourceId });
+      expect(parentAfterCancel.status).toBe(WorkflowStatus.CANCELLED);
+
+      const childRuns = await engine.getRuns({
+        resourceId,
+        workflowId: 'invoke-child-parent-timeout',
+      });
+      expect(childRuns.items).toHaveLength(1);
+      const childBefore = childRuns.items[0];
+      expect(childBefore.status).toBe(WorkflowStatus.PAUSED);
+
+      // Completing the child must NOT revive the parent.
+      await engine.triggerEvent({
+        runId: childBefore.id,
+        resourceId,
+        eventName: 'child-ready',
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: childBefore.id, resourceId })).status, {
+          timeout: 10_000,
+        })
+        .toBe(WorkflowStatus.COMPLETED);
+
+      const parentFinal = await engine.getRun({ runId: parentRun.id, resourceId });
+      expect(parentFinal.status).toBe(WorkflowStatus.CANCELLED);
+    });
+
+    it('should ignore a duplicate invoke-completion event after the parent has completed', async () => {
+      const childWorkflow = workflow('invoke-child-duplicate-wakeup', async ({ step }) => {
+        await step.waitFor('child-wait', { eventName: 'child-ready' });
+        return { value: 'done' };
+      });
+
+      const parentWorkflow = workflow('invoke-parent-duplicate-wakeup', async ({ step }) => {
+        const childOutput = await step.invokeWorkflow<{ value: string }>('call-child', {
+          workflowId: 'invoke-child-duplicate-wakeup',
+          input: {},
+        });
+        return { childOutput };
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'invoke-parent-duplicate-wakeup',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: parentRun.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      const childRuns = await engine.getRuns({
+        resourceId,
+        workflowId: 'invoke-child-duplicate-wakeup',
+      });
+      expect(childRuns.items).toHaveLength(1);
+      const childRun = childRuns.items[0];
+
+      // First, let the child complete via the engine's own notify path so the
+      // parent ends up COMPLETED with the real child output.
+      await engine.triggerEvent({
+        runId: childRun.id,
+        resourceId,
+        eventName: 'child-ready',
+      });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: parentRun.id, resourceId }), {
+          timeout: 10_000,
+        })
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: { childOutput: { value: 'done' } },
+        });
+
+      // Now redeliver the same wakeup with a different payload. The parent is
+      // already terminal, so the worker must see status !== PAUSED, skip the
+      // wait-for unlock branch, fall through to the (now no-op) handler path,
+      // and never overwrite the cached output. This guards the
+      // "child notify fires twice (catch + DLQ)" deduplication path.
+      const eventName = `__invoke_workflow_completed:${childRun.id}`;
+      await testBoss.send(WORKFLOW_RUN_QUEUE_NAME, {
+        runId: parentRun.id,
+        resourceId,
+        workflowId: 'invoke-parent-duplicate-wakeup',
+        input: {},
+        event: { name: eventName, data: { value: 'should-be-ignored' } },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      const finalParent = await engine.getRun({ runId: parentRun.id, resourceId });
+      expect(finalParent.status).toBe(WorkflowStatus.COMPLETED);
+      expect(finalParent.output).toEqual({ childOutput: { value: 'done' } });
     });
 
     it('should handle workflow with pause step', async () => {
@@ -2203,6 +2872,63 @@ describe('WorkflowEngine', () => {
         .toMatchObject({
           status: WorkflowStatus.COMPLETED,
           output: 'done',
+        });
+    });
+
+    it('should not fast-forward an invokeWorkflow step while the child is still running', async () => {
+      const childWorkflow = workflow('ff-method-invoke-child', async ({ step }) => {
+        await step.waitFor('child-wait', { eventName: 'child-ready' });
+        return { ok: true };
+      });
+
+      const parentWorkflow = workflow('ff-method-invoke-parent', async ({ step }) => {
+        return await step.invokeWorkflow('call-child', {
+          workflowId: 'ff-method-invoke-child',
+          input: {},
+        });
+      });
+
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'ff-method-invoke-parent',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: parentRun.id, resourceId })).status, {
+          timeout: 10_000,
+        })
+        .toBe(WorkflowStatus.PAUSED);
+
+      await engine.fastForwardWorkflow({
+        runId: parentRun.id,
+        resourceId,
+        data: { fake: true },
+      });
+
+      const stillPaused = await engine.getRun({ runId: parentRun.id, resourceId });
+      expect(stillPaused.status).toBe(WorkflowStatus.PAUSED);
+      expect(stillPaused.timeline).not.toHaveProperty('call-child.output');
+
+      const childRuns = await engine.getRuns({ resourceId, workflowId: 'ff-method-invoke-child' });
+      expect(childRuns.items).toHaveLength(1);
+
+      await engine.triggerEvent({
+        runId: childRuns.items[0].id,
+        resourceId,
+        eventName: 'child-ready',
+      });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: parentRun.id, resourceId }), {
+          timeout: 10_000,
+        })
+        .toMatchObject({
+          status: WorkflowStatus.COMPLETED,
+          output: { ok: true },
         });
     });
 

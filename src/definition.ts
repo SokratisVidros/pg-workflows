@@ -13,12 +13,17 @@ import type {
  * Create a lightweight workflow reference.
  * Safe to import from `pg-workflows/client` - no engine or handler code.
  */
-export function createWorkflowRef<TInput extends InputParameters = InputParameters>(
+export function createWorkflowRef<
+  TOutput = unknown,
+  TInput extends InputParameters = InputParameters,
+>(
   id: string,
   options?: { inputSchema?: TInput },
-): WorkflowRef<TInput> {
+): WorkflowRef<TInput, TOutput> {
   const ref = ((
-    handler: (context: WorkflowContext<TInput, StepBaseContext>) => Promise<unknown>,
+    handler: (
+      context: WorkflowContext<TInput, StepBaseContext>,
+    ) => Promise<unknown>,
     defineOptions?: Omit<WorkflowOptions<TInput>, 'inputSchema'>,
   ): WorkflowDefinition<TInput> => ({
     id,
@@ -28,10 +33,13 @@ export function createWorkflowRef<TInput extends InputParameters = InputParamete
     inputSchema: options?.inputSchema,
     timeout: defineOptions?.timeout,
     retries: defineOptions?.retries,
-  })) as WorkflowRef<TInput>;
+  })) as WorkflowRef<TInput, TOutput>;
 
   Object.defineProperty(ref, 'id', { value: id, enumerable: true });
-  Object.defineProperty(ref, 'inputSchema', { value: options?.inputSchema, enumerable: true });
+  Object.defineProperty(ref, 'inputSchema', {
+    value: options?.inputSchema,
+    enumerable: true,
+  });
 
   return ref;
 }
@@ -41,7 +49,9 @@ function createWorkflowFactory<TStepExt extends object = object>(
 ): WorkflowFactory<TStepExt> {
   const factory = (<I extends InputParameters>(
     id: string,
-    handler: (context: WorkflowContext<I, StepBaseContext & TStepExt>) => Promise<unknown>,
+    handler: (
+      context: WorkflowContext<I, StepBaseContext & TStepExt>,
+    ) => Promise<unknown>,
     { inputSchema, timeout, retries }: WorkflowOptions<I> = {},
   ): WorkflowDefinition<I> => ({
     id,

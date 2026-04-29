@@ -26,6 +26,9 @@ type WorkflowRunRow = {
   max_retries: number;
   job_id: string | null;
   idempotency_key: string | null;
+  parent_run_id: string | null;
+  parent_step_id: string | null;
+  parent_resource_id: string | null;
 };
 
 function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
@@ -54,6 +57,9 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
     maxRetries: row.max_retries,
     jobId: row.job_id,
     idempotencyKey: row.idempotency_key,
+    parentRunId: row.parent_run_id,
+    parentStepId: row.parent_step_id,
+    parentResourceId: row.parent_resource_id,
   };
 }
 
@@ -67,6 +73,9 @@ export async function insertWorkflowRun(
     maxRetries,
     timeoutAt,
     idempotencyKey,
+    parentRunId,
+    parentStepId,
+    parentResourceId,
   }: {
     resourceId?: string;
     workflowId: string;
@@ -76,6 +85,9 @@ export async function insertWorkflowRun(
     maxRetries: number;
     timeoutAt: Date | null;
     idempotencyKey?: string;
+    parentRunId?: string;
+    parentStepId?: string;
+    parentResourceId?: string;
   },
   db: Db,
 ): Promise<{ run: WorkflowRun; created: boolean }> {
@@ -96,9 +108,12 @@ export async function insertWorkflowRun(
       updated_at,
       timeline,
       retry_count,
-      idempotency_key
+      idempotency_key,
+      parent_run_id,
+      parent_step_id,
+      parent_resource_id
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
     ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
     RETURNING *`,
     [
@@ -115,6 +130,9 @@ export async function insertWorkflowRun(
       '{}',
       0,
       idempotencyKey ?? null,
+      parentRunId ?? null,
+      parentStepId ?? null,
+      parentResourceId ?? null,
     ],
   );
 

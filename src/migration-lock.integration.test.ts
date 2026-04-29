@@ -55,7 +55,7 @@ describe('Migration advisory lock (real PostgreSQL)', () => {
 
     // Verify the final schema state is correct
     const versionResult = await pool.query('SELECT version FROM workflow_schema_version LIMIT 1');
-    expect(versionResult.rows[0].version).toBe(3);
+    expect(versionResult.rows[0].version).toBe(4);
 
     const tableExists = await pool.query(`
       SELECT EXISTS (
@@ -64,6 +64,22 @@ describe('Migration advisory lock (real PostgreSQL)', () => {
       )
     `);
     expect(tableExists.rows[0].exists).toBe(true);
+
+    const parentColumnResult = await pool.query(
+      `
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'workflow_runs'
+          AND column_name = ANY($1)
+      `,
+      [['parent_run_id', 'parent_step_id', 'parent_resource_id']],
+    );
+    expect(parentColumnResult.rows.map((row) => row.column_name).sort()).toEqual([
+      'parent_resource_id',
+      'parent_run_id',
+      'parent_step_id',
+    ]);
   });
 
   it('should skip migrations on subsequent starts when schema is up to date', async () => {

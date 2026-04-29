@@ -6,16 +6,16 @@ A workflow is a durable function that breaks complex operations into discrete, r
 
 ```typescript
 const myWorkflow = workflow(
-  'workflow-id',
+  "workflow-id",
   async ({ step, input }) => {
     // Your workflow logic here
   },
   {
     inputSchema: mySchema, // any Standard Schema-compliant schema
-    timeout: 60000,        // milliseconds
+    timeout: 60000, // milliseconds
     retries: 3,
   },
-)
+);
 ```
 
 ## Steps
@@ -23,10 +23,10 @@ const myWorkflow = workflow(
 Steps are the building blocks of durable workflows. Each step is executed **exactly once**, even if the workflow is retried:
 
 ```typescript
-await step.run('step-id', async () => {
+await step.run("step-id", async () => {
   // This will only execute once — the result is persisted in Postgres
-  return { result: 'data' }
-})
+  return { result: "data" };
+});
 ```
 
 **Step IDs must be unique within a workflow.** When using loops, use dynamic IDs: `step.run(\`process-${item.id}\`, ...)`.
@@ -36,10 +36,10 @@ await step.run('step-id', async () => {
 Wait for external events to pause and resume workflows without consuming resources:
 
 ```typescript
-const eventData = await step.waitFor('wait-step', {
-  eventName: 'payment-completed',
+const eventData = await step.waitFor("wait-step", {
+  eventName: "payment-completed",
   timeout: 5 * 60 * 1000, // 5 minutes
-})
+});
 ```
 
 Send events from outside the workflow:
@@ -47,9 +47,9 @@ Send events from outside the workflow:
 ```typescript
 await engine.triggerEvent({
   runId: run.id,
-  eventName: 'payment-completed',
+  eventName: "payment-completed",
   data: { amount: 99 },
-})
+});
 ```
 
 ## Scheduled & Delay Steps
@@ -58,15 +58,15 @@ Wait until a specific time, or delay for a duration (sugar over `waitUntil`). If
 
 ```typescript
 // Wait until a specific date (Date, ISO string, or { date })
-await step.waitUntil('scheduled-step', new Date('2025-06-01'))
-await step.waitUntil('scheduled-step', '2025-06-01T12:00:00.000Z')
-await step.waitUntil('scheduled-step', { date: new Date('2025-06-01') })
+await step.waitUntil("scheduled-step", new Date("2025-06-01"));
+await step.waitUntil("scheduled-step", "2025-06-01T12:00:00.000Z");
+await step.waitUntil("scheduled-step", { date: new Date("2025-06-01") });
 
 // Delay for a duration (string or object). sleep is an alias of delay.
-await step.delay('cool-off', '3 days')
-await step.delay('cool-off', { days: 3 })
-await step.delay('ramp-up', '2 days 12 hours')
-await step.sleep('backoff', '1 hour')
+await step.delay("cool-off", "3 days");
+await step.delay("cool-off", { days: 3 });
+await step.delay("ramp-up", "2 days 12 hours");
+await step.sleep("backoff", "1 hour");
 ```
 
 ## Polling Steps
@@ -75,22 +75,51 @@ Repeatedly check a condition until it returns a truthy value or a timeout expire
 
 ```typescript
 const result = await step.poll(
-  'wait-for-payment',
+  "wait-for-payment",
   async () => {
-    const payment = await getPaymentStatus(input.paymentId)
-    return payment.completed ? payment : false
+    const payment = await getPaymentStatus(input.paymentId);
+    return payment.completed ? payment : false;
   },
-  { interval: '1 minute', timeout: '24 hours' },
-)
+  { interval: "1 minute", timeout: "24 hours" },
+);
 
 if (result.timedOut) {
-  return { status: 'expired' }
+  return { status: "expired" };
 }
 
-return { status: 'paid', payment: result.data }
+return { status: "paid", payment: result.data };
 ```
 
 `conditionFn` returns `false` to keep polling, or a truthy value to resolve the step. The minimum interval is 30s (default). If `timeout` is omitted the step polls indefinitely.
+
+## Child Workflows
+
+Start a child workflow from inside a parent workflow and wait for it to complete without keeping a worker busy:
+
+```typescript
+const parent = workflow("parent-workflow", async ({ step, input }) => {
+  const childOutput = await step.invokeWorkflow("run-child", childWorkflowRef, {
+    userId: input.userId,
+  });
+
+  return { childOutput };
+});
+```
+
+`step.invokeWorkflow` is durable. The child run is started once for the parent step, the parent pauses while the child runs, and the child output is cached on the parent timeline when it completes. If the child fails or is cancelled, the parent step throws and follows the parent workflow's normal retry/failure behavior.
+
+You can also invoke by workflow ID:
+
+```typescript
+const result = await step.invokeWorkflow<{ ok: true }>("run-child", {
+  workflowId: "child-workflow",
+  input: { userId: input.userId },
+});
+```
+
+### Behavioral notes
+
+- **Cancellation does not propagate to children.** Cancelling a parent (via `cancelWorkflow` or a parent timeout) leaves any in-flight child runs running. They run to their terminal state; the wakeup event the child would normally send to the parent is dropped because the parent is no longer in `paused`.
 
 ## Resource ID
 
@@ -104,15 +133,15 @@ The optional `resourceId` associates a workflow run with an external entity in y
 ```typescript
 // Start a workflow scoped to a specific user
 const run = await engine.startWorkflow({
-  workflowId: 'send-welcome-email',
-  resourceId: 'user-123', // ties this run to user-123
-  input: { email: 'user@example.com' },
-})
+  workflowId: "send-welcome-email",
+  resourceId: "user-123", // ties this run to user-123
+  input: { email: "user@example.com" },
+});
 
 // Later, list all workflow runs for that user
 const { items } = await engine.getRuns({
-  resourceId: 'user-123',
-})
+  resourceId: "user-123",
+});
 ```
 
 ## Idempotency Key
@@ -123,17 +152,17 @@ Keys are **globally unique** in the database (up to 256 characters), not scoped 
 
 ```typescript
 const run = await engine.startWorkflow({
-  workflowId: 'send-welcome-email',
-  input: { email: 'user@example.com' },
-  idempotencyKey: 'send-welcome-email:checkout-session_cs_abc123',
-})
+  workflowId: "send-welcome-email",
+  input: { email: "user@example.com" },
+  idempotencyKey: "send-welcome-email:checkout-session_cs_abc123",
+});
 
 // Idempotent: returns the same run and run.id as above
 const again = await engine.startWorkflow({
-  workflowId: 'send-welcome-email',
-  input: { email: 'other@example.com' }, // ignored for deduplication
-  idempotencyKey: 'send-welcome-email:checkout-session_cs_abc123',
-})
+  workflowId: "send-welcome-email",
+  input: { email: "other@example.com" }, // ignored for deduplication
+  idempotencyKey: "send-welcome-email:checkout-session_cs_abc123",
+});
 ```
 
 The returned `WorkflowRun` includes `idempotencyKey` (or `null` if omitted).
@@ -144,13 +173,13 @@ Manually pause a workflow and resume it later:
 
 ```typescript
 // Pause inside a workflow
-await step.pause('pause-step')
+await step.pause("pause-step");
 
 // Resume from outside the workflow
 await engine.resumeWorkflow({
   runId: run.id,
-  resourceId: 'resource-123',
-})
+  resourceId: "resource-123",
+});
 ```
 
 ## Fast-Forward
@@ -163,30 +192,31 @@ Useful for testing, debugging, or manually advancing workflows past long waits.
 // Fast-forward a waitFor step, providing mock event data
 await engine.fastForwardWorkflow({
   runId: run.id,
-  resourceId: 'user-123',
-  data: { approved: true, reviewer: 'admin' },
-})
+  resourceId: "user-123",
+  data: { approved: true, reviewer: "admin" },
+});
 
 // Fast-forward a delay/waitUntil step (no data needed)
 await engine.fastForwardWorkflow({
   runId: run.id,
-  resourceId: 'user-123',
-})
+  resourceId: "user-123",
+});
 
 // Fast-forward a poll step with mock result data
 await engine.fastForwardWorkflow({
   runId: run.id,
-  resourceId: 'user-123',
-  data: { paymentId: 'pay_123', status: 'completed' },
-})
+  resourceId: "user-123",
+  data: { paymentId: "pay_123", status: "completed" },
+});
 ```
 
-| Paused step type | Behavior |
-|------------------|----------|
-| `step.waitFor()` | Triggers the event with `data` (defaults to `{}`) |
-| `step.delay()` / `step.waitUntil()` | Triggers the timeout event to skip the wait |
-| `step.poll()` | Writes `data` as the poll result and triggers resolution |
-| `step.pause()` | Delegates to `resumeWorkflow()` |
+| Paused step type                    | Behavior                                                                     |
+| ----------------------------------- | ---------------------------------------------------------------------------- |
+| `step.waitFor()`                    | Triggers the event with `data` (defaults to `{}`)                            |
+| `step.delay()` / `step.waitUntil()` | Triggers the timeout event to skip the wait                                  |
+| `step.poll()`                       | Writes `data` as the poll result and triggers resolution                     |
+| `step.pause()`                      | Delegates to `resumeWorkflow()`                                              |
+| `step.invokeWorkflow()`             | No-op; child completion, failure, or cancellation controls the parent result |
 
 ## Input Validation
 
@@ -195,16 +225,16 @@ pg-workflows supports any [Standard Schema](https://github.com/standard-schema/s
 ### With Zod
 
 ```typescript
-import { workflow } from 'pg-workflows'
-import { z } from 'zod'
+import { workflow } from "pg-workflows";
+import { z } from "zod";
 
 const myWorkflow = workflow(
-  'user-onboarding',
+  "user-onboarding",
   async ({ step, input }) => {
     // input is typed as { email: string; name: string }
-    await step.run('send-welcome', async () => {
-      return await sendEmail(input.email, `Welcome, ${input.name}!`)
-    })
+    await step.run("send-welcome", async () => {
+      return await sendEmail(input.email, `Welcome, ${input.name}!`);
+    });
   },
   {
     inputSchema: z.object({
@@ -212,22 +242,22 @@ const myWorkflow = workflow(
       name: z.string(),
     }),
   },
-)
+);
 ```
 
 ### With Valibot
 
 ```typescript
-import { workflow } from 'pg-workflows'
-import * as v from 'valibot'
+import { workflow } from "pg-workflows";
+import * as v from "valibot";
 
 const myWorkflow = workflow(
-  'user-onboarding',
+  "user-onboarding",
   async ({ step, input }) => {
     // input is typed as { email: string; name: string }
-    await step.run('send-welcome', async () => {
-      return await sendEmail(input.email, `Welcome, ${input.name}!`)
-    })
+    await step.run("send-welcome", async () => {
+      return await sendEmail(input.email, `Welcome, ${input.name}!`);
+    });
   },
   {
     inputSchema: v.object({
@@ -235,7 +265,7 @@ const myWorkflow = workflow(
       name: v.string(),
     }),
   },
-)
+);
 ```
 
 ### Without a Schema
@@ -243,37 +273,34 @@ const myWorkflow = workflow(
 When no `inputSchema` is provided, input is not validated and `input` is typed as `unknown`. The engine has no guarantee about the shape of the data — it passes through whatever was provided to `startWorkflow()`. You are responsible for narrowing the type yourself:
 
 ```typescript
-import { workflow } from 'pg-workflows'
+import { workflow } from "pg-workflows";
 
-const myWorkflow = workflow(
-  'process-order',
-  async ({ step, input }) => {
-    // Option 1: Type assertion - you trust the caller
-    const { orderId, amount } = input as { orderId: string; amount: number }
+const myWorkflow = workflow("process-order", async ({ step, input }) => {
+  // Option 1: Type assertion - you trust the caller
+  const { orderId, amount } = input as { orderId: string; amount: number };
 
-    await step.run('charge', async () => {
-      return await chargeOrder(orderId, amount)
-    })
-  },
-)
+  await step.run("charge", async () => {
+    return await chargeOrder(orderId, amount);
+  });
+});
 
 const myDefensiveWorkflow = workflow(
-  'process-order-safe',
+  "process-order-safe",
   async ({ step, input }) => {
     // Option 2: Runtime checks - you verify before using
-    if (typeof input !== 'object' || input === null) {
-      throw new Error('Expected input to be an object')
+    if (typeof input !== "object" || input === null) {
+      throw new Error("Expected input to be an object");
     }
-    const { orderId, amount } = input as Record<string, unknown>
-    if (typeof orderId !== 'string' || typeof amount !== 'number') {
-      throw new Error('Invalid input shape')
+    const { orderId, amount } = input as Record<string, unknown>;
+    if (typeof orderId !== "string" || typeof amount !== "number") {
+      throw new Error("Invalid input shape");
     }
 
-    await step.run('charge', async () => {
-      return await chargeOrder(orderId, amount)
-    })
+    await step.run("charge", async () => {
+      return await chargeOrder(orderId, amount);
+    });
   },
-)
+);
 ```
 
 Using an `inputSchema` is recommended — it validates input at the engine boundary before your handler runs, and gives you full type inference with no manual work.

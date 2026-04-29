@@ -22,6 +22,7 @@ import {
   type InputParameters,
   type WorkflowLogger,
   type WorkflowRef,
+  type WorkflowRunOptions,
   type WorkflowRunProgress,
   WorkflowStatus,
 } from './types';
@@ -50,13 +51,7 @@ export type WorkflowClientOptions = {
   boss?: PgBoss;
 } & ({ pool: pg.Pool; connectionString?: never } | { connectionString: string; pool?: never });
 
-export type StartWorkflowOptions = {
-  resourceId?: string;
-  timeout?: number;
-  retries?: number;
-  expireInSeconds?: number;
-  idempotencyKey?: string;
-};
+export type StartWorkflowOptions = WorkflowRunOptions;
 
 const defaultLogger: WorkflowLogger = {
   log: (_message: string) => console.warn(_message),
@@ -327,6 +322,16 @@ export class WorkflowClient {
       );
     }
 
+    const stepId = current.currentStepId;
+    const invokeWorkflowEntry = current.timeline[`${stepId}-invoke-workflow`];
+    if (
+      invokeWorkflowEntry &&
+      typeof invokeWorkflowEntry === 'object' &&
+      'invokeWorkflow' in invokeWorkflowEntry
+    ) {
+      return current;
+    }
+
     return this.triggerEvent({
       runId,
       resourceId,
@@ -354,6 +359,15 @@ export class WorkflowClient {
     }
 
     const stepId = run.currentStepId;
+    const invokeWorkflowEntry = run.timeline[`${stepId}-invoke-workflow`];
+    if (
+      invokeWorkflowEntry &&
+      typeof invokeWorkflowEntry === 'object' &&
+      'invokeWorkflow' in invokeWorkflowEntry
+    ) {
+      return run;
+    }
+
     const waitForEntry = run.timeline[`${stepId}-wait-for`];
     if (!waitForEntry || typeof waitForEntry !== 'object' || !('waitFor' in waitForEntry)) {
       return run;

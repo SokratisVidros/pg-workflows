@@ -18,4 +18,7 @@ export type WorkflowRun = {
   maxRetries: number;
   jobId: string | null;
   idempotencyKey: string | null;
+  parentRunId: string | null;
+  parentStepId: string | null;
+  parentResourceId: string | null;
 };

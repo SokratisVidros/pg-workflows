@@ -18,10 +18,19 @@ export enum StepType {
   WAIT_UNTIL = 'waitUntil',
   DELAY = 'delay',
   POLL = 'poll',
+  INVOKE_WORKFLOW = 'invokeWorkflow',
 }
 
 export type InputParameters = StandardSchemaV1;
 export type InferInputParameters<P extends InputParameters> = StandardSchemaV1.InferOutput<P>;
+
+export type WorkflowRunOptions = {
+  resourceId?: string;
+  timeout?: number;
+  retries?: number;
+  expireInSeconds?: number;
+  idempotencyKey?: string;
+};
 
 export type WorkflowOptions<I extends InputParameters> = {
   timeout?: number;
@@ -56,6 +65,24 @@ export type StepBaseContext = {
     conditionFn: () => Promise<T | false>,
     options?: { interval?: Duration; timeout?: Duration },
   ) => Promise<{ timedOut: false; data: T } | { timedOut: true }>;
+  invokeWorkflow: {
+    <TInput extends InputParameters, TOutput = unknown>(
+      stepId: string,
+      ref: WorkflowRef<TInput, TOutput>,
+      input: InferInputParameters<TInput>,
+      options?: WorkflowRunOptions,
+    ): Promise<TOutput>;
+    <TOutput = unknown>(
+      stepId: string,
+      params: {
+        workflowId: string;
+        input: unknown;
+        resourceId?: string;
+        idempotencyKey?: string;
+        options?: WorkflowRunOptions;
+      },
+    ): Promise<TOutput>;
+  };
 };
 
 /**
@@ -116,10 +143,10 @@ export interface WorkflowFactory<TStepExt = object> {
   use<TNewExt>(
     plugin: WorkflowPlugin<StepBaseContext & TStepExt, TNewExt>,
   ): WorkflowFactory<TStepExt & TNewExt>;
-  ref<TInput extends InputParameters = InputParameters>(
+  ref<TInput extends InputParameters = InputParameters, TOutput = unknown>(
     id: string,
     options?: { inputSchema?: TInput },
-  ): WorkflowRef<TInput>;
+  ): WorkflowRef<TInput, TOutput>;
 }
 
 /**
@@ -129,7 +156,11 @@ export interface WorkflowFactory<TStepExt = object> {
  *
  * Callable: pass a handler to create a full WorkflowDefinition.
  */
-export interface WorkflowRef<TInput extends InputParameters = InputParameters> {
+export interface WorkflowRef<
+  TInput extends InputParameters = InputParameters,
+  // biome-ignore lint/correctness/noUnusedVariables: phantom type carried for typed return inference
+  TOutput = unknown,
+> {
   (
     handler: (context: WorkflowContext<TInput, StepBaseContext>) => Promise<unknown>,
     options?: Omit<WorkflowOptions<TInput>, 'inputSchema'>,
