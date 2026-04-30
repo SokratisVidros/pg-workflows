@@ -4,9 +4,12 @@ import { type Db, type JobWithMetadata, PgBoss } from 'pg-boss';
 import { parseWorkflowHandler } from './ast-parser';
 import {
   DEFAULT_PGBOSS_SCHEMA,
+  invokeWorkflowTimelineKey,
+  isInvokeWorkflowTimelineEntry,
   PAUSE_EVENT_NAME,
   WORKFLOW_RUN_DLQ_QUEUE_NAME,
   WORKFLOW_RUN_QUEUE_NAME,
+  waitForTimelineKey,
 } from './constants';
 import { runMigrations } from './db/migration';
 import {
@@ -47,6 +50,14 @@ type StartWorkflowOptions = WorkflowRunOptions & {
   batchSize?: number;
 };
 
+type ResolvedWorkflowRunParameters<TOptions extends WorkflowRunOptions = WorkflowRunOptions> = {
+  workflowId: string;
+  input: unknown;
+  resourceId?: string;
+  idempotencyKey?: string;
+  options?: TOptions;
+};
+
 export type WorkflowEngineOptions = {
   workflows?: WorkflowDefinition[];
   logger?: WorkflowLogger;
@@ -83,16 +94,9 @@ type TimelineInvokeWorkflowEntry = {
   invokeWorkflow: {
     childRunId: string;
     childWorkflowId: string;
+    childResourceId?: string | null;
   };
   timestamp: Date;
-};
-
-type InvokeWorkflowFailureOutput = {
-  __pgWorkflowsInvokeWorkflowError: true;
-  childRunId: string;
-  childWorkflowId: string;
-  status: WorkflowStatus.FAILED | WorkflowStatus.CANCELLED;
-  error?: string;
 };
 
 type WorkflowRunJobParameters = {
@@ -302,6 +306,49 @@ export class WorkflowEngine {
     return this;
   }
 
+  private resolveWorkflowRunParameters<
+    TInput extends InputParameters,
+    TOptions extends WorkflowRunOptions,
+  >(
+    refOrParams:
+      | WorkflowRef<TInput, unknown>
+      | {
+          resourceId?: string;
+          workflowId: string;
+          input: unknown;
+          idempotencyKey?: string;
+          options?: TOptions;
+        },
+    inputArg?: InferInputParameters<TInput>,
+    optionsArg?: TOptions,
+  ): ResolvedWorkflowRunParameters<TOptions> {
+    if (typeof refOrParams === 'function' && 'id' in refOrParams) {
+      return {
+        workflowId: refOrParams.id,
+        input: inputArg,
+        options: optionsArg,
+        resourceId: optionsArg?.resourceId,
+        idempotencyKey: optionsArg?.idempotencyKey,
+      };
+    }
+
+    const params = refOrParams as {
+      resourceId?: string;
+      workflowId: string;
+      input: unknown;
+      idempotencyKey?: string;
+      options?: TOptions;
+    };
+
+    return {
+      workflowId: params.workflowId,
+      input: params.input,
+      resourceId: params.resourceId ?? params.options?.resourceId,
+      idempotencyKey: params.idempotencyKey ?? params.options?.idempotencyKey,
+      options: params.options,
+    };
+  }
+
   async startWorkflow<TInput extends InputParameters>(
     ref: WorkflowRef<TInput>,
     input: InferInputParameters<TInput>,
@@ -329,32 +376,8 @@ export class WorkflowEngine {
     inputArg?: InferInputParameters<TInput>,
     optionsArg?: StartWorkflowOptions,
   ): Promise<WorkflowRun> {
-    let workflowId: string;
-    let input: unknown;
-    let resourceId: string | undefined;
-    let idempotencyKey: string | undefined;
-    let options: StartWorkflowOptions | undefined;
-
-    if (typeof refOrParams === 'function' && 'id' in refOrParams) {
-      workflowId = refOrParams.id;
-      input = inputArg;
-      options = optionsArg;
-      resourceId = optionsArg?.resourceId;
-      idempotencyKey = optionsArg?.idempotencyKey;
-    } else {
-      const params = refOrParams as {
-        resourceId?: string;
-        workflowId: string;
-        input: unknown;
-        idempotencyKey?: string;
-        options?: StartWorkflowOptions;
-      };
-      workflowId = params.workflowId;
-      input = params.input;
-      resourceId = params.resourceId;
-      idempotencyKey = params.idempotencyKey;
-      options = params.options;
-    }
+    const { workflowId, input, resourceId, idempotencyKey, options } =
+      this.resolveWorkflowRunParameters(refOrParams, inputArg, optionsArg);
 
     if (!this._started) {
       await this.start(false, { batchSize: options?.batchSize ?? 1 });
@@ -432,21 +455,23 @@ export class WorkflowEngine {
         ? new Date(Date.now() + workflow.timeout)
         : null;
 
-    const insertRun = async (targetDb: Db) => await insertWorkflowRun({
-        resourceId,
-        workflowId,
-        currentStepId: initialStepId,
-        status: WorkflowStatus.RUNNING,
-        input,
-        maxRetries: options?.retries ?? workflow.retries ?? 0,
-        timeoutAt,
-        idempotencyKey,
-        parentRunId,
-        parentStepId,
-        parentResourceId,
-      },
-      targetDb,
-    );
+    const insertRun = async (targetDb: Db) =>
+      await insertWorkflowRun(
+        {
+          resourceId,
+          workflowId,
+          currentStepId: initialStepId,
+          status: WorkflowStatus.RUNNING,
+          input,
+          maxRetries: options?.retries ?? workflow.retries ?? 0,
+          timeoutAt,
+          idempotencyKey,
+          parentRunId,
+          parentStepId,
+          parentResourceId,
+        },
+        targetDb,
+      );
 
     const { run, created } = db
       ? await insertRun(db)
@@ -455,7 +480,12 @@ export class WorkflowEngine {
           async (transactionDb) => {
             const result = await insertRun(transactionDb);
             if (enqueue && result.created) {
-              await this.enqueueWorkflowRun(result.run, options);
+              // Pipe the same transaction connection through pg-boss so the
+              // INSERT into workflow_runs and the INSERT into pgboss.job
+              // commit (or roll back) together. If `boss.send` throws, the
+              // workflow_runs row is rolled back too, so we never end up with
+              // an orphan run that has no job, or a job that points at no run.
+              await this.enqueueWorkflowRun(result.run, options, transactionDb);
             }
             return result;
           },
@@ -472,6 +502,7 @@ export class WorkflowEngine {
   private async enqueueWorkflowRun(
     run: WorkflowRun,
     options?: { expireInSeconds?: number },
+    db?: Db,
   ) {
     const job: WorkflowRunJobParameters = {
       runId: run.id,
@@ -484,6 +515,7 @@ export class WorkflowEngine {
       startAfter: new Date(),
       expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
       ...retrySendOptions(run.maxRetries),
+      ...(db ? { db } : {}),
     });
   }
 
@@ -508,20 +540,10 @@ export class WorkflowEngine {
       return;
     }
 
-    const job: WorkflowRunJobParameters = {
+    await this.triggerEvent({
       runId: parentRun.id,
       resourceId: parentRun.resourceId ?? undefined,
-      workflowId: parentRun.workflowId,
-      input: parentRun.input,
-      event: {
-        name: getInvokeWorkflowEventName(childRun.id),
-        data: this.getInvokeWorkflowTerminalOutput(childRun),
-      },
-    };
-
-    await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
-      expireInSeconds: defaultExpireInSeconds,
-      ...retrySendOptions(parentRun.maxRetries),
+      eventName: getInvokeWorkflowEventName(childRun.id),
     });
   }
 
@@ -961,7 +983,7 @@ export class WorkflowEngine {
                       : {
                           timeline: merge(lockedRun.timeline, {
                             [lockedRun.currentStepId]: {
-                              output: event?.data === undefined ? {} : event.data,
+                              output: event?.data ?? {},
                               ...(isTimeout ? { timedOut: true as const } : {}),
                               timestamp: new Date(),
                             },
@@ -1067,10 +1089,7 @@ export class WorkflowEngine {
             { timedOut: false; data: T } | { timedOut: true }
           >;
         },
-        invokeWorkflow: async <
-          TInput extends InputParameters,
-          TOutput = unknown,
-        >(
+        invokeWorkflow: async <TInput extends InputParameters, TOutput = unknown>(
           stepId: string,
           refOrParams:
             | WorkflowRef<TInput, TOutput>
@@ -1085,41 +1104,18 @@ export class WorkflowEngine {
           optionsArg?: WorkflowRunOptions,
         ) => {
           if (!run) {
-            throw new WorkflowEngineError(
-              'Missing workflow run',
-              workflowId,
-              runId,
-            );
+            throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
           }
 
-          if (typeof refOrParams === 'function' && 'id' in refOrParams) {
-            return this.invokeWorkflowStep({
-              run,
-              stepId,
-              workflowId: refOrParams.id,
-              input: inputArg,
-              options: optionsArg,
-              resourceId: optionsArg?.resourceId,
-              idempotencyKey: optionsArg?.idempotencyKey,
-            }) as Promise<TOutput>;
-          }
-
-          const params = refOrParams as {
-            workflowId: string;
-            input: unknown;
-            resourceId?: string;
-            idempotencyKey?: string;
-            options?: WorkflowRunOptions;
-          };
+          const params = this.resolveWorkflowRunParameters(refOrParams, inputArg, optionsArg);
           return this.invokeWorkflowStep({
             run,
             stepId,
             workflowId: params.workflowId,
             input: params.input,
             options: params.options,
-            resourceId: params.resourceId ?? params.options?.resourceId,
-            idempotencyKey:
-              params.idempotencyKey ?? params.options?.idempotencyKey,
+            resourceId: params.resourceId,
+            idempotencyKey: params.idempotencyKey,
           }) as Promise<TOutput>;
         },
       };
@@ -1239,7 +1235,7 @@ export class WorkflowEngine {
     timeline: Record<string, unknown>,
     stepId: string,
   ): TimelineWaitForEntry | null {
-    const entry = timeline[`${stepId}-wait-for`];
+    const entry = timeline[waitForTimelineKey(stepId)];
     return entry && typeof entry === 'object' && 'waitFor' in entry
       ? (entry as TimelineWaitForEntry)
       : null;
@@ -1249,62 +1245,32 @@ export class WorkflowEngine {
     timeline: Record<string, unknown>,
     stepId: string,
   ): TimelineInvokeWorkflowEntry | null {
-    const entry = timeline[`${stepId}-invoke-workflow`];
-    return entry && typeof entry === 'object' && 'invokeWorkflow' in entry
-      ? (entry as TimelineInvokeWorkflowEntry)
-      : null;
+    const entry = timeline[invokeWorkflowTimelineKey(stepId)];
+    return isInvokeWorkflowTimelineEntry(entry) ? (entry as TimelineInvokeWorkflowEntry) : null;
   }
 
-  private isInvokeWorkflowFailureOutput(
-    output: unknown,
-  ): output is InvokeWorkflowFailureOutput {
-    return (
-      typeof output === 'object' &&
-      output !== null &&
-      '__pgWorkflowsInvokeWorkflowError' in output &&
-      (output as InvokeWorkflowFailureOutput)
-        .__pgWorkflowsInvokeWorkflowError === true
-    );
+  /**
+   * Returns the cached output for a COMPLETED child run. Treats `undefined`
+   * outputs as `{}` so the parent timeline always has a defined value.
+   * Caller must ensure `childRun.status === COMPLETED` before calling.
+   */
+  private getCompletedChildOutput(childRun: WorkflowRun): unknown {
+    return childRun.output === undefined ? {} : childRun.output;
   }
 
-  private resolveInvokeWorkflowOutput(output: unknown): unknown {
-    if (!this.isInvokeWorkflowFailureOutput(output)) {
-      return output;
-    }
-
+  /**
+   * Throws a `WorkflowEngineError` describing why an invoked child run did not
+   * produce output (it FAILED or was CANCELLED). The throw aborts the parent
+   * step, which is then caught by `handleWorkflowRun` and marks the parent
+   * FAILED with the same message — no fake sentinel value is ever written to
+   * the parent timeline.
+   */
+  private throwForNonCompletedChild(childRun: WorkflowRun): never {
     throw new WorkflowEngineError(
-      `Child workflow ${output.childWorkflowId} ${output.status}${output.error ? `: ${output.error}` : ''}`,
-      output.childWorkflowId,
-      output.childRunId,
+      `Child workflow ${childRun.workflowId} ${childRun.status}${childRun.error ? `: ${childRun.error}` : ''}`,
+      childRun.workflowId,
+      childRun.id,
     );
-  }
-
-  private getInvokeWorkflowTerminalOutput(childRun: WorkflowRun): unknown {
-    if (childRun.status === WorkflowStatus.COMPLETED) {
-      return childRun.output === undefined ? {} : childRun.output;
-    }
-
-    if (
-      childRun.status !== WorkflowStatus.FAILED &&
-      childRun.status !== WorkflowStatus.CANCELLED
-    ) {
-      throw new WorkflowEngineError(
-        `Child workflow ${childRun.workflowId} is not in a terminal status`,
-        childRun.workflowId,
-        childRun.id,
-      );
-    }
-
-    return {
-      __pgWorkflowsInvokeWorkflowError: true,
-      childRunId: childRun.id,
-      childWorkflowId: childRun.workflowId,
-      status:
-        childRun.status === WorkflowStatus.FAILED
-          ? WorkflowStatus.FAILED
-          : WorkflowStatus.CANCELLED,
-      ...(childRun.error ? { error: childRun.error } : {}),
-    } satisfies InvokeWorkflowFailureOutput;
   }
 
   private assertInvokeWorkflowChildMatches({
@@ -1386,31 +1352,25 @@ export class WorkflowEngine {
           return;
         }
 
-        const lockedCached = this.getCachedStepEntry(
-          lockedRun.timeline,
-          stepId,
-        );
+        const lockedCached = this.getCachedStepEntry(lockedRun.timeline, stepId);
         if (lockedCached?.output !== undefined) {
           invokeOutput = lockedCached.output;
           hasInvokeOutput = true;
           return;
         }
 
-        const lockedInvoke = this.getInvokeWorkflowStepEntry(
-          lockedRun.timeline,
-          stepId,
-        );
+        const lockedInvoke = this.getInvokeWorkflowStepEntry(lockedRun.timeline, stepId);
         if (lockedInvoke) {
+          const existingChildResourceId =
+            'childResourceId' in lockedInvoke.invokeWorkflow
+              ? (lockedInvoke.invokeWorkflow.childResourceId ?? undefined)
+              : childResourceId;
           const existingChildRun = await this.getRun({
             runId: lockedInvoke.invokeWorkflow.childRunId,
+            resourceId: existingChildResourceId,
           });
-          if (
-            existingChildRun.status === WorkflowStatus.COMPLETED ||
-            existingChildRun.status === WorkflowStatus.FAILED ||
-            existingChildRun.status === WorkflowStatus.CANCELLED
-          ) {
-            invokeOutput =
-              this.getInvokeWorkflowTerminalOutput(existingChildRun);
+          if (existingChildRun.status === WorkflowStatus.COMPLETED) {
+            invokeOutput = this.getCompletedChildOutput(existingChildRun);
             hasInvokeOutput = true;
             await this.updateRun(
               {
@@ -1429,11 +1389,21 @@ export class WorkflowEngine {
             );
             return;
           }
+          if (
+            existingChildRun.status === WorkflowStatus.FAILED ||
+            existingChildRun.status === WorkflowStatus.CANCELLED
+          ) {
+            // No timeline write — let the throw roll back the txn (a no-op
+            // here since we only did SELECTs) and bubble up so the parent
+            // is marked FAILED by the worker's catch handler.
+            this.throwForNonCompletedChild(existingChildRun);
+          }
 
-          await this.pauseForChildWorkflow({
+          await this.pauseRunForWait({
             run: lockedRun,
             stepId,
-            childRun: existingChildRun,
+            eventName: getInvokeWorkflowEventName(existingChildRun.id),
+            skipOutput: true,
             db,
           });
           childRunToEnqueue = existingChildRun;
@@ -1462,12 +1432,8 @@ export class WorkflowEngine {
             workflowId,
           });
 
-          if (
-            childRun.status === WorkflowStatus.COMPLETED ||
-            childRun.status === WorkflowStatus.FAILED ||
-            childRun.status === WorkflowStatus.CANCELLED
-          ) {
-            invokeOutput = this.getInvokeWorkflowTerminalOutput(childRun);
+          if (childRun.status === WorkflowStatus.COMPLETED) {
+            invokeOutput = this.getCompletedChildOutput(childRun);
             hasInvokeOutput = true;
             await this.updateRun(
               {
@@ -1475,10 +1441,11 @@ export class WorkflowEngine {
                 resourceId: run.resourceId ?? undefined,
                 data: {
                   timeline: merge(lockedRun.timeline, {
-                    [`${stepId}-invoke-workflow`]: {
+                    [invokeWorkflowTimelineKey(stepId)]: {
                       invokeWorkflow: {
                         childRunId: childRun.id,
                         childWorkflowId: childRun.workflowId,
+                        childResourceId: childRun.resourceId,
                       },
                       timestamp: new Date(),
                     },
@@ -1493,18 +1460,30 @@ export class WorkflowEngine {
             );
             return;
           }
+          if (
+            childRun.status === WorkflowStatus.FAILED ||
+            childRun.status === WorkflowStatus.CANCELLED
+          ) {
+            // Same throw-and-rollback contract as the existing-child branch:
+            // we deliberately do NOT record the parent timeline binding for
+            // a child we matched-by-idempotency-key but never owned the
+            // creation of. The throw propagates and the parent fails.
+            this.throwForNonCompletedChild(childRun);
+          }
         }
 
-        await this.pauseForChildWorkflow({
+        await this.pauseRunForWait({
           run: lockedRun,
           stepId,
-          childRun,
+          eventName: getInvokeWorkflowEventName(childRun.id),
+          skipOutput: true,
           db,
           timeline: merge(lockedRun.timeline, {
-            [`${stepId}-invoke-workflow`]: {
+            [invokeWorkflowTimelineKey(stepId)]: {
               invokeWorkflow: {
                 childRunId: childRun.id,
                 childWorkflowId: childRun.workflowId,
+                childResourceId: childRun.resourceId,
               },
               timestamp: new Date(),
             },
@@ -1517,11 +1496,11 @@ export class WorkflowEngine {
     );
 
     if (hasInvokeOutput) {
-      return this.resolveInvokeWorkflowOutput(invokeOutput);
+      return invokeOutput;
     }
 
     if (childRunToEnqueue) {
-      await this.enqueueChildWorkflowAfterParentPause({
+      await this.enqueueChildWorkflowAfterParentWaitCommits({
         parentRun: parentRunForRevert,
         childRun: childRunToEnqueue,
         options,
@@ -1529,7 +1508,10 @@ export class WorkflowEngine {
     }
   }
 
-  private async enqueueChildWorkflowAfterParentPause({
+  // Dispatch the child only after the parent's invoke wait is durable. If this
+  // send fails, the parent is made RUNNING again so the step can retry and
+  // re-enqueue the already-created child run.
+  private async enqueueChildWorkflowAfterParentWaitCommits({
     parentRun,
     childRun,
     options,
@@ -1541,32 +1523,63 @@ export class WorkflowEngine {
     try {
       await this.enqueueWorkflowRun(childRun, options);
     } catch (error) {
-      await this.updateRun({
-        runId: parentRun.id,
-        resourceId: parentRun.resourceId ?? undefined,
-        data: {
-          status: WorkflowStatus.RUNNING,
-          pausedAt: null,
-        },
-      });
+      // Only flip back to RUNNING if the parent is still PAUSED. Anything else
+      // (e.g. the parent was cancelled while we were trying to enqueue the
+      // child, or a duplicate notify already woke it) means our PAUSED row is
+      // gone and resurrecting the parent would orphan it without a job.
+      try {
+        await this.updateRun({
+          runId: parentRun.id,
+          resourceId: parentRun.resourceId ?? undefined,
+          data: {
+            status: WorkflowStatus.RUNNING,
+            pausedAt: null,
+          },
+          expectedStatuses: [WorkflowStatus.PAUSED],
+        });
+      } catch (revertError) {
+        // Swallow status-mismatch errors so we still surface the original
+        // enqueue failure as the cause; log everything else for visibility.
+        if (
+          !(
+            revertError instanceof WorkflowEngineError &&
+            revertError.message.includes('Cannot update workflow run')
+          )
+        ) {
+          this.logger.error(
+            'Failed to revert parent run after invoke enqueue failure',
+            revertError as Error,
+            { runId: parentRun.id, workflowId: parentRun.workflowId },
+          );
+        }
+      }
       throw error;
     }
   }
 
-  private async pauseForChildWorkflow({
+  private async pauseRunForWait({
     run,
     stepId,
-    childRun,
+    eventName,
+    timeoutEvent,
+    skipOutput,
     db,
     timeline,
   }: {
     run: WorkflowRun;
     stepId: string;
-    childRun: WorkflowRun;
+    eventName?: string;
+    timeoutEvent?: string;
+    skipOutput?: true;
     db?: Db;
     timeline?: Record<string, unknown>;
   }) {
     const baseTimeline = timeline ?? run.timeline;
+    const waitFor: TimelineWaitForEntry['waitFor'] = {};
+    if (eventName) waitFor.eventName = eventName;
+    if (timeoutEvent) waitFor.timeoutEvent = timeoutEvent;
+    if (skipOutput) waitFor.skipOutput = true;
+
     await this.updateRun(
       {
         runId: run.id,
@@ -1576,8 +1589,8 @@ export class WorkflowEngine {
           currentStepId: stepId,
           pausedAt: new Date(),
           timeline: merge(baseTimeline, {
-            [`${stepId}-wait-for`]: {
-              waitFor: { eventName: getInvokeWorkflowEventName(childRun.id) },
+            [waitForTimelineKey(stepId)]: {
+              waitFor,
               timestamp: new Date(),
             },
           }),
@@ -1728,24 +1741,7 @@ export class WorkflowEngine {
           { runId: run.id, resourceId: run.resourceId ?? undefined },
           { exclusiveLock: true, db },
         );
-        return this.updateRun(
-          {
-            runId: run.id,
-            resourceId: run.resourceId ?? undefined,
-            data: {
-              status: WorkflowStatus.PAUSED,
-              currentStepId: stepId,
-              pausedAt: new Date(),
-              timeline: merge(freshRun.timeline, {
-                [`${stepId}-wait-for`]: {
-                  waitFor: { eventName, timeoutEvent },
-                  timestamp: new Date(),
-                },
-              }),
-            },
-          },
-          { db },
-        );
+        return this.pauseRunForWait({ run: freshRun, stepId, eventName, timeoutEvent, db });
       },
       this.pool,
     );
@@ -1931,7 +1927,7 @@ export class WorkflowEngine {
               pausedAt: new Date(),
               timeline: merge(freshRun.timeline, {
                 [`${stepId}-poll`]: { startedAt: startedAt.toISOString() },
-                [`${stepId}-wait-for`]: {
+                [waitForTimelineKey(stepId)]: {
                   waitFor: { timeoutEvent: pollEvent, skipOutput: true },
                   timestamp: new Date(),
                 },

@@ -1,7 +1,14 @@
 import { merge } from 'es-toolkit';
 import pg from 'pg';
 import { type Db, PgBoss } from 'pg-boss';
-import { DEFAULT_PGBOSS_SCHEMA, PAUSE_EVENT_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constants';
+import {
+  DEFAULT_PGBOSS_SCHEMA,
+  invokeWorkflowTimelineKey,
+  isInvokeWorkflowTimelineEntry,
+  PAUSE_EVENT_NAME,
+  WORKFLOW_RUN_QUEUE_NAME,
+  waitForTimelineKey,
+} from './constants';
 import { runMigrations } from './db/migration';
 import {
   getWorkflowRun,
@@ -220,9 +227,14 @@ export class WorkflowClient {
             input,
           };
 
+          // Same connection (`_db`) used for the workflow_runs INSERT is passed
+          // to `boss.send` so the pgboss.job INSERT joins the same transaction.
+          // The two writes commit or roll back together, so we never leak an
+          // orphan workflow_runs row when the queue insert fails.
           await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
             startAfter: new Date(),
             expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
+            db: _db,
           });
         }
 
@@ -323,12 +335,7 @@ export class WorkflowClient {
     }
 
     const stepId = current.currentStepId;
-    const invokeWorkflowEntry = current.timeline[`${stepId}-invoke-workflow`];
-    if (
-      invokeWorkflowEntry &&
-      typeof invokeWorkflowEntry === 'object' &&
-      'invokeWorkflow' in invokeWorkflowEntry
-    ) {
+    if (isInvokeWorkflowTimelineEntry(current.timeline[invokeWorkflowTimelineKey(stepId)])) {
       return current;
     }
 
@@ -359,16 +366,11 @@ export class WorkflowClient {
     }
 
     const stepId = run.currentStepId;
-    const invokeWorkflowEntry = run.timeline[`${stepId}-invoke-workflow`];
-    if (
-      invokeWorkflowEntry &&
-      typeof invokeWorkflowEntry === 'object' &&
-      'invokeWorkflow' in invokeWorkflowEntry
-    ) {
+    if (isInvokeWorkflowTimelineEntry(run.timeline[invokeWorkflowTimelineKey(stepId)])) {
       return run;
     }
 
-    const waitForEntry = run.timeline[`${stepId}-wait-for`];
+    const waitForEntry = run.timeline[waitForTimelineKey(stepId)];
     if (!waitForEntry || typeof waitForEntry !== 'object' || !('waitFor' in waitForEntry)) {
       return run;
     }

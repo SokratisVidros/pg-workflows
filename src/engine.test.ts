@@ -539,6 +539,60 @@ describe('WorkflowEngine', () => {
         expect(run2.idempotencyKey).toBe('key-b');
       });
     });
+
+    it('should fall back to options.resourceId / options.idempotencyKey when not passed at the top level', async () => {
+      // Documents the resolveWorkflowRunParameters behavior: for the params-
+      // object form, `resourceId` and `idempotencyKey` may be supplied either
+      // at the top level OR nested in `options`, and the top level wins.
+      const run = await engine.startWorkflow({
+        workflowId: 'test-workflow',
+        input: { data: 'options-fallback' },
+        options: {
+          resourceId: 'options-resource',
+          idempotencyKey: 'options-fallback-key',
+        },
+      });
+
+      expect(run.resourceId).toBe('options-resource');
+      expect(run.idempotencyKey).toBe('options-fallback-key');
+
+      const sameRun = await engine.startWorkflow({
+        workflowId: 'test-workflow',
+        input: { data: 'options-fallback-2' },
+        options: {
+          resourceId: 'options-resource',
+          idempotencyKey: 'options-fallback-key',
+        },
+      });
+      expect(sameRun.id).toBe(run.id);
+    });
+
+    it('should roll back the workflow_runs insert when boss.send fails', async () => {
+      const sendSpy = vi.spyOn(testBoss, 'send').mockImplementation(async () => {
+        throw new Error('simulated boss.send failure');
+      });
+
+      try {
+        await expect(
+          engine.startWorkflow({
+            resourceId,
+            workflowId: 'test-workflow',
+            input: { data: 'rollback-me' },
+            idempotencyKey: 'rollback-test-key',
+          }),
+        ).rejects.toThrow('simulated boss.send failure');
+      } finally {
+        sendSpy.mockRestore();
+      }
+
+      // The transactional send means the workflow_runs row must NOT exist
+      // because the boss.send failure rolled back the parent transaction.
+      const remaining = await testPool.query(
+        'SELECT id FROM workflow_runs WHERE idempotency_key = $1',
+        ['rollback-test-key'],
+      );
+      expect(remaining.rows).toHaveLength(0);
+    });
   });
 
   describe('pauseWorkflow(runId)', () => {
@@ -893,7 +947,9 @@ describe('WorkflowEngine', () => {
               },
             },
             'call-child-wait-for': {
-              waitFor: {},
+              waitFor: {
+                skipOutput: true,
+              },
             },
           },
         });
@@ -979,6 +1035,7 @@ describe('WorkflowEngine', () => {
               'call-child-wait-for': {
                 waitFor: {
                   eventName: `__invoke_workflow_completed:${childRun.id}`,
+                  skipOutput: true,
                 },
               },
             });
@@ -1144,6 +1201,110 @@ describe('WorkflowEngine', () => {
       }
     });
 
+    it('should look up an existing invoked child using its original resource id', async () => {
+      const now = new Date();
+      const parentRun: WorkflowRun = {
+        id: 'invoke-parent-child-resource-replay',
+        createdAt: now,
+        updatedAt: now,
+        resourceId,
+        workflowId: 'invoke-parent-child-resource-replay',
+        status: WorkflowStatus.RUNNING,
+        input: {},
+        output: null,
+        error: null,
+        currentStepId: 'call-child',
+        timeline: {},
+        pausedAt: null,
+        resumedAt: null,
+        completedAt: null,
+        timeoutAt: null,
+        retryCount: 0,
+        maxRetries: 0,
+        jobId: null,
+        idempotencyKey: null,
+        parentRunId: null,
+        parentStepId: null,
+        parentResourceId: null,
+      };
+      const childRun: WorkflowRun = {
+        id: 'invoke-child-resource-replay-run',
+        createdAt: now,
+        updatedAt: now,
+        resourceId: 'original-child-resource',
+        workflowId: 'invoke-child-resource-replay',
+        status: WorkflowStatus.COMPLETED,
+        input: {},
+        output: { ok: true },
+        error: null,
+        currentStepId: '',
+        timeline: {},
+        pausedAt: null,
+        resumedAt: null,
+        completedAt: now,
+        timeoutAt: null,
+        retryCount: 0,
+        maxRetries: 0,
+        jobId: null,
+        idempotencyKey: null,
+        parentRunId: parentRun.id,
+        parentStepId: 'call-child',
+        parentResourceId: resourceId,
+      };
+      const lockedParentRun: WorkflowRun = {
+        ...parentRun,
+        timeline: {
+          'call-child-invoke-workflow': {
+            invokeWorkflow: {
+              childRunId: childRun.id,
+              childWorkflowId: childRun.workflowId,
+              childResourceId: childRun.resourceId,
+            },
+            timestamp: now,
+          },
+        },
+      };
+      const engineWithInvokeWorkflowStep = engine as unknown as {
+        invokeWorkflowStep(args: {
+          run: WorkflowRun;
+          stepId: string;
+          workflowId: string;
+          input: unknown;
+          resourceId?: string;
+        }): Promise<unknown>;
+      };
+      let observedChildLookup = false;
+      const getRunSpy = vi.spyOn(engine, 'getRun').mockImplementation(async (params, options) => {
+        if (options?.exclusiveLock) {
+          return lockedParentRun;
+        }
+
+        expect(params).toEqual({
+          runId: childRun.id,
+          resourceId: childRun.resourceId,
+        });
+        observedChildLookup = true;
+        return childRun;
+      });
+      const updateRunSpy = vi.spyOn(engine, 'updateRun').mockResolvedValue(lockedParentRun);
+
+      try {
+        await expect(
+          engineWithInvokeWorkflowStep.invokeWorkflowStep({
+            run: parentRun,
+            stepId: 'call-child',
+            workflowId: childRun.workflowId,
+            input: {},
+            resourceId: 'changed-child-resource',
+          }),
+        ).resolves.toEqual({ ok: true });
+        expect(observedChildLookup).toBe(true);
+      } finally {
+        getRunSpy.mockRestore();
+        updateRunSpy.mockRestore();
+      }
+    });
+
     it('should fail instead of linking an explicit invoke idempotency key to an unrelated run', async () => {
       const childWorkflow = workflow('invoke-child-key-conflict', async ({ step }) => {
         await step.waitFor('child-wait', { eventName: 'child-ready' });
@@ -1286,6 +1447,8 @@ describe('WorkflowEngine', () => {
           status: WorkflowStatus.FAILED,
           error: expect.stringContaining('child exploded'),
         });
+      const failedParent = await engine.getRun({ runId: parentRun.id, resourceId });
+      expect(failedParent.timeline).not.toHaveProperty('call-child.output');
     });
 
     it('should fail the parent when an invoked child workflow is cancelled', async () => {
@@ -1328,9 +1491,11 @@ describe('WorkflowEngine', () => {
           status: WorkflowStatus.FAILED,
           error: expect.stringContaining('cancelled'),
         });
+      const failedParent = await engine.getRun({ runId: parentRun.id, resourceId });
+      expect(failedParent.timeline).not.toHaveProperty('call-child.output');
     });
 
-    it('should resume from cached child output even if fastForwardWorkflow is called after the child completes', async () => {
+    it('should ignore fastForwardWorkflow on invokeWorkflow waits and only resume via the real child completion', async () => {
       const childWorkflow = workflow('invoke-child-ff-after-complete', async ({ step }) => {
         await step.waitFor('child-wait', { eventName: 'child-ready' });
         return { ok: true };

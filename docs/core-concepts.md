@@ -106,7 +106,7 @@ const parent = workflow('parent-workflow', async ({ step, input }) => {
 });
 ```
 
-`step.invokeWorkflow` is durable. The child run is started once for the parent step, the parent pauses while the child runs, and the child output is cached on the parent timeline when it completes. If the child fails or is cancelled, the parent step throws and follows the parent workflow's normal retry/failure behavior.
+`step.invokeWorkflow` is durable. Unlike `startWorkflow()`, which creates a top-level run and returns immediately, `invokeWorkflow()` is a child call: the child run is started once for the parent step, the parent pauses while the child runs, and the child output is cached on the parent timeline when it completes. If the child fails or is cancelled, the parent step throws and follows the parent workflow's normal retry/failure behavior.
 
 You can also invoke by workflow ID:
 
@@ -119,7 +119,8 @@ const result = await step.invokeWorkflow<{ ok: true }>('run-child', {
 
 ### Behavioral notes
 
-- **Cancellation does not propagate to children.** Cancelling a parent (via `cancelWorkflow` or a parent timeout) leaves any in-flight child runs running. They run to their terminal state; the wakeup event the child would normally send to the parent is dropped because the parent is no longer in `paused`.
+- **Cancellation does not propagate to children.** Cancelling a parent (via `cancelWorkflow` or a parent timeout) does not cancel any in-flight child workflows started via `invokeWorkflow`. Children run to their own terminal state; the wakeup event the child would normally send to the parent is dropped because the parent is no longer in `paused`. The same applies if the parent reaches any other terminal state (failed or completed) while a child is in flight.
+- **Manual resume and fast-forward do not skip child waits.** `resumeWorkflow()` and `fastForwardWorkflow()` are no-ops while a parent is paused on `step.invokeWorkflow()`. The parent only moves forward when the child completes, fails, or is cancelled.
 
 ## Resource ID
 
@@ -182,9 +183,11 @@ await engine.resumeWorkflow({
 })
 ```
 
+`resumeWorkflow()` does not force a parent past a `step.invokeWorkflow()` wait. Child workflow waits resume only when the child completes, fails, or is cancelled.
+
 ## Fast-Forward
 
-Skip the current waiting step and immediately resume execution. `fastForwardWorkflow` inspects the paused step and dispatches the right internal action — `triggerEvent` for `waitFor`, timeout triggers for `delay`/`waitUntil`, resume for `pause`, and direct output writes for `poll`. If the workflow is not paused, it's a no-op.
+Skip the current waiting step and immediately resume execution. `fastForwardWorkflow` inspects the paused step and dispatches the right internal action — `triggerEvent` for `waitFor`, timeout triggers for `delay`/`waitUntil`, resume for `pause`, and direct output writes for `poll`. If the workflow is not paused or is paused on `step.invokeWorkflow()`, it's a no-op.
 
 Useful for testing, debugging, or manually advancing workflows past long waits.
 
