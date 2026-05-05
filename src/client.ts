@@ -335,7 +335,8 @@ export class WorkflowClient {
     }
 
     const currentStepId = current.currentStepId;
-    const currentStepTimelineEntry = current.timeline[invokeChildWorkflowTimelineKey(currentStepId)];
+    const currentStepTimelineEntry =
+      current.timeline[invokeChildWorkflowTimelineKey(currentStepId)];
     if (isInvokeChildWorkflowTimelineEntry(currentStepTimelineEntry)) {
       return current;
     }
