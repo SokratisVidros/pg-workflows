@@ -4,8 +4,8 @@ import { type Db, type JobWithMetadata, PgBoss } from 'pg-boss';
 import { parseWorkflowHandler } from './ast-parser';
 import {
   DEFAULT_PGBOSS_SCHEMA,
-  invokeWorkflowTimelineKey,
-  isInvokeWorkflowTimelineEntry,
+  invokeChildWorkflowTimelineKey,
+  isInvokeChildWorkflowTimelineEntry,
   PAUSE_EVENT_NAME,
   WORKFLOW_RUN_DLQ_QUEUE_NAME,
   WORKFLOW_RUN_QUEUE_NAME,
@@ -71,7 +71,7 @@ const StepTypeToIcon = {
   [StepType.WAIT_UNTIL]: '⏲',
   [StepType.DELAY]: '⏱',
   [StepType.POLL]: '↻',
-  [StepType.INVOKE_WORKFLOW]: '↪',
+  [StepType.INVOKE_CHILD_WORKFLOW]: '↪',
 };
 
 // Timeline entry types
@@ -90,8 +90,8 @@ type TimelineWaitForEntry = {
   timestamp: Date;
 };
 
-type TimelineInvokeWorkflowEntry = {
-  invokeWorkflow: {
+type TimelineInvokeChildWorkflowEntry = {
+  invokeChildWorkflow: {
     childRunId: string;
     childWorkflowId: string;
     childResourceId?: string | null;
@@ -128,8 +128,8 @@ const retrySendOptions = (maxRetries: number) => ({
   retryDelay: 1,
 });
 
-const getInvokeWorkflowEventName = (childRunId: string) =>
-  `__invoke_workflow_completed:${childRunId}`;
+const getInvokeChildWorkflowEventName = (childRunId: string) =>
+  `__invoke_child_workflow_completed:${childRunId}`;
 
 // pg-boss workers auto-touch heartbeat_on every heartbeatSeconds / 2 seconds
 // while the process is alive. If the worker dies, heartbeats stop and pg-boss's
@@ -543,7 +543,7 @@ export class WorkflowEngine {
     await this.triggerEvent({
       runId: parentRun.id,
       resourceId: parentRun.resourceId ?? undefined,
-      eventName: getInvokeWorkflowEventName(childRun.id),
+      eventName: getInvokeChildWorkflowEventName(childRun.id),
     });
   }
 
@@ -595,7 +595,7 @@ export class WorkflowEngine {
       );
     }
 
-    if (this.getInvokeWorkflowStepEntry(current.timeline, current.currentStepId)) {
+    if (this.getInvokeChildWorkflowStepEntry(current.timeline, current.currentStepId)) {
       return current;
     }
 
@@ -626,7 +626,7 @@ export class WorkflowEngine {
     }
 
     const stepId = run.currentStepId;
-    if (this.getInvokeWorkflowStepEntry(run.timeline, stepId)) {
+    if (this.getInvokeChildWorkflowStepEntry(run.timeline, stepId)) {
       return run;
     }
 
@@ -1089,7 +1089,7 @@ export class WorkflowEngine {
             { timedOut: false; data: T } | { timedOut: true }
           >;
         },
-        invokeWorkflow: async <TInput extends InputParameters, TOutput = unknown>(
+        invokeChildWorkflow: async <TInput extends InputParameters, TOutput = unknown>(
           stepId: string,
           refOrParams:
             | WorkflowRef<TInput, TOutput>
@@ -1107,16 +1107,23 @@ export class WorkflowEngine {
             throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
           }
 
-          const params = this.resolveWorkflowRunParameters(refOrParams, inputArg, optionsArg);
-          return this.invokeWorkflowStep({
+          // Resolve overload input (typed ref or params object) into one shape
+          // before handing off to the durable child-invocation implementation.
+          const resolvedChildCall = this.resolveWorkflowRunParameters(
+            refOrParams,
+            inputArg,
+            optionsArg,
+          );
+          const childWorkflowInvocation = {
             run,
             stepId,
-            workflowId: params.workflowId,
-            input: params.input,
-            options: params.options,
-            resourceId: params.resourceId,
-            idempotencyKey: params.idempotencyKey,
-          }) as Promise<TOutput>;
+            workflowId: resolvedChildCall.workflowId,
+            input: resolvedChildCall.input,
+            options: resolvedChildCall.options,
+            resourceId: resolvedChildCall.resourceId,
+            idempotencyKey: resolvedChildCall.idempotencyKey,
+          };
+          return this.invokeChildWorkflowStep(childWorkflowInvocation) as Promise<TOutput>;
         },
       };
 
@@ -1241,12 +1248,14 @@ export class WorkflowEngine {
       : null;
   }
 
-  private getInvokeWorkflowStepEntry(
+  private getInvokeChildWorkflowStepEntry(
     timeline: Record<string, unknown>,
     stepId: string,
-  ): TimelineInvokeWorkflowEntry | null {
-    const entry = timeline[invokeWorkflowTimelineKey(stepId)];
-    return isInvokeWorkflowTimelineEntry(entry) ? (entry as TimelineInvokeWorkflowEntry) : null;
+  ): TimelineInvokeChildWorkflowEntry | null {
+    const entry = timeline[invokeChildWorkflowTimelineKey(stepId)];
+    return isInvokeChildWorkflowTimelineEntry(entry)
+      ? (entry as TimelineInvokeChildWorkflowEntry)
+      : null;
   }
 
   /**
@@ -1273,7 +1282,7 @@ export class WorkflowEngine {
     );
   }
 
-  private assertInvokeWorkflowChildMatches({
+  private assertInvokeChildWorkflowStepOwnership({
     childRun,
     parentRun,
     stepId,
@@ -1293,7 +1302,7 @@ export class WorkflowEngine {
 
     if (!matches) {
       throw new WorkflowEngineError(
-        `Idempotency key resolved to workflow run ${childRun.id}, which does not belong to invokeWorkflow step '${stepId}'`,
+        `Idempotency key resolved to workflow run ${childRun.id}, which does not belong to invokeChildWorkflow step '${stepId}'`,
         workflowId,
         parentRun.id,
       );
@@ -1311,7 +1320,7 @@ export class WorkflowEngine {
   // post-commit + revert-on-failure pattern used by waitStep/pollStep; the
   // re-send semantics are still safe because the existingInvoke branch detects
   // the already-created child on retry and re-pauses without re-creating it.
-  private async invokeWorkflowStep({
+  private async invokeChildWorkflowStep({
     run,
     stepId,
     workflowId,
@@ -1359,14 +1368,14 @@ export class WorkflowEngine {
           return;
         }
 
-        const lockedInvoke = this.getInvokeWorkflowStepEntry(lockedRun.timeline, stepId);
+        const lockedInvoke = this.getInvokeChildWorkflowStepEntry(lockedRun.timeline, stepId);
         if (lockedInvoke) {
           const existingChildResourceId =
-            'childResourceId' in lockedInvoke.invokeWorkflow
-              ? (lockedInvoke.invokeWorkflow.childResourceId ?? undefined)
+            'childResourceId' in lockedInvoke.invokeChildWorkflow
+              ? (lockedInvoke.invokeChildWorkflow.childResourceId ?? undefined)
               : childResourceId;
           const existingChildRun = await this.getRun({
-            runId: lockedInvoke.invokeWorkflow.childRunId,
+            runId: lockedInvoke.invokeChildWorkflow.childRunId,
             resourceId: existingChildResourceId,
           });
           if (existingChildRun.status === WorkflowStatus.COMPLETED) {
@@ -1402,7 +1411,7 @@ export class WorkflowEngine {
           await this.pauseRunForWait({
             run: lockedRun,
             stepId,
-            eventName: getInvokeWorkflowEventName(existingChildRun.id),
+            eventName: getInvokeChildWorkflowEventName(existingChildRun.id),
             skipOutput: true,
             db,
           });
@@ -1425,7 +1434,7 @@ export class WorkflowEngine {
         const childRun = result.run;
 
         if (!result.created) {
-          this.assertInvokeWorkflowChildMatches({
+          this.assertInvokeChildWorkflowStepOwnership({
             childRun,
             parentRun: lockedRun,
             stepId,
@@ -1441,8 +1450,8 @@ export class WorkflowEngine {
                 resourceId: run.resourceId ?? undefined,
                 data: {
                   timeline: merge(lockedRun.timeline, {
-                    [invokeWorkflowTimelineKey(stepId)]: {
-                      invokeWorkflow: {
+                    [invokeChildWorkflowTimelineKey(stepId)]: {
+                      invokeChildWorkflow: {
                         childRunId: childRun.id,
                         childWorkflowId: childRun.workflowId,
                         childResourceId: childRun.resourceId,
@@ -1475,12 +1484,12 @@ export class WorkflowEngine {
         await this.pauseRunForWait({
           run: lockedRun,
           stepId,
-          eventName: getInvokeWorkflowEventName(childRun.id),
+          eventName: getInvokeChildWorkflowEventName(childRun.id),
           skipOutput: true,
           db,
           timeline: merge(lockedRun.timeline, {
-            [invokeWorkflowTimelineKey(stepId)]: {
-              invokeWorkflow: {
+            [invokeChildWorkflowTimelineKey(stepId)]: {
+              invokeChildWorkflow: {
                 childRunId: childRun.id,
                 childWorkflowId: childRun.workflowId,
                 childResourceId: childRun.resourceId,

@@ -138,7 +138,7 @@ describe('WorkflowClient', () => {
   });
 
   describe('fastForwardWorkflow', () => {
-    it('should no-op for invokeWorkflow waits', async () => {
+    it('should no-op for invokeChildWorkflow waits', async () => {
       const run = await client.startWorkflow({
         resourceId,
         workflowId: 'client-fast-forward-invoke',
@@ -154,8 +154,8 @@ describe('WorkflowClient', () => {
           'call-child',
           new Date(),
           JSON.stringify({
-            'call-child-invoke-workflow': {
-              invokeWorkflow: {
+            'call-child-invoke-child-workflow': {
+              invokeChildWorkflow: {
                 childRunId: 'run_child_for_client_fast_forward',
                 childWorkflowId: 'client-child-workflow',
               },
@@ -163,7 +163,7 @@ describe('WorkflowClient', () => {
             },
             'call-child-wait-for': {
               waitFor: {
-                eventName: '__invoke_workflow_completed:run_child_for_client_fast_forward',
+                eventName: '__invoke_child_workflow_completed:run_child_for_client_fast_forward',
               },
               timestamp: new Date().toISOString(),
             },

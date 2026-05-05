@@ -18,7 +18,7 @@ export enum StepType {
   WAIT_UNTIL = 'waitUntil',
   DELAY = 'delay',
   POLL = 'poll',
-  INVOKE_WORKFLOW = 'invokeWorkflow',
+  INVOKE_CHILD_WORKFLOW = 'invokeChildWorkflow',
 }
 
 export type InputParameters = StandardSchemaV1;
@@ -65,7 +65,11 @@ export type StepBaseContext = {
     conditionFn: () => Promise<T | false>,
     options?: { interval?: Duration; timeout?: Duration },
   ) => Promise<{ timedOut: false; data: T } | { timedOut: true }>;
-  invokeWorkflow: {
+  /**
+   * Invoke a child workflow from inside the current workflow and pause until
+   * the child run reaches a terminal state.
+   */
+  invokeChildWorkflow: {
     <TInput extends InputParameters, TOutput = unknown>(
       stepId: string,
       ref: WorkflowRef<TInput, TOutput>,

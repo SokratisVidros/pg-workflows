@@ -38,10 +38,10 @@ When `boss` is omitted, pg-boss is created automatically with an isolated schema
 | `startWorkflow(ref, input, options?)` | Start a top-level workflow run using a typed ref (see [WorkflowRef](#workflowref)) |
 | `startWorkflow({ workflowId, resourceId?, input, idempotencyKey?, options? })` | Start a top-level workflow run by ID. `resourceId` optionally ties the run to an external entity (see [Resource ID](core-concepts.md#resource-id)). `idempotencyKey` optionally deduplicates starts (see [Idempotency Key](core-concepts.md#idempotency-key)). |
 | `pauseWorkflow({ runId, resourceId? })` | Pause a running workflow |
-| `resumeWorkflow({ runId, resourceId?, options? })` | Resume a paused workflow. No-ops for `step.invokeWorkflow()` waits. |
+| `resumeWorkflow({ runId, resourceId?, options? })` | Resume a paused workflow. No-ops for `step.invokeChildWorkflow()` waits. |
 | `cancelWorkflow({ runId, resourceId? })` | Cancel a workflow |
 | `triggerEvent({ runId, resourceId?, eventName, data?, options? })` | Send an event to a workflow |
-| `fastForwardWorkflow({ runId, resourceId?, data? })` | Skip the current waiting step and resume execution. No-ops for `step.invokeWorkflow()` waits. |
+| `fastForwardWorkflow({ runId, resourceId?, data? })` | Skip the current waiting step and resume execution. No-ops for `step.invokeChildWorkflow()` waits. |
 | `getRun({ runId, resourceId? })` | Get workflow run details |
 | `checkProgress({ runId, resourceId? })` | Get workflow progress |
 | `getRuns(filters)` | List workflow runs with pagination |
@@ -70,10 +70,10 @@ const client = new WorkflowClient({
 | `startWorkflow(ref, input, options?)` | Start a top-level workflow run using a typed ref |
 | `startWorkflow({ workflowId, input, resourceId?, options? })` | Start a top-level workflow run by ID |
 | `pauseWorkflow({ runId, resourceId? })` | Pause a running workflow |
-| `resumeWorkflow({ runId, resourceId?, options? })` | Resume a paused workflow. No-ops for `step.invokeWorkflow()` waits. |
+| `resumeWorkflow({ runId, resourceId?, options? })` | Resume a paused workflow. No-ops for `step.invokeChildWorkflow()` waits. |
 | `cancelWorkflow({ runId, resourceId? })` | Cancel a workflow |
 | `triggerEvent({ runId, resourceId?, eventName, data?, options? })` | Send an event to a workflow |
-| `fastForwardWorkflow({ runId, resourceId?, data? })` | Skip the current waiting step. No-ops for `step.invokeWorkflow()` waits. |
+| `fastForwardWorkflow({ runId, resourceId?, data? })` | Skip the current waiting step. No-ops for `step.invokeChildWorkflow()` waits. |
 | `getRun({ runId, resourceId? })` | Get workflow run details |
 | `checkProgress({ runId, resourceId? })` | Get workflow progress |
 | `getRuns(filters)` | List workflow runs with pagination |
@@ -102,13 +102,13 @@ const definition = myWorkflow(async ({ step, input }) => {
 })
 ```
 
-Refs can also carry an output type for `step.invokeWorkflow()`:
+Refs can also carry an output type for `step.invokeChildWorkflow()`:
 
 ```typescript
 type ChildOutput = { ok: true }
 const childWorkflow = createWorkflowRef<ChildOutput>('child-workflow')
 
-const output = await step.invokeWorkflow('call-child', childWorkflow, {})
+const output = await step.invokeChildWorkflow('call-child', childWorkflow, {})
 // output is ChildOutput
 ```
 
@@ -148,16 +148,16 @@ The context object passed to workflow handlers:
     sleep: (stepId, duration) => Promise<void>,
     pause: (stepId) => Promise<void>,
     poll: <T>(stepId, conditionFn, { interval?, timeout? }) => Promise<{ timedOut: false; data: T } | { timedOut: true }>,
-    // invokeWorkflow has two overloads:
+    // invokeChildWorkflow has two overloads:
     //   1) by typed `WorkflowRef<TInput, TOutput>` - return type is inferred
-    invokeWorkflow: <TInput, TOutput>(stepId, ref: WorkflowRef<TInput, TOutput>, input, options?) => Promise<TOutput>,
+    invokeChildWorkflow: <TInput, TOutput>(stepId, ref: WorkflowRef<TInput, TOutput>, input, options?) => Promise<TOutput>,
     //   2) by workflow ID - explicit `<TOutput>` generic for the return
-    invokeWorkflow: <TOutput>(stepId, { workflowId, input, resourceId?, idempotencyKey?, options? }) => Promise<TOutput>,
+    invokeChildWorkflow: <TOutput>(stepId, { workflowId, input, resourceId?, idempotencyKey?, options? }) => Promise<TOutput>,
   }
 }
 ```
 
-`startWorkflow()` creates a top-level run and returns immediately. `step.invokeWorkflow()` starts a child run from inside a workflow, pauses the parent, and resolves with the child output when the child reaches a terminal state.
+`startWorkflow()` creates a top-level run and returns immediately. `step.invokeChildWorkflow()` starts a child run from inside a workflow, pauses the parent, and resolves with the child output when the child reaches a terminal state.
 
 `duration` is a string (e.g. `'3 days'`, `'2h'`) or an object (`{ weeks?, days?, hours?, minutes?, seconds? }`). See the `Duration` type and `parseDuration` from the package.
 

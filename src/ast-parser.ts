@@ -82,7 +82,7 @@ export function parseWorkflowHandler(
           methodName === 'delay' ||
           methodName === 'sleep' ||
           methodName === 'poll' ||
-          methodName === 'invokeWorkflow')
+          methodName === 'invokeChildWorkflow')
       ) {
         const firstArg = node.arguments[0];
         if (firstArg) {

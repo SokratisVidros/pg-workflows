@@ -3,8 +3,8 @@ import pg from 'pg';
 import { type Db, PgBoss } from 'pg-boss';
 import {
   DEFAULT_PGBOSS_SCHEMA,
-  invokeWorkflowTimelineKey,
-  isInvokeWorkflowTimelineEntry,
+  invokeChildWorkflowTimelineKey,
+  isInvokeChildWorkflowTimelineEntry,
   PAUSE_EVENT_NAME,
   WORKFLOW_RUN_QUEUE_NAME,
   waitForTimelineKey,
@@ -334,8 +334,9 @@ export class WorkflowClient {
       );
     }
 
-    const stepId = current.currentStepId;
-    if (isInvokeWorkflowTimelineEntry(current.timeline[invokeWorkflowTimelineKey(stepId)])) {
+    const currentStepId = current.currentStepId;
+    const currentStepTimelineEntry = current.timeline[invokeChildWorkflowTimelineKey(currentStepId)];
+    if (isInvokeChildWorkflowTimelineEntry(currentStepTimelineEntry)) {
       return current;
     }
 
@@ -365,12 +366,13 @@ export class WorkflowClient {
       return run;
     }
 
-    const stepId = run.currentStepId;
-    if (isInvokeWorkflowTimelineEntry(run.timeline[invokeWorkflowTimelineKey(stepId)])) {
+    const currentStepId = run.currentStepId;
+    const currentStepTimelineEntry = run.timeline[invokeChildWorkflowTimelineKey(currentStepId)];
+    if (isInvokeChildWorkflowTimelineEntry(currentStepTimelineEntry)) {
       return run;
     }
 
-    const waitForEntry = run.timeline[waitForTimelineKey(stepId)];
+    const waitForEntry = run.timeline[waitForTimelineKey(currentStepId)];
     if (!waitForEntry || typeof waitForEntry !== 'object' || !('waitFor' in waitForEntry)) {
       return run;
     }
@@ -397,7 +399,7 @@ export class WorkflowClient {
               resourceId,
               data: {
                 timeline: merge(freshRun.timeline, {
-                  [stepId]: {
+                  [currentStepId]: {
                     output: data ?? {},
                     timestamp: new Date(),
                   },

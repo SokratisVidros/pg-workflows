@@ -161,12 +161,12 @@ describe('AST Parser for Workflow Steps', () => {
     ]);
   });
 
-  it('should parse invokeWorkflow steps', async () => {
+  it('should parse invokeChildWorkflow steps', async () => {
     const childWorkflow = workflow('parser-child-workflow', async ({ step }) => {
       return await step.run('child-step', async () => 'child-result');
     });
     const parentWorkflow = workflow('parser-parent-workflow', async ({ step }) => {
-      await step.invokeWorkflow('call-child', {
+      await step.invokeChildWorkflow('call-child', {
         workflowId: 'parser-child-workflow',
         input: {},
       });
@@ -180,7 +180,7 @@ describe('AST Parser for Workflow Steps', () => {
     expect(engine.workflows.get('parser-parent-workflow')?.steps).toEqual([
       {
         id: 'call-child',
-        type: StepType.INVOKE_WORKFLOW,
+        type: StepType.INVOKE_CHILD_WORKFLOW,
         conditional: false,
         loop: false,
         isDynamic: false,

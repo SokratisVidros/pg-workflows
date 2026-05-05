@@ -916,7 +916,7 @@ describe('WorkflowEngine', () => {
       });
 
       const parentWorkflow = workflow('invoke-parent-success', async ({ step }) => {
-        const childOutput = await step.invokeWorkflow<{ child: { message: string } }>(
+        const childOutput = await step.invokeChildWorkflow<{ child: { message: string } }>(
           'call-child',
           {
             workflowId: 'invoke-child-success',
@@ -941,8 +941,8 @@ describe('WorkflowEngine', () => {
           status: WorkflowStatus.PAUSED,
           currentStepId: 'call-child',
           timeline: {
-            'call-child-invoke-workflow': {
-              invokeWorkflow: {
+            'call-child-invoke-child-workflow': {
+              invokeChildWorkflow: {
                 childWorkflowId: 'invoke-child-success',
               },
             },
@@ -1001,7 +1001,7 @@ describe('WorkflowEngine', () => {
       });
 
       const parentWorkflow = workflow('invoke-parent-post-commit', async ({ step }) => {
-        return await step.invokeWorkflow('call-child', {
+        return await step.invokeChildWorkflow('call-child', {
           workflowId: 'invoke-child-post-commit',
           input: {},
         });
@@ -1026,15 +1026,15 @@ describe('WorkflowEngine', () => {
             });
             expect(parentRun.status).toBe(WorkflowStatus.PAUSED);
             expect(parentRun.timeline).toMatchObject({
-              'call-child-invoke-workflow': {
-                invokeWorkflow: {
+              'call-child-invoke-child-workflow': {
+                invokeChildWorkflow: {
                   childRunId: childRun.id,
                   childWorkflowId: 'invoke-child-post-commit',
                 },
               },
               'call-child-wait-for': {
                 waitFor: {
-                  eventName: `__invoke_workflow_completed:${childRun.id}`,
+                  eventName: `__invoke_child_workflow_completed:${childRun.id}`,
                   skipOutput: true,
                 },
               },
@@ -1067,7 +1067,7 @@ describe('WorkflowEngine', () => {
       });
 
       const parentWorkflow = workflow('invoke-parent-null-output', async ({ step }) => {
-        const childOutput = await step.invokeWorkflow<null>('call-child', {
+        const childOutput = await step.invokeChildWorkflow<null>('call-child', {
           workflowId: 'invoke-child-null-output',
           input: {},
         });
@@ -1105,7 +1105,7 @@ describe('WorkflowEngine', () => {
       });
 
       const parentWorkflow = workflow('invoke-parent-idempotent', async ({ step }) => {
-        return await step.invokeWorkflow('call-child', {
+        return await step.invokeChildWorkflow('call-child', {
           workflowId: 'invoke-child-idempotent',
           input: {},
         });
@@ -1140,7 +1140,7 @@ describe('WorkflowEngine', () => {
       expect(childRuns.items[0].idempotencyKey).toBeNull();
     });
 
-    it('should return invokeWorkflow output cached after acquiring the parent lock', async () => {
+    it('should return invokeChildWorkflow output cached after acquiring the parent lock', async () => {
       const now = new Date();
       const parentRun: WorkflowRun = {
         id: 'invoke-parent-lock-race',
@@ -1175,8 +1175,8 @@ describe('WorkflowEngine', () => {
           },
         },
       };
-      const engineWithInvokeWorkflowStep = engine as unknown as {
-        invokeWorkflowStep(args: {
+      const engineWithInvokeChildWorkflowStep = engine as unknown as {
+        invokeChildWorkflowStep(args: {
           run: WorkflowRun;
           stepId: string;
           workflowId: string;
@@ -1189,7 +1189,7 @@ describe('WorkflowEngine', () => {
 
       try {
         await expect(
-          engineWithInvokeWorkflowStep.invokeWorkflowStep({
+          engineWithInvokeChildWorkflowStep.invokeChildWorkflowStep({
             run: parentRun,
             stepId: 'call-child',
             workflowId: 'invoke-child-lock-race',
@@ -1254,8 +1254,8 @@ describe('WorkflowEngine', () => {
       const lockedParentRun: WorkflowRun = {
         ...parentRun,
         timeline: {
-          'call-child-invoke-workflow': {
-            invokeWorkflow: {
+          'call-child-invoke-child-workflow': {
+            invokeChildWorkflow: {
               childRunId: childRun.id,
               childWorkflowId: childRun.workflowId,
               childResourceId: childRun.resourceId,
@@ -1264,8 +1264,8 @@ describe('WorkflowEngine', () => {
           },
         },
       };
-      const engineWithInvokeWorkflowStep = engine as unknown as {
-        invokeWorkflowStep(args: {
+      const engineWithInvokeChildWorkflowStep = engine as unknown as {
+        invokeChildWorkflowStep(args: {
           run: WorkflowRun;
           stepId: string;
           workflowId: string;
@@ -1290,7 +1290,7 @@ describe('WorkflowEngine', () => {
 
       try {
         await expect(
-          engineWithInvokeWorkflowStep.invokeWorkflowStep({
+          engineWithInvokeChildWorkflowStep.invokeChildWorkflowStep({
             run: parentRun,
             stepId: 'call-child',
             workflowId: childRun.workflowId,
@@ -1312,7 +1312,7 @@ describe('WorkflowEngine', () => {
       });
 
       const parentWorkflow = workflow('invoke-parent-key-conflict', async ({ step }) => {
-        await step.invokeWorkflow('call-child', {
+        await step.invokeChildWorkflow('call-child', {
           workflowId: 'invoke-child-key-conflict',
           input: {},
           idempotencyKey: 'invoke-child-conflict-key',
@@ -1346,7 +1346,7 @@ describe('WorkflowEngine', () => {
         })
         .toMatchObject({
           status: WorkflowStatus.FAILED,
-          error: expect.stringContaining('does not belong to invokeWorkflow step'),
+          error: expect.stringContaining('does not belong to invokeChildWorkflow step'),
         });
     });
 
@@ -1356,7 +1356,7 @@ describe('WorkflowEngine', () => {
       });
 
       const parentWorkflow = workflow('invoke-parent-enqueue-retry', async ({ step }) => {
-        return await step.invokeWorkflow('call-child', {
+        return await step.invokeChildWorkflow('call-child', {
           workflowId: 'invoke-child-enqueue-retry',
           input: {},
         });
@@ -1423,7 +1423,7 @@ describe('WorkflowEngine', () => {
       });
 
       const parentWorkflow = workflow('invoke-parent-child-fails', async ({ step }) => {
-        await step.invokeWorkflow('call-child', {
+        await step.invokeChildWorkflow('call-child', {
           workflowId: 'invoke-child-fails',
           input: {},
         });
@@ -1458,7 +1458,7 @@ describe('WorkflowEngine', () => {
       });
 
       const parentWorkflow = workflow('invoke-parent-child-cancelled', async ({ step }) => {
-        await step.invokeWorkflow('call-child', {
+        await step.invokeChildWorkflow('call-child', {
           workflowId: 'invoke-child-cancelled',
           input: {},
         });
@@ -1495,14 +1495,14 @@ describe('WorkflowEngine', () => {
       expect(failedParent.timeline).not.toHaveProperty('call-child.output');
     });
 
-    it('should ignore fastForwardWorkflow on invokeWorkflow waits and only resume via the real child completion', async () => {
+    it('should ignore fastForwardWorkflow on invokeChildWorkflow waits and only resume via the real child completion', async () => {
       const childWorkflow = workflow('invoke-child-ff-after-complete', async ({ step }) => {
         await step.waitFor('child-wait', { eventName: 'child-ready' });
         return { ok: true };
       });
 
       const parentWorkflow = workflow('invoke-parent-ff-after-complete', async ({ step }) => {
-        return await step.invokeWorkflow('call-child', {
+        return await step.invokeChildWorkflow('call-child', {
           workflowId: 'invoke-child-ff-after-complete',
           input: {},
         });
@@ -1528,7 +1528,7 @@ describe('WorkflowEngine', () => {
       expect(childRuns.items).toHaveLength(1);
       const childRun = childRuns.items[0];
 
-      // Calling fastForwardWorkflow on an invokeWorkflow wait must always be a
+      // Calling fastForwardWorkflow on an invokeChildWorkflow wait must always be a
       // no-op; only the real invoke-completion event drives the parent forward.
       const ffWhilePending = await engine.fastForwardWorkflow({
         runId: parentRun.id,
@@ -1560,7 +1560,7 @@ describe('WorkflowEngine', () => {
       });
 
       const parentWorkflow = workflow('invoke-parent-parent-timeout', async ({ step }) => {
-        return await step.invokeWorkflow('call-child', {
+        return await step.invokeChildWorkflow('call-child', {
           workflowId: 'invoke-child-parent-timeout',
           input: {},
         });
@@ -1623,7 +1623,7 @@ describe('WorkflowEngine', () => {
       });
 
       const parentWorkflow = workflow('invoke-parent-duplicate-wakeup', async ({ step }) => {
-        const childOutput = await step.invokeWorkflow<{ value: string }>('call-child', {
+        const childOutput = await step.invokeChildWorkflow<{ value: string }>('call-child', {
           workflowId: 'invoke-child-duplicate-wakeup',
           input: {},
         });
@@ -1672,7 +1672,7 @@ describe('WorkflowEngine', () => {
       // wait-for unlock branch, fall through to the (now no-op) handler path,
       // and never overwrite the cached output. This guards the
       // "child notify fires twice (catch + DLQ)" deduplication path.
-      const eventName = `__invoke_workflow_completed:${childRun.id}`;
+      const eventName = `__invoke_child_workflow_completed:${childRun.id}`;
       await testBoss.send(WORKFLOW_RUN_QUEUE_NAME, {
         runId: parentRun.id,
         resourceId,
@@ -3040,14 +3040,14 @@ describe('WorkflowEngine', () => {
         });
     });
 
-    it('should not fast-forward an invokeWorkflow step while the child is still running', async () => {
+    it('should not fast-forward an invokeChildWorkflow step while the child is still running', async () => {
       const childWorkflow = workflow('ff-method-invoke-child', async ({ step }) => {
         await step.waitFor('child-wait', { eventName: 'child-ready' });
         return { ok: true };
       });
 
       const parentWorkflow = workflow('ff-method-invoke-parent', async ({ step }) => {
-        return await step.invokeWorkflow('call-child', {
+        return await step.invokeChildWorkflow('call-child', {
           workflowId: 'ff-method-invoke-child',
           input: {},
         });
