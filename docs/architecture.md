@@ -75,12 +75,20 @@ import { z } from 'zod'
 
 export const onboardUser = createWorkflowRef('onboard-user', {
   inputSchema: z.object({ email: z.string().email() }),
+  flowControl: {
+    concurrency: (input) => ({
+      key: input.email,
+      limit: 1,
+    }),
+  },
 })
 
 export const processPayment = createWorkflowRef('process-payment', {
   inputSchema: z.object({ orderId: z.string(), amount: z.number() }),
 })
 ```
+
+If your API service needs `flowControl` (`concurrency` or `singleton`), put it on the shared ref. The raw client overload `startWorkflow({ workflowId, input })` cannot evaluate callback-based flow-control resolvers because it only knows the workflow ID.
 
 ### Step 2: API service — uses lightweight client, no handler code
 

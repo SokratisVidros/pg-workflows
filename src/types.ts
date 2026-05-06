@@ -24,6 +24,19 @@ export enum StepType {
 export type InputParameters = StandardSchemaV1;
 export type InferInputParameters<P extends InputParameters> = StandardSchemaV1.InferOutput<P>;
 
+export type WorkflowConcurrencyResolver<I extends InputParameters = InputParameters> = (
+  input: InferInputParameters<I>,
+) => { key: string; limit: number };
+
+export type WorkflowSingletonResolver<I extends InputParameters = InputParameters> = (
+  input: InferInputParameters<I>,
+) => { key: string; mode: 'skip' | 'cancel' };
+
+export type WorkflowFlowControl<I extends InputParameters = InputParameters> = {
+  concurrency?: WorkflowConcurrencyResolver<I>;
+  singleton?: WorkflowSingletonResolver<I>;
+};
+
 export type WorkflowRunOptions = {
   resourceId?: string;
   timeout?: number;
@@ -36,6 +49,12 @@ export type WorkflowOptions<I extends InputParameters> = {
   timeout?: number;
   retries?: number;
   inputSchema?: I;
+  flowControl?: WorkflowFlowControl<I>;
+};
+
+export type WorkflowRefOptions<I extends InputParameters> = {
+  inputSchema?: I;
+  flowControl?: WorkflowFlowControl<I>;
 };
 
 export type StepBaseContext = {
@@ -118,6 +137,7 @@ export type WorkflowDefinition<TInput extends InputParameters = InputParameters>
   inputSchema?: TInput;
   timeout?: number; // milliseconds
   retries?: number;
+  flowControl?: WorkflowFlowControl<TInput>;
   plugins?: WorkflowPlugin[];
 };
 
@@ -149,7 +169,7 @@ export interface WorkflowFactory<TStepExt = object> {
   ): WorkflowFactory<TStepExt & TNewExt>;
   ref<TInput extends InputParameters = InputParameters, TOutput = unknown>(
     id: string,
-    options?: { inputSchema?: TInput },
+    options?: WorkflowRefOptions<TInput>,
   ): WorkflowRef<TInput, TOutput>;
 }
 
@@ -167,10 +187,11 @@ export interface WorkflowRef<
 > {
   (
     handler: (context: WorkflowContext<TInput, StepBaseContext>) => Promise<unknown>,
-    options?: Omit<WorkflowOptions<TInput>, 'inputSchema'>,
+    options?: Omit<WorkflowOptions<TInput>, 'inputSchema' | 'flowControl'>,
   ): WorkflowDefinition<TInput>;
   readonly id: string;
   readonly inputSchema?: TInput;
+  readonly flowControl?: WorkflowFlowControl<TInput>;
 }
 
 export type WorkflowRunProgress = WorkflowRun & {

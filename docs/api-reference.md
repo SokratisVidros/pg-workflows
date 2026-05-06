@@ -36,7 +36,7 @@ When `boss` is omitted, pg-boss is created automatically with an isolated schema
 | `stop()` | Stop the engine gracefully |
 | `registerWorkflow(definition)` | Register a workflow definition |
 | `startWorkflow(ref, input, options?)` | Start a top-level workflow run using a typed ref (see [WorkflowRef](#workflowref)) |
-| `startWorkflow({ workflowId, resourceId?, input, idempotencyKey?, options? })` | Start a top-level workflow run by ID. `resourceId` optionally ties the run to an external entity (see [Resource ID](core-concepts.md#resource-id)). `idempotencyKey` optionally deduplicates starts (see [Idempotency Key](core-concepts.md#idempotency-key)). |
+| `startWorkflow({ workflowId, resourceId?, input, idempotencyKey?, options? })` | Start a top-level workflow run by ID. `resourceId` optionally ties the run to an external entity (see [Resource ID](core-concepts.md#resource-id)). `idempotencyKey` optionally deduplicates starts (see [Idempotency Key](core-concepts.md#idempotency-key)). This overload is flow-control aware when the engine has the registered workflow definition. |
 | `pauseWorkflow({ runId, resourceId? })` | Pause a running workflow |
 | `resumeWorkflow({ runId, resourceId?, options? })` | Resume a paused workflow. No-ops for `step.invokeChildWorkflow()` waits. |
 | `cancelWorkflow({ runId, resourceId? })` | Cancel a workflow |
@@ -67,8 +67,8 @@ const client = new WorkflowClient({
 |--------|-------------|
 | `start()` | Connect to the database (called automatically on first use) |
 | `stop()` | Close the connection |
-| `startWorkflow(ref, input, options?)` | Start a top-level workflow run using a typed ref |
-| `startWorkflow({ workflowId, input, resourceId?, options? })` | Start a top-level workflow run by ID |
+| `startWorkflow(ref, input, options?)` | Start a top-level workflow run using a typed ref. Ref-based starts support `flowControl` because the ref carries the resolver. |
+| `startWorkflow({ workflowId, input, resourceId?, options? })` | Start a top-level workflow run by ID. This raw overload does not evaluate callback-based `flowControl`. |
 | `pauseWorkflow({ runId, resourceId? })` | Pause a running workflow |
 | `resumeWorkflow({ runId, resourceId?, options? })` | Resume a paused workflow. No-ops for `step.invokeChildWorkflow()` waits. |
 | `cancelWorkflow({ runId, resourceId? })` | Cancel a workflow |
@@ -89,6 +89,12 @@ import { z } from 'zod'
 // Create a ref — just an ID + schema, no handler
 const myWorkflow = createWorkflowRef('my-workflow', {
   inputSchema: z.object({ email: z.string().email() }),
+  flowControl: {
+    concurrency: (input) => ({
+      key: input.email,
+      limit: 1,
+    }),
+  },
 })
 
 // Use in API service — type-safe input
@@ -112,6 +118,8 @@ const output = await step.invokeChildWorkflow('call-child', childWorkflow, {})
 // output is ChildOutput
 ```
 
+`flowControl` on a ref is shared metadata used by `WorkflowClient.startWorkflow(ref, ...)` and by engine-side starts.
+
 ## workflow()
 
 ```typescript
@@ -122,9 +130,15 @@ workflow<I extends Parameters>(
     inputSchema?: I,
     timeout?: number,
     retries?: number,
+    flowControl?: {
+      concurrency?: (input: InferInputParameters<I>) => { key: string; limit: number },
+      singleton?: (input: InferInputParameters<I>) => { key: string; mode: 'skip' | 'cancel' },
+    },
   }
 ): WorkflowDefinition<I>
 ```
+
+`concurrency` and `singleton` are mutually exclusive. Use a constant concurrency key for workflow-wide limits.
 
 ## WorkflowContext
 
@@ -173,3 +187,10 @@ enum WorkflowStatus {
   CANCELLED = 'cancelled',
 }
 ```
+
+## WorkflowRun
+
+`getRun()`, `getRuns()`, and `startWorkflow()` return a `WorkflowRun` that includes:
+
+- `concurrencyKey: string | null` — the resolved key from `flowControl`, if any
+- `pauseReason: string | null` — internal pause classification used to decide how a paused run should re-enter execution

@@ -21,6 +21,20 @@ const testRef = createWorkflowRef('test-client-workflow', {
   inputSchema: z.object({ data: z.string() }),
 });
 
+const concurrencyRef = createWorkflowRef('client-flow-concurrency', {
+  inputSchema: z.object({ group: z.string() }),
+  flowControl: {
+    concurrency: (input) => ({ key: input.group, limit: 1 }),
+  },
+});
+
+const singletonRef = createWorkflowRef('client-flow-singleton', {
+  inputSchema: z.object({ userId: z.string() }),
+  flowControl: {
+    singleton: (input) => ({ key: input.userId, mode: 'skip' }),
+  },
+});
+
 describe('WorkflowClient', () => {
   const resourceId = 'testResourceId';
   let client: WorkflowClient;
@@ -134,6 +148,47 @@ describe('WorkflowClient', () => {
       expect(schemas.rows).toHaveLength(1);
 
       await customClient.stop();
+    });
+  });
+
+  describe('flow control', () => {
+    it('applies ref-based concurrency and queues the second run', async () => {
+      const run1 = await client.startWorkflow(concurrencyRef, { group: 'team-a' }, { resourceId });
+      const run2 = await client.startWorkflow(concurrencyRef, { group: 'team-a' }, { resourceId });
+
+      expect(run1.id).not.toBe(run2.id);
+      expect(run1.status).toBe(WorkflowStatus.RUNNING);
+      expect(run2.status).toBe(WorkflowStatus.PENDING);
+      expect(run1.concurrencyKey).toBe('team-a');
+      expect(run2.concurrencyKey).toBe('team-a');
+    });
+
+    it('applies ref-based singleton skip and returns the existing run', async () => {
+      const run1 = await client.startWorkflow(singletonRef, { userId: 'user-1' }, { resourceId });
+      const run2 = await client.startWorkflow(singletonRef, { userId: 'user-1' }, { resourceId });
+
+      expect(run1.id).toBe(run2.id);
+      expect(run1.concurrencyKey).toBe('user-1');
+    });
+
+    it('does not apply callback-based flow control to raw object starts', async () => {
+      const run1 = await client.startWorkflow({
+        resourceId,
+        workflowId: 'client-flow-concurrency',
+        input: { group: 'team-a' },
+      });
+
+      const run2 = await client.startWorkflow({
+        resourceId,
+        workflowId: 'client-flow-concurrency',
+        input: { group: 'team-a' },
+      });
+
+      expect(run1.id).not.toBe(run2.id);
+      expect(run1.status).toBe(WorkflowStatus.RUNNING);
+      expect(run2.status).toBe(WorkflowStatus.RUNNING);
+      expect(run1.concurrencyKey).toBeNull();
+      expect(run2.concurrencyKey).toBeNull();
     });
   });
 

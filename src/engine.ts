@@ -13,13 +13,20 @@ import {
 } from './constants';
 import { runMigrations } from './db/migration';
 import {
+  acquireIdempotencyKeyLock,
+  acquireWorkflowAdmissionLock,
+  cancelConflictingSingletonRuns,
+  countRunningWorkflowRunsByConcurrencyKey,
+  findOldestConflictingSingletonRun,
+  getPendingWorkflowRunsByWorkflowId,
   getWorkflowRun,
+  getWorkflowRunByIdempotencyKey,
   getWorkflowRuns,
   insertWorkflowRun,
   updateWorkflowRun,
   withPostgresTransaction,
 } from './db/queries';
-import type { WorkflowRun } from './db/types';
+import type { PersistedWorkflowRun, WorkflowRun } from './db/types';
 import type { Duration } from './duration';
 import { parseDuration } from './duration';
 import {
@@ -28,6 +35,11 @@ import {
   WorkflowEngineError,
   WorkflowRunNotFoundError,
 } from './error';
+import {
+  assertValidFlowControl,
+  type ResolvedFlowControl,
+  resolveFlowControl,
+} from './flow-control';
 import {
   type InferInputParameters,
   type InputParameters,
@@ -137,6 +149,18 @@ const getInvokeChildWorkflowEventName = (childRunId: string) =>
 const defaultHeartbeatSeconds = process.env.WORKFLOW_RUN_HEARTBEAT_SECONDS
   ? Number.parseInt(process.env.WORKFLOW_RUN_HEARTBEAT_SECONDS, 10)
   : 30;
+
+const PAUSE_REASON_WAIT_FOR = 'waitFor';
+const PAUSE_REASON_WAIT_UNTIL = 'waitUntil';
+const PAUSE_REASON_POLL = 'poll';
+const PAUSE_REASON_MANUAL = 'manual';
+const PAUSE_REASON_INVOKE_CHILD_WORKFLOW = 'invokeChildWorkflow';
+const CONCURRENCY_BLOCKED_RETRY_DELAY_MS = 1000;
+
+type StartAdmissionResult = {
+  run: PersistedWorkflowRun;
+  created: boolean;
+};
 
 export class WorkflowEngine {
   private boss: PgBoss;
@@ -271,6 +295,15 @@ export class WorkflowEngine {
     if (this.workflows.has(definition.id)) {
       throw new WorkflowEngineError(
         `Workflow ${definition.id} is already registered`,
+        definition.id,
+      );
+    }
+
+    try {
+      assertValidFlowControl(definition.flowControl, `workflow("${definition.id}")`);
+    } catch (error) {
+      throw new WorkflowEngineError(
+        error instanceof Error ? error.message : String(error),
         definition.id,
       );
     }
@@ -410,6 +443,7 @@ export class WorkflowEngine {
     parentResourceId,
     enqueue = true,
     db,
+    ignoreSingleton = false,
   }: {
     workflowId: string;
     input: unknown;
@@ -421,7 +455,8 @@ export class WorkflowEngine {
     parentResourceId?: string;
     enqueue?: boolean;
     db?: Db;
-  }): Promise<{ run: WorkflowRun; created: boolean }> {
+    ignoreSingleton?: boolean;
+  }): Promise<StartAdmissionResult> {
     validateWorkflowId(workflowId);
     validateResourceId(resourceId);
 
@@ -448,6 +483,20 @@ export class WorkflowEngine {
       }
     }
 
+    let resolvedFlowControl: ResolvedFlowControl | null = null;
+    try {
+      const resolved = resolveFlowControl(
+        workflow.flowControl,
+        input as InferInputParameters<InputParameters>,
+      );
+      resolvedFlowControl = ignoreSingleton && resolved?.type === 'singleton' ? null : resolved;
+    } catch (error) {
+      throw new WorkflowEngineError(
+        error instanceof Error ? error.message : String(error),
+        workflowId,
+      );
+    }
+
     const initialStepId = workflow.steps[0]?.id ?? '__start__';
     const timeoutAt = options?.timeout
       ? new Date(Date.now() + options.timeout)
@@ -455,17 +504,74 @@ export class WorkflowEngine {
         ? new Date(Date.now() + workflow.timeout)
         : null;
 
-    const insertRun = async (targetDb: Db) =>
-      await insertWorkflowRun(
+    const admitRun = async (targetDb: Db): Promise<StartAdmissionResult> => {
+      if (idempotencyKey) {
+        await acquireIdempotencyKeyLock(idempotencyKey, targetDb);
+        const existingByIdempotency = await getWorkflowRunByIdempotencyKey(
+          idempotencyKey,
+          targetDb,
+        );
+        if (existingByIdempotency) {
+          return { run: existingByIdempotency, created: false };
+        }
+      }
+
+      await acquireWorkflowAdmissionLock(workflowId, targetDb);
+
+      if (resolvedFlowControl?.type === 'singleton') {
+        const existingSingleton = await findOldestConflictingSingletonRun(
+          {
+            workflowId,
+            concurrencyKey: resolvedFlowControl.concurrencyKey,
+          },
+          targetDb,
+        );
+
+        if (existingSingleton) {
+          if (resolvedFlowControl.singletonMode === 'skip') {
+            return { run: existingSingleton, created: false };
+          }
+
+          await cancelConflictingSingletonRuns(
+            {
+              workflowId,
+              concurrencyKey: resolvedFlowControl.concurrencyKey,
+            },
+            targetDb,
+          );
+        }
+      }
+
+      const isConcurrencyLimited = resolvedFlowControl?.type === 'concurrency';
+      const status =
+        isConcurrencyLimited &&
+        (await countRunningWorkflowRunsByConcurrencyKey(
+          {
+            workflowId,
+            concurrencyKey: resolvedFlowControl.concurrencyKey,
+          },
+          targetDb,
+        )) >= resolvedFlowControl.concurrencyLimit
+          ? WorkflowStatus.PENDING
+          : WorkflowStatus.RUNNING;
+
+      const result = await insertWorkflowRun(
         {
           resourceId,
           workflowId,
           currentStepId: initialStepId,
-          status: WorkflowStatus.RUNNING,
+          status,
           input,
           maxRetries: options?.retries ?? workflow.retries ?? 0,
           timeoutAt,
           idempotencyKey,
+          concurrencyKey: resolvedFlowControl?.concurrencyKey ?? null,
+          concurrencyLimit:
+            resolvedFlowControl?.type === 'concurrency'
+              ? resolvedFlowControl.concurrencyLimit
+              : null,
+          singletonMode:
+            resolvedFlowControl?.type === 'singleton' ? resolvedFlowControl.singletonMode : null,
           parentRunId,
           parentStepId,
           parentResourceId,
@@ -473,36 +579,25 @@ export class WorkflowEngine {
         targetDb,
       );
 
-    const { run, created } = db
-      ? await insertRun(db)
-      : await withPostgresTransaction(
-          this.boss.getDb(),
-          async (transactionDb) => {
-            const result = await insertRun(transactionDb);
-            if (enqueue && result.created) {
-              // Pipe the same transaction connection through pg-boss so the
-              // INSERT into workflow_runs and the INSERT into pgboss.job
-              // commit (or roll back) together. If `boss.send` throws, the
-              // workflow_runs row is rolled back too, so we never end up with
-              // an orphan run that has no job, or a job that points at no run.
-              await this.enqueueWorkflowRun(result.run, options, transactionDb);
-            }
-            return result;
-          },
-          this.pool,
-        );
+      if (enqueue && result.created && result.run.status === WorkflowStatus.RUNNING) {
+        await this.enqueueWorkflowRun(result.run, options, targetDb);
+      }
 
-    if (db && enqueue && created) {
-      await this.enqueueWorkflowRun(run, options);
+      return result;
+    };
+
+    if (db) {
+      return admitRun(db);
     }
 
-    return { run, created };
+    return withPostgresTransaction(this.boss.getDb(), admitRun, this.pool);
   }
 
   private async enqueueWorkflowRun(
     run: WorkflowRun,
     options?: { expireInSeconds?: number },
     db?: Db,
+    startAfter?: Date,
   ) {
     const job: WorkflowRunJobParameters = {
       runId: run.id,
@@ -512,11 +607,157 @@ export class WorkflowEngine {
     };
 
     await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
-      startAfter: new Date(),
+      startAfter: startAfter ?? new Date(),
       expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
       ...retrySendOptions(run.maxRetries),
       ...(db ? { db } : {}),
     });
+  }
+
+  private async enqueueWorkflowEvent(
+    {
+      run,
+      eventName,
+      data,
+    }: {
+      run: PersistedWorkflowRun;
+      eventName: string;
+      data?: unknown;
+    },
+    options?: { expireInSeconds?: number },
+    db?: Db,
+    startAfter?: Date,
+  ) {
+    await this.boss.send(
+      WORKFLOW_RUN_QUEUE_NAME,
+      {
+        runId: run.id,
+        resourceId: run.resourceId ?? undefined,
+        workflowId: run.workflowId,
+        input: run.input,
+        event: {
+          name: eventName,
+          data,
+        },
+      },
+      {
+        startAfter: startAfter ?? new Date(),
+        expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
+        ...retrySendOptions(run.maxRetries),
+        ...(db ? { db } : {}),
+      },
+    );
+  }
+
+  private async canRunNow(run: PersistedWorkflowRun, db: Db): Promise<boolean> {
+    if (!run.concurrencyKey || !run.concurrencyLimit) {
+      return true;
+    }
+
+    const activeCount = await countRunningWorkflowRunsByConcurrencyKey(
+      {
+        workflowId: run.workflowId,
+        concurrencyKey: run.concurrencyKey,
+      },
+      db,
+    );
+
+    return activeCount < run.concurrencyLimit;
+  }
+
+  private async promotePendingRuns(
+    workflowId: string,
+    options?: { expireInSeconds?: number },
+  ): Promise<void> {
+    await withPostgresTransaction(
+      this.db,
+      async (db) => {
+        await acquireWorkflowAdmissionLock(workflowId, db);
+
+        const pendingRuns = await getPendingWorkflowRunsByWorkflowId(workflowId, db);
+        const runningCounts = new Map<string, number>();
+
+        for (const pendingRun of pendingRuns) {
+          if (!pendingRun.concurrencyKey || !pendingRun.concurrencyLimit) {
+            const promoted = await this.updateRun(
+              {
+                runId: pendingRun.id,
+                resourceId: pendingRun.resourceId ?? undefined,
+                data: {
+                  status: WorkflowStatus.RUNNING,
+                  pausedAt: null,
+                  pauseReason: null,
+                },
+                expectedStatuses: [WorkflowStatus.PENDING],
+              },
+              { db },
+            );
+
+            await this.enqueueWorkflowRun(promoted, options, db);
+            continue;
+          }
+
+          const currentCount =
+            runningCounts.get(pendingRun.concurrencyKey) ??
+            (await countRunningWorkflowRunsByConcurrencyKey(
+              {
+                workflowId,
+                concurrencyKey: pendingRun.concurrencyKey,
+              },
+              db,
+            ));
+
+          if (currentCount >= pendingRun.concurrencyLimit) {
+            runningCounts.set(pendingRun.concurrencyKey, currentCount);
+            continue;
+          }
+
+          const promoted = await this.updateRun(
+            {
+              runId: pendingRun.id,
+              resourceId: pendingRun.resourceId ?? undefined,
+              data: {
+                status: WorkflowStatus.RUNNING,
+                pausedAt: null,
+                pauseReason: null,
+              },
+              expectedStatuses: [WorkflowStatus.PENDING],
+            },
+            { db },
+          );
+
+          runningCounts.set(pendingRun.concurrencyKey, currentCount + 1);
+          await this.enqueueWorkflowRun(promoted, options, db);
+        }
+      },
+      this.pool,
+    );
+  }
+
+  private async requeueBlockedPausedRun(
+    run: PersistedWorkflowRun,
+    event?: WorkflowRunJobParameters['event'],
+  ): Promise<void> {
+    if (event?.name) {
+      await this.enqueueWorkflowEvent(
+        {
+          run,
+          eventName: event.name,
+          data: event.data,
+        },
+        undefined,
+        undefined,
+        new Date(Date.now() + CONCURRENCY_BLOCKED_RETRY_DELAY_MS),
+      );
+      return;
+    }
+
+    await this.enqueueWorkflowRun(
+      run,
+      undefined,
+      undefined,
+      new Date(Date.now() + CONCURRENCY_BLOCKED_RETRY_DELAY_MS),
+    );
   }
 
   private async notifyParentOfChildTerminalRun(childRun: WorkflowRun) {
@@ -563,9 +804,12 @@ export class WorkflowEngine {
       data: {
         status: WorkflowStatus.PAUSED,
         pausedAt: new Date(),
+        pauseReason: PAUSE_REASON_MANUAL,
       },
       expectedStatuses: [WorkflowStatus.RUNNING, WorkflowStatus.PENDING],
     });
+
+    await this.promotePendingRuns(run.workflowId);
 
     this.logger.log('Paused workflow run', {
       runId,
@@ -698,6 +942,7 @@ export class WorkflowEngine {
       resourceId,
       data: {
         status: WorkflowStatus.CANCELLED,
+        pauseReason: null,
       },
       expectedStatuses: [WorkflowStatus.PENDING, WorkflowStatus.RUNNING, WorkflowStatus.PAUSED],
     });
@@ -705,6 +950,7 @@ export class WorkflowEngine {
     this.logger.log(`cancelled workflow run with id ${runId}`);
 
     await this.notifyParentOfChildTerminalRun(run);
+    await this.promotePendingRuns(run.workflowId);
 
     return run;
   }
@@ -753,7 +999,7 @@ export class WorkflowEngine {
   async getRun(
     { runId, resourceId }: { runId: string; resourceId?: string },
     { exclusiveLock = false, db }: { exclusiveLock?: boolean; db?: Db } = {},
-  ): Promise<WorkflowRun> {
+  ): Promise<PersistedWorkflowRun> {
     const run = await getWorkflowRun({ runId, resourceId }, { exclusiveLock, db: db ?? this.db });
 
     if (!run) {
@@ -772,11 +1018,11 @@ export class WorkflowEngine {
     }: {
       runId: string;
       resourceId?: string;
-      data: Partial<WorkflowRun>;
+      data: Partial<PersistedWorkflowRun>;
       expectedStatuses?: string[];
     },
     { db }: { db?: Db } = {},
-  ): Promise<WorkflowRun> {
+  ): Promise<PersistedWorkflowRun> {
     const run = await updateWorkflowRun(
       { runId, resourceId, data, expectedStatuses },
       db ?? this.db,
@@ -879,8 +1125,9 @@ export class WorkflowEngine {
   private async handleWorkflowRun([job]: JobWithMetadata<WorkflowRunJobParameters>[]) {
     const { runId = '', resourceId, workflowId = '', event } = job?.data ?? {};
 
-    let run: WorkflowRun | undefined;
+    let run: PersistedWorkflowRun | undefined;
     let scopedResourceId: string | undefined;
+    let blockedByConcurrency = false;
 
     try {
       if (!runId) {
@@ -966,6 +1213,11 @@ export class WorkflowEngine {
               (event.name === waitFor.eventName || event.name === waitFor.timeoutEvent) &&
               !hasCurrentStepOutput;
 
+            if (!(await this.canRunNow(lockedRun, db))) {
+              blockedByConcurrency = true;
+              return lockedRun;
+            }
+
             if (eventMatches) {
               const isTimeout = event?.name === waitFor?.timeoutEvent;
               const skipOutput = waitFor?.skipOutput;
@@ -976,6 +1228,7 @@ export class WorkflowEngine {
                   data: {
                     status: WorkflowStatus.RUNNING,
                     pausedAt: null,
+                    pauseReason: null,
                     resumedAt: new Date(),
                     jobId: job?.id,
                     ...(skipOutput
@@ -1002,6 +1255,7 @@ export class WorkflowEngine {
                 data: {
                   status: WorkflowStatus.RUNNING,
                   pausedAt: null,
+                  pauseReason: null,
                   resumedAt: new Date(),
                   jobId: job?.id,
                 },
@@ -1011,6 +1265,11 @@ export class WorkflowEngine {
           },
           this.pool,
         );
+
+        if (blockedByConcurrency) {
+          await this.requeueBlockedPausedRun(run, event);
+          return;
+        }
       }
 
       const baseStep = {
@@ -1166,6 +1425,7 @@ export class WorkflowEngine {
           },
         });
         await this.notifyParentOfChildTerminalRun(completedRun);
+        await this.promotePendingRuns(completedRun.workflowId);
 
         this.logger.log('Workflow run completed.', {
           runId,
@@ -1191,6 +1451,7 @@ export class WorkflowEngine {
           updatedRun.status === WorkflowStatus.CANCELLED
         ) {
           await this.notifyParentOfChildTerminalRun(updatedRun);
+          await this.promotePendingRuns(updatedRun.workflowId);
         }
       }
 
@@ -1221,6 +1482,7 @@ export class WorkflowEngine {
       },
     });
     await this.notifyParentOfChildTerminalRun(failedRun);
+    await this.promotePendingRuns(failedRun.workflowId);
 
     this.logger.log('Marked stuck workflow run as failed', {
       runId,
@@ -1413,6 +1675,7 @@ export class WorkflowEngine {
             stepId,
             eventName: getInvokeChildWorkflowEventName(existingChildRun.id),
             skipOutput: true,
+            pauseReason: PAUSE_REASON_INVOKE_CHILD_WORKFLOW,
             db,
           });
           childRunToEnqueue = existingChildRun;
@@ -1429,6 +1692,7 @@ export class WorkflowEngine {
           parentStepId: stepId,
           parentResourceId: run.resourceId ?? undefined,
           enqueue: false,
+          ignoreSingleton: true,
           db,
         });
         const childRun = result.run;
@@ -1486,6 +1750,7 @@ export class WorkflowEngine {
           stepId,
           eventName: getInvokeChildWorkflowEventName(childRun.id),
           skipOutput: true,
+          pauseReason: PAUSE_REASON_INVOKE_CHILD_WORKFLOW,
           db,
           timeline: merge(lockedRun.timeline, {
             [invokeChildWorkflowTimelineKey(stepId)]: {
@@ -1514,6 +1779,7 @@ export class WorkflowEngine {
         childRun: childRunToEnqueue,
         options,
       });
+      await this.promotePendingRuns(parentRunForRevert.workflowId);
     }
   }
 
@@ -1543,6 +1809,7 @@ export class WorkflowEngine {
           data: {
             status: WorkflowStatus.RUNNING,
             pausedAt: null,
+            pauseReason: null,
           },
           expectedStatuses: [WorkflowStatus.PAUSED],
         });
@@ -1572,6 +1839,7 @@ export class WorkflowEngine {
     eventName,
     timeoutEvent,
     skipOutput,
+    pauseReason,
     db,
     timeline,
   }: {
@@ -1580,6 +1848,7 @@ export class WorkflowEngine {
     eventName?: string;
     timeoutEvent?: string;
     skipOutput?: true;
+    pauseReason: string;
     db?: Db;
     timeline?: Record<string, unknown>;
   }) {
@@ -1597,6 +1866,7 @@ export class WorkflowEngine {
           status: WorkflowStatus.PAUSED,
           currentStepId: stepId,
           pausedAt: new Date(),
+          pauseReason,
           timeline: merge(baseTimeline, {
             [waitForTimelineKey(stepId)]: {
               waitFor,
@@ -1750,7 +2020,19 @@ export class WorkflowEngine {
           { runId: run.id, resourceId: run.resourceId ?? undefined },
           { exclusiveLock: true, db },
         );
-        return this.pauseRunForWait({ run: freshRun, stepId, eventName, timeoutEvent, db });
+        return this.pauseRunForWait({
+          run: freshRun,
+          stepId,
+          eventName,
+          timeoutEvent,
+          pauseReason:
+            eventName === PAUSE_EVENT_NAME
+              ? PAUSE_REASON_MANUAL
+              : timeoutDate
+                ? PAUSE_REASON_WAIT_UNTIL
+                : PAUSE_REASON_WAIT_FOR,
+          db,
+        });
       },
       this.pool,
     );
@@ -1774,11 +2056,13 @@ export class WorkflowEngine {
         await this.updateRun({
           runId: run.id,
           resourceId: run.resourceId ?? undefined,
-          data: { status: WorkflowStatus.RUNNING, pausedAt: null },
+          data: { status: WorkflowStatus.RUNNING, pausedAt: null, pauseReason: null },
         });
         throw error;
       }
     }
+
+    await this.promotePendingRuns(run.workflowId);
 
     this.logger.log(
       `Step ${stepId} waiting${eventName ? ` for event "${eventName}"` : ''}${timeoutDate ? ` until ${timeoutDate.toISOString()}` : ''}`,
@@ -1934,6 +2218,7 @@ export class WorkflowEngine {
               status: WorkflowStatus.PAUSED,
               currentStepId: stepId,
               pausedAt: new Date(),
+              pauseReason: PAUSE_REASON_POLL,
               timeline: merge(freshRun.timeline, {
                 [`${stepId}-poll`]: { startedAt: startedAt.toISOString() },
                 [waitForTimelineKey(stepId)]: {
@@ -1970,10 +2255,12 @@ export class WorkflowEngine {
       await this.updateRun({
         runId: run.id,
         resourceId: run.resourceId ?? undefined,
-        data: { status: WorkflowStatus.RUNNING, pausedAt: null },
+        data: { status: WorkflowStatus.RUNNING, pausedAt: null, pauseReason: null },
       });
       throw error;
     }
+
+    await this.promotePendingRuns(run.workflowId);
 
     this.logger.log(`Step ${stepId} polling every ${intervalMs}ms...`, {
       runId: run.id,

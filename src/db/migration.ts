@@ -5,7 +5,7 @@ export const MIGRATION_LOCK_ID = 738291645;
 
 // Bump this when adding new migrations. The engine stores the current version
 // in a `workflow_schema_version` table so migrations only run once per version.
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 export async function runMigrations(db: Db): Promise<void> {
   // Fast path: skip the advisory lock if schema is already current.
@@ -85,6 +85,32 @@ export async function runMigrations(db: Db): Promise<void> {
     commands.push(
       'ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS parent_resource_id varchar(256)',
     );
+  }
+
+  if (currentVersion < 5) {
+    commands.push(
+      'ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS concurrency_key varchar(256)',
+    );
+    commands.push('ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS concurrency_limit integer');
+    commands.push('ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS singleton_mode text');
+    commands.push('ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS pause_reason text');
+    commands.push(`
+      CREATE INDEX IF NOT EXISTS workflow_runs_workflow_id_pending_created_at_idx
+      ON workflow_runs USING btree (workflow_id, created_at ASC)
+      WHERE status = 'pending'
+    `);
+    commands.push(`
+      CREATE INDEX IF NOT EXISTS workflow_runs_workflow_id_concurrency_key_running_idx
+      ON workflow_runs USING btree (workflow_id, concurrency_key, created_at ASC)
+      WHERE status = 'running' AND concurrency_key IS NOT NULL
+    `);
+    commands.push(`
+      CREATE INDEX IF NOT EXISTS workflow_runs_singleton_lookup_idx
+      ON workflow_runs USING btree (workflow_id, concurrency_key, created_at ASC)
+      WHERE parent_run_id IS NULL
+        AND concurrency_key IS NOT NULL
+        AND status IN ('pending', 'running', 'paused')
+    `);
   }
 
   // Upsert the schema version

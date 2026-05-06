@@ -1,6 +1,6 @@
 import ksuid from 'ksuid';
 import type { Db } from 'pg-boss';
-import type { WorkflowRun } from './types';
+import type { PersistedWorkflowRun, WorkflowRun } from './types';
 
 export function generateKSUID(prefix?: string): string {
   return `${prefix ? `${prefix}_` : ''}${ksuid.randomSync().string}`;
@@ -26,12 +26,16 @@ type WorkflowRunRow = {
   max_retries: number;
   job_id: string | null;
   idempotency_key: string | null;
+  concurrency_key: string | null;
+  concurrency_limit: number | null;
+  singleton_mode: 'skip' | 'cancel' | null;
+  pause_reason: string | null;
   parent_run_id: string | null;
   parent_step_id: string | null;
   parent_resource_id: string | null;
 };
 
-function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
+function mapRowToWorkflowRun(row: WorkflowRunRow): PersistedWorkflowRun {
   return {
     id: row.id,
     createdAt: new Date(row.created_at),
@@ -57,6 +61,10 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
     maxRetries: row.max_retries,
     jobId: row.job_id,
     idempotencyKey: row.idempotency_key,
+    concurrencyKey: row.concurrency_key,
+    concurrencyLimit: row.concurrency_limit,
+    singletonMode: row.singleton_mode,
+    pauseReason: row.pause_reason,
     parentRunId: row.parent_run_id,
     parentStepId: row.parent_step_id,
     parentResourceId: row.parent_resource_id,
@@ -73,6 +81,10 @@ export async function insertWorkflowRun(
     maxRetries,
     timeoutAt,
     idempotencyKey,
+    concurrencyKey,
+    concurrencyLimit,
+    singletonMode,
+    pauseReason,
     parentRunId,
     parentStepId,
     parentResourceId,
@@ -85,6 +97,10 @@ export async function insertWorkflowRun(
     maxRetries: number;
     timeoutAt: Date | null;
     idempotencyKey?: string;
+    concurrencyKey?: string | null;
+    concurrencyLimit?: number | null;
+    singletonMode?: 'skip' | 'cancel' | null;
+    pauseReason?: string | null;
     parentRunId?: string;
     parentStepId?: string;
     parentResourceId?: string;
@@ -109,11 +125,15 @@ export async function insertWorkflowRun(
       timeline,
       retry_count,
       idempotency_key,
+      concurrency_key,
+      concurrency_limit,
+      singleton_mode,
+      pause_reason,
       parent_run_id,
       parent_step_id,
       parent_resource_id
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
     ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
     RETURNING *`,
     [
@@ -130,6 +150,10 @@ export async function insertWorkflowRun(
       '{}',
       0,
       idempotencyKey ?? null,
+      concurrencyKey ?? null,
+      concurrencyLimit ?? null,
+      singletonMode ?? null,
+      pauseReason ?? null,
       parentRunId ?? null,
       parentStepId ?? null,
       parentResourceId ?? null,
@@ -161,7 +185,7 @@ export async function getWorkflowRun(
     resourceId?: string;
   },
   { exclusiveLock = false, db }: { exclusiveLock?: boolean; db: Db },
-): Promise<WorkflowRun | null> {
+): Promise<PersistedWorkflowRun | null> {
   const lockSuffix = exclusiveLock ? 'FOR UPDATE' : '';
 
   const result = resourceId
@@ -196,11 +220,11 @@ export async function updateWorkflowRun(
   }: {
     runId: string;
     resourceId?: string;
-    data: Partial<WorkflowRun>;
+    data: Partial<PersistedWorkflowRun>;
     expectedStatuses?: string[];
   },
   db: Db,
-): Promise<WorkflowRun | null> {
+): Promise<PersistedWorkflowRun | null> {
   const now = new Date();
 
   const updates: string[] = ['updated_at = $1'];
@@ -255,6 +279,26 @@ export async function updateWorkflowRun(
   if (data.jobId !== undefined) {
     updates.push(`job_id = $${paramIndex}`);
     values.push(data.jobId);
+    paramIndex++;
+  }
+  if (data.concurrencyKey !== undefined) {
+    updates.push(`concurrency_key = $${paramIndex}`);
+    values.push(data.concurrencyKey);
+    paramIndex++;
+  }
+  if (data.concurrencyLimit !== undefined) {
+    updates.push(`concurrency_limit = $${paramIndex}`);
+    values.push(data.concurrencyLimit);
+    paramIndex++;
+  }
+  if (data.singletonMode !== undefined) {
+    updates.push(`singleton_mode = $${paramIndex}`);
+    values.push(data.singletonMode);
+    paramIndex++;
+  }
+  if (data.pauseReason !== undefined) {
+    updates.push(`pause_reason = $${paramIndex}`);
+    values.push(data.pauseReason);
     paramIndex++;
   }
 
@@ -315,7 +359,7 @@ export async function getWorkflowRuns(
   },
   db: Db,
 ): Promise<{
-  items: WorkflowRun[];
+  items: PersistedWorkflowRun[];
   nextCursor: string | null;
   prevCursor: string | null;
   hasMore: boolean;
@@ -408,6 +452,105 @@ export async function getWorkflowRuns(
   const prevCursor = hasPrev && items.length > 0 ? (items[0]?.id ?? null) : null;
 
   return { items, nextCursor, prevCursor, hasMore, hasPrev };
+}
+
+export async function getWorkflowRunByIdempotencyKey(
+  idempotencyKey: string,
+  db: Db,
+): Promise<PersistedWorkflowRun | null> {
+  const result = await db.executeSql('SELECT * FROM workflow_runs WHERE idempotency_key = $1', [
+    idempotencyKey,
+  ]);
+
+  return result.rows[0] ? mapRowToWorkflowRun(result.rows[0]) : null;
+}
+
+function hashLockKey(value: string): number {
+  let hash = 2166136261;
+
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash | 0;
+}
+
+export async function acquireWorkflowAdmissionLock(workflowId: string, db: Db): Promise<void> {
+  await db.executeSql('SELECT pg_advisory_xact_lock($1, $2)', [9182, hashLockKey(workflowId)]);
+}
+
+export async function acquireIdempotencyKeyLock(idempotencyKey: string, db: Db): Promise<void> {
+  await db.executeSql('SELECT pg_advisory_xact_lock($1, $2)', [9183, hashLockKey(idempotencyKey)]);
+}
+
+export async function countRunningWorkflowRunsByConcurrencyKey(
+  { workflowId, concurrencyKey }: { workflowId: string; concurrencyKey: string },
+  db: Db,
+): Promise<number> {
+  const result = await db.executeSql(
+    `SELECT COUNT(*)::int AS count
+     FROM workflow_runs
+     WHERE workflow_id = $1
+       AND status = 'running'
+       AND concurrency_key = $2`,
+    [workflowId, concurrencyKey],
+  );
+
+  return ((result.rows[0] as { count: number } | undefined)?.count ?? 0) as number;
+}
+
+export async function findOldestConflictingSingletonRun(
+  { workflowId, concurrencyKey }: { workflowId: string; concurrencyKey: string },
+  db: Db,
+): Promise<PersistedWorkflowRun | null> {
+  const result = await db.executeSql(
+    `SELECT *
+     FROM workflow_runs
+     WHERE workflow_id = $1
+       AND concurrency_key = $2
+       AND parent_run_id IS NULL
+       AND status = ANY($3)
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [workflowId, concurrencyKey, ['pending', 'running', 'paused']],
+  );
+
+  return result.rows[0] ? mapRowToWorkflowRun(result.rows[0]) : null;
+}
+
+export async function cancelConflictingSingletonRuns(
+  { workflowId, concurrencyKey }: { workflowId: string; concurrencyKey: string },
+  db: Db,
+): Promise<PersistedWorkflowRun[]> {
+  const result = await db.executeSql(
+    `UPDATE workflow_runs
+     SET status = 'cancelled', updated_at = $3, pause_reason = NULL
+     WHERE workflow_id = $1
+       AND concurrency_key = $2
+       AND parent_run_id IS NULL
+       AND status = ANY($4)
+     RETURNING *`,
+    [workflowId, concurrencyKey, new Date(), ['pending', 'running', 'paused']],
+  );
+
+  return result.rows.map((row) => mapRowToWorkflowRun(row));
+}
+
+export async function getPendingWorkflowRunsByWorkflowId(
+  workflowId: string,
+  db: Db,
+): Promise<PersistedWorkflowRun[]> {
+  const result = await db.executeSql(
+    `SELECT *
+     FROM workflow_runs
+     WHERE workflow_id = $1
+       AND status = 'pending'
+     ORDER BY created_at ASC`,
+    [workflowId],
+  );
+
+  return result.rows.map((row) => mapRowToWorkflowRun(row));
 }
 
 /**

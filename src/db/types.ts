@@ -18,7 +18,14 @@ export type WorkflowRun = {
   maxRetries: number;
   jobId: string | null;
   idempotencyKey: string | null;
+  concurrencyKey: string | null;
+  pauseReason: string | null;
   parentRunId: string | null;
   parentStepId: string | null;
   parentResourceId: string | null;
+};
+
+export type PersistedWorkflowRun = WorkflowRun & {
+  concurrencyLimit: number | null;
+  singletonMode: 'skip' | 'cancel' | null;
 };

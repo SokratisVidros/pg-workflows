@@ -168,6 +168,102 @@ const again = await engine.startWorkflow({
 
 The returned `WorkflowRun` includes `idempotencyKey` (or `null` if omitted).
 
+## Flow Control
+
+Workflow definitions can opt into flow control with `flowControl`. v1 supports two mutually exclusive modes:
+
+- `concurrency` limits how many runs for a derived key may actively execute at the same time
+- `singleton` ensures only one non-terminal run exists for a derived key
+
+```typescript
+const syncAccount = workflow(
+  'sync-account',
+  async ({ step, input }) => {
+    return await step.run('sync', async () => {
+      return await syncExternalAccount(input.accountId)
+    })
+  },
+  {
+    inputSchema: z.object({
+      accountId: z.string(),
+      tenantId: z.string(),
+    }),
+    flowControl: {
+      concurrency: (input) => ({
+        key: input.tenantId,
+        limit: 5,
+      }),
+    },
+  },
+)
+```
+
+### Concurrency
+
+Concurrency only counts runs while they are actively executing in `running`. If the limit for a key is full, new runs are inserted as `pending` and promoted later when a slot opens.
+
+- Leaving `running` releases capacity immediately, including transitions to `paused`
+- Pending promotion is FIFO by `created_at`, but one blocked key does not prevent other keys from being promoted
+- To create workflow-wide concurrency, return a constant key such as `() => ({ key: '__workflow__', limit: 10 })`
+
+The returned `WorkflowRun` includes the resolved `concurrencyKey`, or `null` when no flow control is configured.
+
+### Singleton
+
+Singleton governs the whole run, not just active execution. It treats `pending`, `running`, and `paused` runs as conflicting for the same `(workflowId, key)`.
+
+```typescript
+const sendDigest = workflow(
+  'send-digest',
+  async ({ step, input }) => {
+    return await step.run('send', async () => {
+      return await emailDigest(input.userId)
+    })
+  },
+  {
+    inputSchema: z.object({ userId: z.string() }),
+    flowControl: {
+      singleton: (input) => ({
+        key: input.userId,
+        mode: 'skip',
+      }),
+    },
+  },
+)
+```
+
+- `mode: 'skip'` returns the oldest conflicting non-terminal run and does not create a new one
+- `mode: 'cancel'` cancels existing conflicting runs for the key, then creates the new run
+
+### Flow Control vs Idempotency
+
+`idempotencyKey` and `flowControl` solve different problems:
+
+- `idempotencyKey` is global deduplication for repeated start requests and returns the exact same stored run forever
+- `concurrency` queues excess runs until capacity is available
+- `singleton` controls whether keyed runs are skipped or replaced while an older run is still in progress
+
+If both are used, idempotency is evaluated first.
+
+### Client Limitation
+
+Callback-based flow control is available when starting workflows from a shared `WorkflowRef` because the ref carries the resolver:
+
+```typescript
+await client.startWorkflow(myWorkflowRef, { tenantId: 't_123' })
+```
+
+The raw client overload does not evaluate `flowControl` callbacks because it only knows the workflow ID:
+
+```typescript
+await client.startWorkflow({
+  workflowId: 'sync-account',
+  input: { tenantId: 't_123' },
+})
+```
+
+In microservice setups, share `WorkflowRef`s between API and worker services if you need flow control outside the engine process.
+
 ## Pause and Resume
 
 Manually pause a workflow and resume it later:

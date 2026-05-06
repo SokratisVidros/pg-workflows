@@ -55,7 +55,7 @@ describe('Migration advisory lock (real PostgreSQL)', () => {
 
     // Verify the final schema state is correct
     const versionResult = await pool.query('SELECT version FROM workflow_schema_version LIMIT 1');
-    expect(versionResult.rows[0].version).toBe(4);
+    expect(versionResult.rows[0].version).toBe(5);
 
     const tableExists = await pool.query(`
       SELECT EXISTS (
@@ -73,12 +73,26 @@ describe('Migration advisory lock (real PostgreSQL)', () => {
           AND table_name = 'workflow_runs'
           AND column_name = ANY($1)
       `,
-      [['parent_run_id', 'parent_step_id', 'parent_resource_id']],
+      [
+        [
+          'parent_run_id',
+          'parent_step_id',
+          'parent_resource_id',
+          'concurrency_key',
+          'concurrency_limit',
+          'singleton_mode',
+          'pause_reason',
+        ],
+      ],
     );
     expect(parentColumnResult.rows.map((row) => row.column_name).sort()).toEqual([
+      'concurrency_key',
+      'concurrency_limit',
       'parent_resource_id',
       'parent_run_id',
       'parent_step_id',
+      'pause_reason',
+      'singleton_mode',
     ]);
   });
 

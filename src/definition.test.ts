@@ -1,6 +1,6 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { z } from 'zod';
-import { workflow } from './definition';
+import { createWorkflowRef, workflow } from './definition';
 import type { StepBaseContext, WorkflowPlugin } from './types';
 
 describe('workflow definition type safety', () => {
@@ -127,6 +127,51 @@ describe('workflow definition type safety', () => {
         },
         { inputSchema: z.object({ action: z.enum(['create', 'delete']) }) },
       );
+    });
+  });
+
+  describe('flowControl', () => {
+    it('infers input type inside flowControl resolvers', () => {
+      workflow(
+        'flow-typed',
+        async () => {
+          return {};
+        },
+        {
+          inputSchema: z.object({ userId: z.string(), teamId: z.string().optional() }),
+          flowControl: {
+            concurrency: (input) => {
+              expectTypeOf(input.userId).toEqualTypeOf<string>();
+              expectTypeOf(input.teamId).toEqualTypeOf<string | undefined>();
+              return { key: input.userId, limit: 1 };
+            },
+          },
+        },
+      );
+    });
+
+    it('throws when concurrency and singleton are both defined on a workflow', () => {
+      expect(() =>
+        workflow('invalid-flow-control', async () => ({}), {
+          inputSchema: z.object({ userId: z.string() }),
+          flowControl: {
+            concurrency: (input) => ({ key: input.userId, limit: 1 }),
+            singleton: (input) => ({ key: input.userId, mode: 'skip' }),
+          },
+        }),
+      ).toThrow(/cannot define both/);
+    });
+
+    it('throws when concurrency and singleton are both defined on a workflow ref', () => {
+      expect(() =>
+        createWorkflowRef('invalid-flow-ref', {
+          inputSchema: z.object({ userId: z.string() }),
+          flowControl: {
+            concurrency: (input) => ({ key: input.userId, limit: 1 }),
+            singleton: (input) => ({ key: input.userId, mode: 'cancel' }),
+          },
+        }),
+      ).toThrow(/cannot define both/);
     });
   });
 });

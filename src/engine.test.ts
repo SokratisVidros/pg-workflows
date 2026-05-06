@@ -3,7 +3,11 @@ import type { PgBoss } from 'pg-boss';
 import * as v from 'valibot';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { WORKFLOW_RUN_DLQ_QUEUE_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constants';
+import {
+  WORKFLOW_RUN_DLQ_QUEUE_NAME,
+  WORKFLOW_RUN_QUEUE_NAME,
+  waitForTimelineKey,
+} from './constants';
 import type { WorkflowRun } from './db/types';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
@@ -3155,6 +3159,444 @@ describe('WorkflowEngine', () => {
             'step-2': { output: { prev: {} } },
           },
         });
+    });
+  });
+
+  describe('flow control', () => {
+    let engine: WorkflowEngine;
+
+    beforeEach(async () => {
+      engine = new WorkflowEngine({
+        workflows: [testWorkflow],
+        pool: testPool,
+        boss: testBoss,
+      });
+    });
+
+    afterEach(async () => {
+      await engine.stop();
+    });
+
+    it('queues and promotes concurrency-limited runs on cancellation', async () => {
+      const workflowId = 'flow-concurrency-cancel-promotion';
+      const scopedResourceId = workflowId;
+      const flowWorkflow = workflow(
+        workflowId,
+        async ({ step }) => {
+          await step.run('step-1', async () => 'ok');
+          return { ok: true };
+        },
+        {
+          flowControl: {
+            concurrency: () => ({ key: '__workflow__', limit: 1 }),
+          },
+        },
+      );
+
+      await engine.start(false);
+      await engine.registerWorkflow(flowWorkflow);
+
+      const run1 = await engine.startWorkflow({
+        resourceId: scopedResourceId,
+        workflowId,
+        input: {},
+      });
+      const run2 = await engine.startWorkflow({
+        resourceId: scopedResourceId,
+        workflowId,
+        input: {},
+      });
+
+      expect((await engine.getRun({ runId: run1.id, resourceId: scopedResourceId })).status).toBe(
+        WorkflowStatus.RUNNING,
+      );
+      expect((await engine.getRun({ runId: run2.id, resourceId: scopedResourceId })).status).toBe(
+        WorkflowStatus.PENDING,
+      );
+
+      await engine.cancelWorkflow({
+        runId: run1.id,
+        resourceId: scopedResourceId,
+      });
+
+      await expect
+        .poll(
+          async () =>
+            (await engine.getRun({ runId: run2.id, resourceId: scopedResourceId })).status,
+        )
+        .toBe(WorkflowStatus.RUNNING);
+    });
+
+    it('releases concurrency slots when a run is paused manually', async () => {
+      const workflowId = 'flow-concurrency-pause-promotion';
+      const scopedResourceId = workflowId;
+      const flowWorkflow = workflow(
+        workflowId,
+        async ({ step }) => {
+          await step.run('step-1', async () => 'ok');
+          return { ok: true };
+        },
+        {
+          flowControl: {
+            concurrency: () => ({ key: '__workflow__', limit: 1 }),
+          },
+        },
+      );
+
+      await engine.start(false);
+      await engine.registerWorkflow(flowWorkflow);
+
+      const run1 = await engine.startWorkflow({
+        resourceId: scopedResourceId,
+        workflowId,
+        input: {},
+      });
+      const run2 = await engine.startWorkflow({
+        resourceId: scopedResourceId,
+        workflowId,
+        input: {},
+      });
+
+      expect((await engine.getRun({ runId: run2.id, resourceId: scopedResourceId })).status).toBe(
+        WorkflowStatus.PENDING,
+      );
+
+      await engine.pauseWorkflow({
+        runId: run1.id,
+        resourceId: scopedResourceId,
+      });
+
+      await expect
+        .poll(
+          async () =>
+            (await engine.getRun({ runId: run2.id, resourceId: scopedResourceId })).status,
+        )
+        .toBe(WorkflowStatus.RUNNING);
+    });
+
+    it('does not head-of-line block a different concurrency key', async () => {
+      const workflowId = 'flow-concurrency-distinct-keys';
+      const scopedResourceId = workflowId;
+      const flowWorkflow = workflow(
+        workflowId,
+        async ({ step }) => {
+          await step.run('step-1', async () => 'ok');
+          return { ok: true };
+        },
+        {
+          inputSchema: z.object({ group: z.string() }),
+          flowControl: {
+            concurrency: (input) => ({ key: input.group, limit: 1 }),
+          },
+        },
+      );
+
+      await engine.start(false);
+      await engine.registerWorkflow(flowWorkflow);
+
+      const runA1 = await engine.startWorkflow({
+        resourceId: scopedResourceId,
+        workflowId,
+        input: { group: 'a' },
+      });
+      const runA2 = await engine.startWorkflow({
+        resourceId: scopedResourceId,
+        workflowId,
+        input: { group: 'a' },
+      });
+      const runB1 = await engine.startWorkflow({
+        resourceId: scopedResourceId,
+        workflowId,
+        input: { group: 'b' },
+      });
+
+      expect((await engine.getRun({ runId: runA1.id, resourceId: scopedResourceId })).status).toBe(
+        WorkflowStatus.RUNNING,
+      );
+      expect((await engine.getRun({ runId: runA2.id, resourceId: scopedResourceId })).status).toBe(
+        WorkflowStatus.PENDING,
+      );
+      expect((await engine.getRun({ runId: runB1.id, resourceId: scopedResourceId })).status).toBe(
+        WorkflowStatus.RUNNING,
+      );
+    });
+
+    it('returns the existing run for singleton skip and replaces it for singleton cancel', async () => {
+      const skipWorkflowId = 'flow-singleton-skip';
+      const cancelWorkflowId = 'flow-singleton-cancel';
+      const skipWorkflow = workflow(
+        skipWorkflowId,
+        async ({ step }) => {
+          await step.run('step-1', async () => 'ok');
+          return { ok: true };
+        },
+        {
+          inputSchema: z.object({ userId: z.string() }),
+          flowControl: {
+            singleton: (input) => ({ key: input.userId, mode: 'skip' }),
+          },
+        },
+      );
+      const cancelFlowWorkflow = workflow(
+        cancelWorkflowId,
+        async ({ step }) => {
+          await step.run('step-1', async () => 'ok');
+          return { ok: true };
+        },
+        {
+          inputSchema: z.object({ userId: z.string() }),
+          flowControl: {
+            singleton: (input) => ({ key: input.userId, mode: 'cancel' }),
+          },
+        },
+      );
+
+      await engine.start(false);
+      await engine.registerWorkflow(skipWorkflow);
+      await engine.registerWorkflow(cancelFlowWorkflow);
+
+      const skipped1 = await engine.startWorkflow({
+        resourceId: skipWorkflowId,
+        workflowId: skipWorkflowId,
+        input: { userId: 'user-1' },
+      });
+      const skipped2 = await engine.startWorkflow({
+        resourceId: skipWorkflowId,
+        workflowId: skipWorkflowId,
+        input: { userId: 'user-1' },
+      });
+
+      expect(skipped1.id).toBe(skipped2.id);
+
+      const cancelled1 = await engine.startWorkflow({
+        resourceId: cancelWorkflowId,
+        workflowId: cancelWorkflowId,
+        input: { userId: 'user-1' },
+      });
+      const cancelled2 = await engine.startWorkflow({
+        resourceId: cancelWorkflowId,
+        workflowId: cancelWorkflowId,
+        input: { userId: 'user-1' },
+      });
+
+      expect(cancelled1.id).not.toBe(cancelled2.id);
+      expect(
+        (await engine.getRun({ runId: cancelled1.id, resourceId: cancelWorkflowId })).status,
+      ).toBe(WorkflowStatus.CANCELLED);
+      expect(
+        (await engine.getRun({ runId: cancelled2.id, resourceId: cancelWorkflowId })).status,
+      ).toBe(WorkflowStatus.RUNNING);
+    });
+
+    it('keeps a paused wakeup blocked until capacity is available', async () => {
+      const workflowId = 'flow-concurrency-resume-requeue';
+      const scopedResourceId = workflowId;
+      const flowWorkflow = workflow(
+        workflowId,
+        async ({ step }) => {
+          await step.waitFor('gate', { eventName: 'go' });
+          await step.run('work', async () => {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            return 'done';
+          });
+          return { ok: true };
+        },
+        {
+          flowControl: {
+            concurrency: () => ({ key: '__workflow__', limit: 1 }),
+          },
+        },
+      );
+
+      await engine.start(false);
+      await engine.registerWorkflow(flowWorkflow);
+
+      const run1 = await engine.startWorkflow({
+        resourceId: scopedResourceId,
+        workflowId,
+        input: {},
+      });
+      const run2 = await engine.startWorkflow({
+        resourceId: scopedResourceId,
+        workflowId,
+        input: {},
+      });
+
+      const waitTimeline = {
+        [waitForTimelineKey('gate')]: {
+          waitFor: { eventName: 'go' },
+          timestamp: new Date(),
+        },
+      };
+
+      await engine.updateRun({
+        runId: run1.id,
+        resourceId: scopedResourceId,
+        data: {
+          status: WorkflowStatus.PAUSED,
+          currentStepId: 'gate',
+          pausedAt: new Date(),
+          pauseReason: 'waitFor',
+          timeline: waitTimeline,
+        },
+      });
+      await engine.updateRun({
+        runId: run2.id,
+        resourceId: scopedResourceId,
+        data: {
+          status: WorkflowStatus.PAUSED,
+          currentStepId: 'gate',
+          pausedAt: new Date(),
+          pauseReason: 'waitFor',
+          timeline: waitTimeline,
+        },
+      });
+
+      const run1Wake = (
+        engine as unknown as { handleWorkflowRun: (jobs: unknown[]) => Promise<void> }
+      ).handleWorkflowRun([
+        {
+          data: {
+            runId: run1.id,
+            resourceId: scopedResourceId,
+            workflowId,
+            event: { name: 'go', data: {} },
+          },
+        },
+      ]);
+
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      await (
+        engine as unknown as { handleWorkflowRun: (jobs: unknown[]) => Promise<void> }
+      ).handleWorkflowRun([
+        {
+          data: {
+            runId: run2.id,
+            resourceId: scopedResourceId,
+            workflowId,
+            event: { name: 'go', data: {} },
+          },
+        },
+      ]);
+
+      expect((await engine.getRun({ runId: run2.id, resourceId: scopedResourceId })).status).toBe(
+        WorkflowStatus.PAUSED,
+      );
+
+      await run1Wake;
+
+      await expect
+        .poll(
+          async () =>
+            (await engine.getRun({ runId: run1.id, resourceId: scopedResourceId })).status,
+          {
+            timeout: 10_000,
+          },
+        )
+        .toBe(WorkflowStatus.COMPLETED);
+
+      await (
+        engine as unknown as { handleWorkflowRun: (jobs: unknown[]) => Promise<void> }
+      ).handleWorkflowRun([
+        {
+          data: {
+            runId: run2.id,
+            resourceId: scopedResourceId,
+            workflowId,
+            event: { name: 'go', data: {} },
+          },
+        },
+      ]);
+
+      await expect
+        .poll(
+          async () =>
+            (await engine.getRun({ runId: run2.id, resourceId: scopedResourceId })).status,
+          {
+            timeout: 10_000,
+          },
+        )
+        .toBe(WorkflowStatus.COMPLETED);
+    });
+
+    it('does not apply singleton dedup across invokeChildWorkflow parents', async () => {
+      const childWorkflowId = 'flow-child-singleton-ignore';
+      const parentWorkflowId = 'flow-parent-singleton-ignore';
+      const scopedResourceId = parentWorkflowId;
+      const childWorkflow = workflow(
+        childWorkflowId,
+        async ({ step }) => {
+          await step.waitFor('gate', { eventName: 'child-ready' });
+          return { ok: true };
+        },
+        {
+          inputSchema: z.object({ userId: z.string() }),
+          flowControl: {
+            singleton: (input) => ({ key: input.userId, mode: 'skip' }),
+          },
+        },
+      );
+      const parentWorkflow = workflow(
+        parentWorkflowId,
+        async ({ step, input }) => {
+          await step.invokeChildWorkflow('child', {
+            workflowId: childWorkflowId,
+            input: { userId: input.userId },
+          });
+          return { ok: true };
+        },
+        {
+          inputSchema: z.object({ userId: z.string() }),
+        },
+      );
+
+      await engine.start(false);
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const parentRun1 = await engine.startWorkflow({
+        resourceId: scopedResourceId,
+        workflowId: parentWorkflowId,
+        input: { userId: 'user-1' },
+      });
+      const parentRun2 = await engine.startWorkflow({
+        resourceId: scopedResourceId,
+        workflowId: parentWorkflowId,
+        input: { userId: 'user-1' },
+      });
+
+      const invokeParent = engine as unknown as {
+        handleWorkflowRun: (jobs: unknown[]) => Promise<void>;
+      };
+
+      await invokeParent.handleWorkflowRun([
+        {
+          data: {
+            runId: parentRun1.id,
+            resourceId: scopedResourceId,
+            workflowId: parentWorkflowId,
+          },
+        },
+      ]);
+      await invokeParent.handleWorkflowRun([
+        {
+          data: {
+            runId: parentRun2.id,
+            resourceId: scopedResourceId,
+            workflowId: parentWorkflowId,
+          },
+        },
+      ]);
+
+      expect(
+        (
+          await engine.getRuns({
+            resourceId: scopedResourceId,
+            workflowId: childWorkflowId,
+          })
+        ).items.length,
+      ).toBe(2);
     });
   });
 });

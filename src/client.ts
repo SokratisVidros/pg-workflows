@@ -11,19 +11,27 @@ import {
 } from './constants';
 import { runMigrations } from './db/migration';
 import {
+  acquireIdempotencyKeyLock,
+  acquireWorkflowAdmissionLock,
+  cancelConflictingSingletonRuns,
+  countRunningWorkflowRunsByConcurrencyKey,
+  findOldestConflictingSingletonRun,
+  getPendingWorkflowRunsByWorkflowId,
   getWorkflowRun,
+  getWorkflowRunByIdempotencyKey,
   getWorkflowRuns,
   insertWorkflowRun,
   updateWorkflowRun,
   withPostgresTransaction,
 } from './db/queries';
-import type { WorkflowRun } from './db/types';
+import type { PersistedWorkflowRun, WorkflowRun } from './db/types';
 import {
   validateResourceId,
   validateWorkflowId,
   WorkflowEngineError,
   WorkflowRunNotFoundError,
 } from './error';
+import { type ResolvedFlowControl, resolveFlowControl } from './flow-control';
 import {
   type InferInputParameters,
   type InputParameters,
@@ -68,6 +76,8 @@ const defaultLogger: WorkflowLogger = {
 const defaultExpireInSeconds = process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS
   ? Number.parseInt(process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS, 10)
   : 5 * 60;
+
+const PAUSE_REASON_MANUAL = 'manual';
 
 export class WorkflowClient {
   private boss: PgBoss;
@@ -127,6 +137,100 @@ export class WorkflowClient {
     this.logger.log(`${LOG_PREFIX} Client stopped`);
   }
 
+  private async enqueueWorkflowRun(
+    run: PersistedWorkflowRun,
+    options?: { expireInSeconds?: number },
+    db?: Db,
+  ) {
+    const job: WorkflowRunJobParameters = {
+      runId: run.id,
+      resourceId: run.resourceId ?? undefined,
+      workflowId: run.workflowId,
+      input: run.input,
+    };
+
+    await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
+      startAfter: new Date(),
+      expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
+      db,
+    });
+  }
+
+  private async promotePendingRuns(
+    workflowId: string,
+    options?: { expireInSeconds?: number },
+  ): Promise<void> {
+    await withPostgresTransaction(
+      this.db,
+      async (db) => {
+        await acquireWorkflowAdmissionLock(workflowId, db);
+
+        const pendingRuns = await getPendingWorkflowRunsByWorkflowId(workflowId, db);
+        const runningCounts = new Map<string, number>();
+
+        for (const pendingRun of pendingRuns) {
+          if (!pendingRun.concurrencyKey || !pendingRun.concurrencyLimit) {
+            const promoted = await updateWorkflowRun(
+              {
+                runId: pendingRun.id,
+                resourceId: pendingRun.resourceId ?? undefined,
+                data: {
+                  status: WorkflowStatus.RUNNING,
+                  pausedAt: null,
+                  pauseReason: null,
+                },
+                expectedStatuses: [WorkflowStatus.PENDING],
+              },
+              db,
+            );
+
+            if (promoted) {
+              await this.enqueueWorkflowRun(promoted, options, db);
+            }
+            continue;
+          }
+
+          const currentCount =
+            runningCounts.get(pendingRun.concurrencyKey) ??
+            (await countRunningWorkflowRunsByConcurrencyKey(
+              {
+                workflowId,
+                concurrencyKey: pendingRun.concurrencyKey,
+              },
+              db,
+            ));
+
+          if (currentCount >= pendingRun.concurrencyLimit) {
+            runningCounts.set(pendingRun.concurrencyKey, currentCount);
+            continue;
+          }
+
+          const promoted = await updateWorkflowRun(
+            {
+              runId: pendingRun.id,
+              resourceId: pendingRun.resourceId ?? undefined,
+              data: {
+                status: WorkflowStatus.RUNNING,
+                pausedAt: null,
+                pauseReason: null,
+              },
+              expectedStatuses: [WorkflowStatus.PENDING],
+            },
+            db,
+          );
+
+          if (!promoted) {
+            continue;
+          }
+
+          runningCounts.set(pendingRun.concurrencyKey, currentCount + 1);
+          await this.enqueueWorkflowRun(promoted, options, db);
+        }
+      },
+      this.pool,
+    );
+  }
+
   async startWorkflow<TInput extends InputParameters>(
     ref: WorkflowRef<TInput>,
     input: InferInputParameters<TInput>,
@@ -161,6 +265,7 @@ export class WorkflowClient {
     let resourceId: string | undefined;
     let idempotencyKey: string | undefined;
     let options: StartWorkflowOptions | undefined;
+    let resolvedFlowControl: ResolvedFlowControl | null = null;
 
     if (typeof refOrParams === 'function' && 'id' in refOrParams) {
       const ref = refOrParams as WorkflowRef<TInput>;
@@ -182,6 +287,11 @@ export class WorkflowClient {
           );
         }
       }
+
+      resolvedFlowControl = resolveFlowControl(
+        ref.flowControl,
+        inputArg as InferInputParameters<TInput>,
+      );
     } else {
       const params = refOrParams as {
         workflowId: string;
@@ -205,37 +315,76 @@ export class WorkflowClient {
       async (_db) => {
         const timeoutAt = options?.timeout ? new Date(Date.now() + options.timeout) : null;
 
+        if (idempotencyKey) {
+          await acquireIdempotencyKeyLock(idempotencyKey, _db);
+          const existingByIdempotency = await getWorkflowRunByIdempotencyKey(idempotencyKey, _db);
+          if (existingByIdempotency) {
+            return existingByIdempotency;
+          }
+        }
+
+        await acquireWorkflowAdmissionLock(workflowId, _db);
+
+        if (resolvedFlowControl?.type === 'singleton') {
+          const existingSingleton = await findOldestConflictingSingletonRun(
+            {
+              workflowId,
+              concurrencyKey: resolvedFlowControl.concurrencyKey,
+            },
+            _db,
+          );
+
+          if (existingSingleton) {
+            if (resolvedFlowControl.singletonMode === 'skip') {
+              return existingSingleton;
+            }
+
+            await cancelConflictingSingletonRuns(
+              {
+                workflowId,
+                concurrencyKey: resolvedFlowControl.concurrencyKey,
+              },
+              _db,
+            );
+          }
+        }
+
+        const isConcurrencyLimited = resolvedFlowControl?.type === 'concurrency';
+        const status =
+          isConcurrencyLimited &&
+          (await countRunningWorkflowRunsByConcurrencyKey(
+            {
+              workflowId,
+              concurrencyKey: resolvedFlowControl.concurrencyKey,
+            },
+            _db,
+          )) >= resolvedFlowControl.concurrencyLimit
+            ? WorkflowStatus.PENDING
+            : WorkflowStatus.RUNNING;
+
         const { run: insertedRun, created } = await insertWorkflowRun(
           {
             resourceId,
             workflowId,
             currentStepId: '__start__',
-            status: WorkflowStatus.RUNNING,
+            status,
             input,
             maxRetries: options?.retries ?? 0,
             timeoutAt,
             idempotencyKey,
+            concurrencyKey: resolvedFlowControl?.concurrencyKey ?? null,
+            concurrencyLimit:
+              resolvedFlowControl?.type === 'concurrency'
+                ? resolvedFlowControl.concurrencyLimit
+                : null,
+            singletonMode:
+              resolvedFlowControl?.type === 'singleton' ? resolvedFlowControl.singletonMode : null,
           },
           _db,
         );
 
-        if (created) {
-          const job: WorkflowRunJobParameters = {
-            runId: insertedRun.id,
-            resourceId,
-            workflowId,
-            input,
-          };
-
-          // Same connection (`_db`) used for the workflow_runs INSERT is passed
-          // to `boss.send` so the pgboss.job INSERT joins the same transaction.
-          // The two writes commit or roll back together, so we never leak an
-          // orphan workflow_runs row when the queue insert fails.
-          await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
-            startAfter: new Date(),
-            expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
-            db: _db,
-          });
+        if (created && insertedRun.status === WorkflowStatus.RUNNING) {
+          await this.enqueueWorkflowRun(insertedRun, options, _db);
         }
 
         return insertedRun;
@@ -300,6 +449,7 @@ export class WorkflowClient {
         data: {
           status: WorkflowStatus.PAUSED,
           pausedAt: new Date(),
+          pauseReason: PAUSE_REASON_MANUAL,
         },
         expectedStatuses: [WorkflowStatus.RUNNING, WorkflowStatus.PENDING],
       },
@@ -309,6 +459,8 @@ export class WorkflowClient {
     if (!run) {
       throw new WorkflowRunNotFoundError(runId);
     }
+
+    await this.promotePendingRuns(run.workflowId);
 
     this.logger.log(`${LOG_PREFIX} Paused workflow run ${runId}`);
     return run;
@@ -444,6 +596,7 @@ export class WorkflowClient {
         resourceId,
         data: {
           status: WorkflowStatus.CANCELLED,
+          pauseReason: null,
         },
         expectedStatuses: [WorkflowStatus.PENDING, WorkflowStatus.RUNNING, WorkflowStatus.PAUSED],
       },
@@ -453,6 +606,8 @@ export class WorkflowClient {
     if (!run) {
       throw new WorkflowRunNotFoundError(runId);
     }
+
+    await this.promotePendingRuns(run.workflowId);
 
     this.logger.log(`${LOG_PREFIX} Cancelled workflow run ${runId}`);
     return run;
