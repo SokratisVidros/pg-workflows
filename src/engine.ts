@@ -473,28 +473,22 @@ export class WorkflowEngine {
         targetDb,
       );
 
-    const { run, created } = db
-      ? await insertRun(db)
-      : await withPostgresTransaction(
-          this.boss.getDb(),
-          async (transactionDb) => {
-            const result = await insertRun(transactionDb);
-            if (enqueue && result.created) {
-              // Pipe the same transaction connection through pg-boss so the
-              // INSERT into workflow_runs and the INSERT into pgboss.job
-              // commit (or roll back) together. If `boss.send` throws, the
-              // workflow_runs row is rolled back too, so we never end up with
-              // an orphan run that has no job, or a job that points at no run.
-              await this.enqueueWorkflowRun(result.run, options, transactionDb);
-            }
-            return result;
-          },
-          this.pool,
-        );
+    // Pipe the same transaction connection through pg-boss so the
+    // INSERT into workflow_runs and the INSERT into pgboss.job
+    // commit (or roll back) together. If `boss.send` throws, the
+    // workflow_runs row is rolled back too, so we never end up with
+    // an orphan run that has no job, or a job that points at no run.
+    const insertAndEnqueue = async (targetDb: Db) => {
+      const result = await insertRun(targetDb);
+      if (enqueue && result.created) {
+        await this.enqueueWorkflowRun(result.run, options, targetDb);
+      }
+      return result;
+    };
 
-    if (db && enqueue && created) {
-      await this.enqueueWorkflowRun(run, options);
-    }
+    const { run, created } = db
+      ? await insertAndEnqueue(db)
+      : await withPostgresTransaction(this.boss.getDb(), insertAndEnqueue, this.pool);
 
     return { run, created };
   }
@@ -1315,11 +1309,10 @@ export class WorkflowEngine {
   // and can never overwrite a status another worker just wrote (e.g. a
   // concurrent invoke-completion event flipping the parent to COMPLETED).
   //
-  // The child enqueue is intentionally moved OUT of the transaction so we don't
-  // dispatch a child job that could race the parent's commit. This mirrors the
-  // post-commit + revert-on-failure pattern used by waitStep/pollStep; the
-  // re-send semantics are still safe because the existingInvoke branch detects
-  // the already-created child on retry and re-pauses without re-creating it.
+  // The child run insert AND its pgboss.job enqueue both join this same
+  // transaction. The parent pause, child run row, and child job all commit (or
+  // roll back) together, so a worker crashing between "parent paused" and
+  // "child enqueued" is impossible — there is no such interleaving window.
   private async invokeChildWorkflowStep({
     run,
     stepId,
@@ -1339,8 +1332,6 @@ export class WorkflowEngine {
   }): Promise<unknown> {
     let invokeOutput: unknown;
     let hasInvokeOutput = false;
-    let childRunToEnqueue: WorkflowRun | undefined;
-    let parentRunForRevert: WorkflowRun = run;
     const childResourceId = resourceId ?? run.resourceId ?? undefined;
     const childIdempotencyKey = idempotencyKey;
 
@@ -1351,8 +1342,12 @@ export class WorkflowEngine {
           { runId: run.id, resourceId: run.resourceId ?? undefined },
           { exclusiveLock: true, db },
         );
-        parentRunForRevert = lockedRun;
 
+        // If the parent isn't RUNNING, fall through and return `undefined`. The
+        // worker's outer loop won't act on it: subsequent `step.run` calls
+        // short-circuit the same way (see `runStep`), and the post-handler
+        // `shouldComplete` check requires `status === RUNNING` so no terminal
+        // state is written. Matches the pattern used by the other step kinds.
         if (
           lockedRun.status === WorkflowStatus.CANCELLED ||
           lockedRun.status === WorkflowStatus.PAUSED ||
@@ -1408,6 +1403,10 @@ export class WorkflowEngine {
             this.throwForNonCompletedChild(existingChildRun);
           }
 
+          // Child is still RUNNING/PAUSED. The original enqueue committed
+          // with the prior parent-pause txn, so pg-boss already owns the
+          // child job — re-pause the parent and wait for the next terminal
+          // event without re-enqueueing.
           await this.pauseRunForWait({
             run: lockedRun,
             stepId,
@@ -1415,7 +1414,6 @@ export class WorkflowEngine {
             skipOutput: true,
             db,
           });
-          childRunToEnqueue = existingChildRun;
           return;
         }
 
@@ -1428,7 +1426,7 @@ export class WorkflowEngine {
           parentRunId: run.id,
           parentStepId: stepId,
           parentResourceId: run.resourceId ?? undefined,
-          enqueue: false,
+          enqueue: true,
           db,
         });
         const childRun = result.run;
@@ -1498,71 +1496,12 @@ export class WorkflowEngine {
             },
           }),
         });
-
-        childRunToEnqueue = childRun;
       },
       this.pool,
     );
 
     if (hasInvokeOutput) {
       return invokeOutput;
-    }
-
-    if (childRunToEnqueue) {
-      await this.enqueueChildWorkflowAfterParentWaitCommits({
-        parentRun: parentRunForRevert,
-        childRun: childRunToEnqueue,
-        options,
-      });
-    }
-  }
-
-  // Dispatch the child only after the parent's invoke wait is durable. If this
-  // send fails, the parent is made RUNNING again so the step can retry and
-  // re-enqueue the already-created child run.
-  private async enqueueChildWorkflowAfterParentWaitCommits({
-    parentRun,
-    childRun,
-    options,
-  }: {
-    parentRun: WorkflowRun;
-    childRun: WorkflowRun;
-    options?: WorkflowRunOptions;
-  }) {
-    try {
-      await this.enqueueWorkflowRun(childRun, options);
-    } catch (error) {
-      // Only flip back to RUNNING if the parent is still PAUSED. Anything else
-      // (e.g. the parent was cancelled while we were trying to enqueue the
-      // child, or a duplicate notify already woke it) means our PAUSED row is
-      // gone and resurrecting the parent would orphan it without a job.
-      try {
-        await this.updateRun({
-          runId: parentRun.id,
-          resourceId: parentRun.resourceId ?? undefined,
-          data: {
-            status: WorkflowStatus.RUNNING,
-            pausedAt: null,
-          },
-          expectedStatuses: [WorkflowStatus.PAUSED],
-        });
-      } catch (revertError) {
-        // Swallow status-mismatch errors so we still surface the original
-        // enqueue failure as the cause; log everything else for visibility.
-        if (
-          !(
-            revertError instanceof WorkflowEngineError &&
-            revertError.message.includes('Cannot update workflow run')
-          )
-        ) {
-          this.logger.error(
-            'Failed to revert parent run after invoke enqueue failure',
-            revertError as Error,
-            { runId: parentRun.id, workflowId: parentRun.workflowId },
-          );
-        }
-      }
-      throw error;
     }
   }
 

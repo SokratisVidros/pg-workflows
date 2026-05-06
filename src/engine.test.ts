@@ -994,73 +994,6 @@ describe('WorkflowEngine', () => {
         });
     });
 
-    it('should enqueue child workflow only after parent invoke wait is committed', async () => {
-      const childWorkflow = workflow('invoke-child-post-commit', async ({ step }) => {
-        await step.waitFor('child-wait', { eventName: 'child-ready' });
-        return { ok: true };
-      });
-
-      const parentWorkflow = workflow('invoke-parent-post-commit', async ({ step }) => {
-        return await step.invokeChildWorkflow('call-child', {
-          workflowId: 'invoke-child-post-commit',
-          input: {},
-        });
-      });
-
-      await engine.registerWorkflow(childWorkflow);
-      await engine.registerWorkflow(parentWorkflow);
-
-      const originalSend = testBoss.send.bind(testBoss);
-      let observedCommittedParentWait = false;
-      const sendSpy = vi
-        .spyOn(testBoss, 'send')
-        .mockImplementation(async (queue, data, options) => {
-          const job = data as { runId?: string; workflowId?: string };
-          if (queue === WORKFLOW_RUN_QUEUE_NAME && job.workflowId === 'invoke-child-post-commit') {
-            const childRun = await engine.getRun({ runId: job.runId ?? '' });
-            expect(childRun.parentRunId).toBeTruthy();
-
-            const parentRun = await engine.getRun({
-              runId: childRun.parentRunId ?? '',
-              resourceId: childRun.parentResourceId ?? undefined,
-            });
-            expect(parentRun.status).toBe(WorkflowStatus.PAUSED);
-            expect(parentRun.timeline).toMatchObject({
-              'call-child-invoke-child-workflow': {
-                invokeChildWorkflow: {
-                  childRunId: childRun.id,
-                  childWorkflowId: 'invoke-child-post-commit',
-                },
-              },
-              'call-child-wait-for': {
-                waitFor: {
-                  eventName: `__invoke_child_workflow_completed:${childRun.id}`,
-                  skipOutput: true,
-                },
-              },
-            });
-            observedCommittedParentWait = true;
-          }
-
-          return await originalSend(queue, data, options);
-        });
-
-      try {
-        const parentRun = await engine.startWorkflow({
-          resourceId,
-          workflowId: 'invoke-parent-post-commit',
-          input: {},
-        });
-
-        await expect.poll(() => observedCommittedParentWait).toBe(true);
-        await expect
-          .poll(async () => (await engine.getRun({ runId: parentRun.id, resourceId })).status)
-          .toBe(WorkflowStatus.PAUSED);
-      } finally {
-        sendSpy.mockRestore();
-      }
-    });
-
     it('should preserve null output from an invoked child workflow', async () => {
       const childWorkflow = workflow('invoke-child-null-output', async ({ step }) => {
         return await step.run('child-step', async () => null);
@@ -1350,7 +1283,7 @@ describe('WorkflowEngine', () => {
         });
     });
 
-    it('should retry cleanly when child enqueue fails after parent pause is prepared', async () => {
+    it('should roll back the entire invoke txn when child enqueue fails and recreate a fresh child on retry', async () => {
       const childWorkflow = workflow('invoke-child-enqueue-retry', async ({ step }) => {
         return await step.run('child-step', async () => ({ ok: true }));
       });
@@ -1404,6 +1337,10 @@ describe('WorkflowEngine', () => {
           });
 
         expect(rejectedChildEnqueue).toBe(true);
+        // First attempt's enqueue throws inside the parent-pause txn, rolling
+        // back both the child INSERT and the parent pause. The retry then
+        // creates a fresh child and enqueues it successfully — so exactly one
+        // committed child run remains.
         expect(childEnqueueAttempts).toBe(2);
         const childRuns = await engine.getRuns({
           resourceId,
