@@ -91,4 +91,81 @@ describe('otelPlugin', () => {
     expect(wfSpan.status.message).toBe('kaboom');
     expect(wfSpan.events.some((e) => e.name === 'exception')).toBe(true);
   });
+
+  it('emits step.run span as a child of workflow.run', async () => {
+    const w = workflow.use(otelPlugin({ tracer: otel.tracer }))(
+      'otel-step-run-child',
+      async ({ step }) => {
+        return await step.run('foo', async () => 'bar');
+      },
+    );
+    await engine.registerWorkflow(w);
+    const run = await engine.startWorkflow({ workflowId: 'otel-step-run-child', input: {} });
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }))
+      .toMatchObject({ status: WorkflowStatus.COMPLETED });
+
+    const wfSpan = otel.getSpansByName('pg_workflows.workflow.run')[0];
+    const stepSpan = otel.getSpansByName('pg_workflows.step.run')[0];
+    expect(stepSpan).toBeDefined();
+    expect(stepSpan.attributes).toMatchObject({ 'step.id': 'foo', 'step.type': 'run' });
+    expect(stepSpan.parentSpanId).toBe(wfSpan.spanContext().spanId);
+  });
+
+  it('skips step.run span on cache-hit replay', async () => {
+    const w = workflow.use(otelPlugin({ tracer: otel.tracer }))(
+      'otel-cache-skip',
+      async ({ step }) => {
+        const a = await step.run('first', async () => 'A');
+        await step.waitFor('gate', { eventName: 'go' });
+        const b = await step.run('second', async () => 'B');
+        return { a, b };
+      },
+    );
+    await engine.registerWorkflow(w);
+    const run = await engine.startWorkflow({ workflowId: 'otel-cache-skip', input: {} });
+
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }))
+      .toMatchObject({ status: WorkflowStatus.PAUSED });
+
+    // First execution: workflow.run + step.run('first') + step.waitFor('gate')
+    expect(
+      otel.getSpansByName('pg_workflows.step.run').map((s) => s.attributes['step.id']),
+    ).toEqual(['first']);
+
+    await engine.triggerEvent({ runId: run.id, eventName: 'go' });
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }))
+      .toMatchObject({ status: WorkflowStatus.COMPLETED });
+
+    // Second execution: NEW workflow.run + step.run('second') only.
+    // 'first' is a cache hit and emits no span.
+    const stepRunSpans = otel.getSpansByName('pg_workflows.step.run');
+    const ids = stepRunSpans.map((s) => s.attributes['step.id']);
+    expect(ids).toEqual(['first', 'second']);
+    expect(otel.getSpansByName('pg_workflows.workflow.run')).toHaveLength(2);
+  });
+
+  it('records exception and ERROR status on step.run when handler throws', async () => {
+    const w = workflow.use(otelPlugin({ tracer: otel.tracer }))(
+      'otel-step-throw',
+      async ({ step }) => {
+        await step.run('explode', async () => {
+          throw new Error('nope');
+        });
+      },
+      { retries: 0 },
+    );
+    await engine.registerWorkflow(w);
+    const run = await engine.startWorkflow({ workflowId: 'otel-step-throw', input: {} });
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }))
+      .toMatchObject({ status: WorkflowStatus.FAILED });
+
+    const stepSpan = otel.getSpansByName('pg_workflows.step.run')[0];
+    expect(stepSpan.status.code).toBe(2);
+    expect(stepSpan.status.message).toBe('nope');
+    expect(stepSpan.events.some((e) => e.name === 'exception')).toBe(true);
+  });
 });
