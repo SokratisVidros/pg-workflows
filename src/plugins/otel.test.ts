@@ -194,4 +194,51 @@ describe('otelPlugin', () => {
     const durationMs = (endNs - startNs) / 1_000_000;
     expect(durationMs).toBeGreaterThan(30);
   });
+
+  it('emits spans for waitFor, delay, waitUntil, pause', async () => {
+    const w = workflow.use(otelPlugin({ tracer: otel.tracer }))(
+      'otel-other-steps',
+      async ({ step }) => {
+        await step.waitFor('wf', { eventName: 'evt' });
+        await step.delay('d', '1ms');
+        await step.waitUntil('wu', new Date(Date.now() + 1));
+        await step.pause('p');
+        return 'ok';
+      },
+    );
+    await engine.registerWorkflow(w);
+    const run = await engine.startWorkflow({ workflowId: 'otel-other-steps', input: {} });
+
+    // Workflow pauses immediately on first waitFor; drive it through completion.
+    const drive = async (stepId?: string) => {
+      for (let i = 0; i < 40; i++) {
+        const r = await engine.getRun({ runId: run.id });
+        if (r.status === WorkflowStatus.PAUSED && (!stepId || r.currentStepId === stepId)) break;
+        await new Promise((res) => setTimeout(res, 50));
+      }
+    };
+    await drive('wf');
+    await engine.triggerEvent({ runId: run.id, eventName: 'evt' });
+    // delay + waitUntil resolve themselves; wait until paused at the explicit pause step.
+    await drive('p');
+    await engine.resumeWorkflow({ runId: run.id });
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }), { timeout: 5000 })
+      .toMatchObject({ status: WorkflowStatus.COMPLETED });
+
+    const stepNames = otel
+      .getSpans()
+      .map((s) => s.name)
+      .filter((n) => n.startsWith('pg_workflows.step.'));
+    expect(stepNames).toEqual(
+      expect.arrayContaining([
+        'pg_workflows.step.waitFor',
+        'pg_workflows.step.delay',
+        'pg_workflows.step.waitUntil',
+        'pg_workflows.step.pause',
+      ]),
+    );
+    const waitForSpan = otel.getSpansByName('pg_workflows.step.waitFor')[0];
+    expect(waitForSpan.attributes).toMatchObject({ 'step.id': 'wf', 'step.type': 'waitFor' });
+  });
 });
