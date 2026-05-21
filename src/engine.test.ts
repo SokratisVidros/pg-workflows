@@ -279,6 +279,61 @@ describe('WorkflowEngine', () => {
 
       await engine.stop();
     });
+
+    it('should call plugin.wrap around the handler and compose multiple wraps in registration order', async () => {
+      const calls: string[] = [];
+
+      const outerPlugin: WorkflowPlugin<StepBaseContext, object> = {
+        name: 'outer',
+        methods: () => ({}),
+        wrap: async (_ctx, next) => {
+          calls.push('outer:before');
+          const result = await next();
+          calls.push('outer:after');
+          return result;
+        },
+      };
+
+      const innerPlugin: WorkflowPlugin<StepBaseContext, object> = {
+        name: 'inner',
+        methods: () => ({}),
+        wrap: async (_ctx, next) => {
+          calls.push('inner:before');
+          const result = await next();
+          calls.push('inner:after');
+          return result;
+        },
+      };
+
+      const engine = new WorkflowEngine({ workflows: [], pool: testPool, boss: testBoss });
+      await engine.start();
+
+      const wrapped = workflow.use(outerPlugin).use(innerPlugin)(
+        'wrap-order-workflow',
+        async ({ step }) => {
+          calls.push('handler');
+          await step.run('only-step', async () => 'ok');
+          return 'done';
+        },
+      );
+
+      await engine.registerWorkflow(wrapped);
+      const run = await engine.startWorkflow({ workflowId: 'wrap-order-workflow', input: {} });
+
+      await expect
+        .poll(async () => await engine.getRun({ runId: run.id }))
+        .toMatchObject({ status: WorkflowStatus.COMPLETED });
+
+      expect(calls).toEqual([
+        'outer:before',
+        'inner:before',
+        'handler',
+        'inner:after',
+        'outer:after',
+      ]);
+
+      await engine.stop();
+    });
   });
 
   describe('unregisterWorkflow()', () => {

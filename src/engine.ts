@@ -1143,7 +1143,16 @@ export class WorkflowEngine {
         context.step = step;
       }
 
-      const result = await workflow.handler(context);
+      let next: () => Promise<unknown> = () => workflow.handler(context);
+      for (const plugin of [...plugins].reverse()) {
+        if (plugin.wrap) {
+          const inner = next;
+          const wrap = plugin.wrap;
+          next = () => wrap(context, inner);
+        }
+      }
+
+      const result = await next();
 
       run = await this.getRun({ runId, resourceId: scopedResourceId });
 
