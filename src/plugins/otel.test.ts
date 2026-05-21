@@ -46,4 +46,27 @@ describe('otelPlugin', () => {
       .poll(async () => await engine.getRun({ runId: run.id }))
       .toMatchObject({ status: WorkflowStatus.COMPLETED, output: 'ok' });
   });
+
+  it('emits a workflow.run span on successful completion', async () => {
+    const w = workflow.use(otelPlugin({ tracer: otel.tracer }))('otel-wf-span', async () => 'done');
+    await engine.registerWorkflow(w);
+    const run = await engine.startWorkflow({
+      resourceId: 'tenant-1',
+      workflowId: 'otel-wf-span',
+      input: {},
+    });
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id, resourceId: 'tenant-1' }))
+      .toMatchObject({ status: WorkflowStatus.COMPLETED });
+
+    const spans = otel.getSpansByName('pg_workflows.workflow.run');
+    expect(spans).toHaveLength(1);
+    expect(spans[0].attributes).toMatchObject({
+      'workflow.id': 'otel-wf-span',
+      'workflow.run_id': run.id,
+      'workflow.resource_id': 'tenant-1',
+      'workflow.attempt': 0,
+    });
+    expect(spans[0].status.code).toBe(1); // SpanStatusCode.OK
+  });
 });
