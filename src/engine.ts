@@ -1132,7 +1132,11 @@ export class WorkflowEngine {
         input: run.input as InferInputParameters<InputParameters>,
         workflowId: run.workflowId,
         runId: run.id,
-        timeline: run.timeline,
+        get timeline() {
+          // Read through to the live run so callers see entries written by
+          // previously completed steps within the same handler invocation.
+          return run?.timeline ?? {};
+        },
         logger: this.logger,
         step,
       };
@@ -1609,7 +1613,7 @@ export class WorkflowEngine {
             output = {};
           }
 
-          run = await this.updateRun(
+          const updated = await this.updateRun(
             {
               runId: run.id,
               resourceId: run.resourceId ?? undefined,
@@ -1624,6 +1628,10 @@ export class WorkflowEngine {
             },
             { db },
           );
+          // Mutate in place so handleWorkflowRun's `run` (same reference)
+          // — and the context.timeline getter that reads through it —
+          // observes the new step entry.
+          Object.assign(run, updated);
 
           return output;
         } catch (error) {

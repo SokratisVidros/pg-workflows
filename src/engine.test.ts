@@ -1684,6 +1684,40 @@ describe('WorkflowEngine', () => {
       expect(Object.keys(completedRun.timeline)).toHaveLength(3);
     });
 
+    it('should expose completed step outputs via context.timeline mid-handler', async () => {
+      const observed: Record<string, Record<string, unknown>> = {};
+
+      const timelineReadWorkflow = workflow('timeline-read-workflow', async (context) => {
+        const { step } = context;
+        observed.beforeStep1 = { ...context.timeline };
+        await step.run('step-1', async () => 'result-1');
+        observed.afterStep1 = { ...context.timeline };
+        await step.run('step-2', async () => ({ nested: 'value' }));
+        observed.afterStep2 = { ...context.timeline };
+        return 'done';
+      });
+
+      await engine.registerWorkflow(timelineReadWorkflow);
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'timeline-read-workflow',
+        input: {},
+      });
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.COMPLETED);
+
+      expect(observed.beforeStep1).toEqual({});
+      expect(observed.afterStep1).toMatchObject({
+        'step-1': { output: 'result-1' },
+      });
+      expect(observed.afterStep2).toMatchObject({
+        'step-1': { output: 'result-1' },
+        'step-2': { output: { nested: 'value' } },
+      });
+    });
+
     it('should preserve timeline entries from before pause through resume', async () => {
       const pauseTimelineWorkflow = workflow('pause-timeline-workflow', async ({ step }) => {
         await step.run('step-1', async () => 'before-pause');
