@@ -41,6 +41,11 @@ export function otelPlugin(
             const result = await next();
             span.setStatus({ code: SpanStatusCode.OK });
             return result;
+          } catch (err) {
+            const error = err instanceof Error ? err : new Error(String(err));
+            span.recordException(error);
+            span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
+            throw err;
           } finally {
             span.end();
           }

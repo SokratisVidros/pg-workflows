@@ -69,4 +69,26 @@ describe('otelPlugin', () => {
     });
     expect(spans[0].status.code).toBe(1); // SpanStatusCode.OK
   });
+
+  it('records exception and ERROR status on workflow.run when handler throws', async () => {
+    const w = workflow.use(otelPlugin({ tracer: otel.tracer }))(
+      'otel-wf-throw',
+      async ({ step }) => {
+        await step.run('boom', async () => {
+          throw new Error('kaboom');
+        });
+      },
+      { retries: 0 },
+    );
+    await engine.registerWorkflow(w);
+    const run = await engine.startWorkflow({ workflowId: 'otel-wf-throw', input: {} });
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }))
+      .toMatchObject({ status: WorkflowStatus.FAILED });
+
+    const wfSpan = otel.getSpansByName('pg_workflows.workflow.run')[0];
+    expect(wfSpan.status.code).toBe(2); // SpanStatusCode.ERROR
+    expect(wfSpan.status.message).toBe('kaboom');
+    expect(wfSpan.events.some((e) => e.name === 'exception')).toBe(true);
+  });
 });
