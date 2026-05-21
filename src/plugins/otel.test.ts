@@ -242,6 +242,37 @@ describe('otelPlugin', () => {
     expect(waitForSpan.attributes).toMatchObject({ 'step.id': 'wf', 'step.type': 'waitFor' });
   });
 
+  it('emits invokeChildWorkflow span on creation and skips on cache-hit resume', async () => {
+    const child = workflow('otel-child', async ({ step }) =>
+      step.run('done', async () => 'child-done'),
+    );
+    await engine.registerWorkflow(child);
+
+    const parent = workflow.use(otelPlugin({ tracer: otel.tracer }))(
+      'otel-parent',
+      async ({ step }) => {
+        const r = await step.invokeChildWorkflow('call-child', {
+          workflowId: child.id,
+          input: {},
+        });
+        return r;
+      },
+    );
+    await engine.registerWorkflow(parent);
+    const run = await engine.startWorkflow({ workflowId: 'otel-parent', input: {} });
+
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }), { timeout: 5000 })
+      .toMatchObject({ status: WorkflowStatus.COMPLETED });
+
+    const invokeSpans = otel.getSpansByName('pg_workflows.step.invokeChildWorkflow');
+    expect(invokeSpans).toHaveLength(1);
+    expect(invokeSpans[0].attributes).toMatchObject({
+      'step.id': 'call-child',
+      'step.type': 'invokeChildWorkflow',
+    });
+  });
+
   it('emits step.poll span on each poll attempt', async () => {
     let attempt = 0;
     const w = workflow.use(otelPlugin({ tracer: otel.tracer }))('otel-poll', async ({ step }) => {

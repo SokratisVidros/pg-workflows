@@ -5,6 +5,7 @@ import {
   type Tracer,
   trace,
 } from '@opentelemetry/api';
+import { invokeChildWorkflowTimelineKey } from '../constants';
 import type { StepBaseContext, WorkflowContext, WorkflowPlugin } from '../types';
 
 export type OtelPluginOptions = {
@@ -18,7 +19,16 @@ export type OtelPluginOptions = {
 
 const DEFAULT_PREFIX = 'pg_workflows';
 
-function isCachedHit(timeline: Record<string, unknown>, stepId: string): boolean {
+type StepKind =
+  | 'run'
+  | 'waitFor'
+  | 'delay'
+  | 'waitUntil'
+  | 'pause'
+  | 'poll'
+  | 'invokeChildWorkflow';
+
+function isCachedHit(timeline: Record<string, unknown>, stepId: string, kind: StepKind): boolean {
   const entry = timeline[stepId];
   if (
     entry &&
@@ -26,6 +36,9 @@ function isCachedHit(timeline: Record<string, unknown>, stepId: string): boolean
     'output' in entry &&
     (entry as { output: unknown }).output !== undefined
   ) {
+    return true;
+  }
+  if (kind === 'invokeChildWorkflow' && timeline[invokeChildWorkflowTimelineKey(stepId)]) {
     return true;
   }
   return false;
@@ -47,7 +60,7 @@ export function otelPlugin(
         base: (stepId: string, ...args: Args) => Promise<R>,
       ) => {
         return async (stepId: string, ...args: Args): Promise<R> => {
-          if (isCachedHit(context.timeline, stepId)) {
+          if (isCachedHit(context.timeline, stepId, kind)) {
             return base(stepId, ...args);
           }
           const capturedCtx = otelContext.active();
@@ -84,7 +97,7 @@ export function otelPlugin(
 
       return {
         run: async <T>(stepId: string, handler: () => Promise<T>) => {
-          if (isCachedHit(context.timeline, stepId)) {
+          if (isCachedHit(context.timeline, stepId, 'run')) {
             return step.run(stepId, handler);
           }
 
@@ -172,6 +185,54 @@ export function otelPlugin(
           // biome-ignore lint/style/noNonNullAssertion: result is assigned in try when not thrown
           return result!;
         }) as StepBaseContext['poll'],
+        invokeChildWorkflow: (async (
+          stepId: string,
+          refOrParams: Parameters<StepBaseContext['invokeChildWorkflow']>[1],
+          inputArg?: unknown,
+          optionsArg?: unknown,
+        ) => {
+          if (isCachedHit(context.timeline, stepId, 'invokeChildWorkflow')) {
+            return (step.invokeChildWorkflow as (...args: unknown[]) => Promise<unknown>)(
+              stepId,
+              refOrParams,
+              inputArg,
+              optionsArg,
+            );
+          }
+          const capturedCtx = otelContext.active();
+          const startTime = new Date();
+          let result: unknown;
+          let originalErr: unknown;
+          let thrownError: Error | undefined;
+          try {
+            result = await (step.invokeChildWorkflow as (...args: unknown[]) => Promise<unknown>)(
+              stepId,
+              refOrParams,
+              inputArg,
+              optionsArg,
+            );
+          } catch (err) {
+            originalErr = err;
+            thrownError = err instanceof Error ? err : new Error(String(err));
+          }
+          const span = tracer.startSpan(
+            `${prefix}.step.invokeChildWorkflow`,
+            {
+              startTime,
+              attributes: { 'step.id': stepId, 'step.type': 'invokeChildWorkflow' },
+            },
+            capturedCtx,
+          );
+          if (thrownError) {
+            span.recordException(thrownError);
+            span.setStatus({ code: SpanStatusCode.ERROR, message: thrownError.message });
+            span.end();
+            throw originalErr;
+          }
+          span.setStatus({ code: SpanStatusCode.OK });
+          span.end();
+          return result;
+        }) as StepBaseContext['invokeChildWorkflow'],
       };
     },
 
