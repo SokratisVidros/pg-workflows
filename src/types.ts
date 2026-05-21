@@ -95,14 +95,14 @@ export type StepBaseContext = {
  * @template TStepExt - The extra methods this plugin adds to step.
  */
 export interface WorkflowPlugin<TStepBase = StepBaseContext, TStepExt = object> {
-  name: string
-  methods: (step: TStepBase, context: WorkflowContext) => TStepExt
+  name: string;
+  methods: (step: TStepBase, context: WorkflowContext) => TStepExt;
   /**
    * Optional middleware around the workflow handler call. Composes in
    * registration order — the first plugin passed to `.use()` wraps everything
    * inside. Implementations MUST call `next()` exactly once.
    */
-  wrap?: (context: WorkflowContext, next: () => Promise<unknown>) => Promise<unknown>
+  wrap?: (context: WorkflowContext, next: () => Promise<unknown>) => Promise<unknown>;
 }
 
 export type WorkflowContext<
@@ -113,6 +113,10 @@ export type WorkflowContext<
   step: TStep;
   workflowId: string;
   runId: string;
+  /** Tenant/scope identifier set when the run was started, if any. */
+  resourceId?: string;
+  /** Zero-based retry attempt number (= `run.retryCount`). */
+  attempt: number;
   timeline: Record<string, unknown>;
   logger: WorkflowLogger;
 };

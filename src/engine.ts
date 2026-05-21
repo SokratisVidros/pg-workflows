@@ -1128,6 +1128,8 @@ export class WorkflowEngine {
         input: run.input as InferInputParameters<InputParameters>,
         workflowId: run.workflowId,
         runId: run.id,
+        resourceId: run.resourceId ?? undefined,
+        attempt: run.retryCount,
         get timeline() {
           // Read through to the live run so callers see entries written by
           // previously completed steps within the same handler invocation.
