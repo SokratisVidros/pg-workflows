@@ -1123,10 +1123,6 @@ export class WorkflowEngine {
 
       let step = { ...baseStep };
       const plugins = workflow.plugins ?? [];
-      for (const plugin of plugins) {
-        const extra = plugin.methods(step);
-        step = { ...step, ...extra };
-      }
 
       const context: WorkflowContext = {
         input: run.input as InferInputParameters<InputParameters>,
@@ -1140,6 +1136,12 @@ export class WorkflowEngine {
         logger: this.logger,
         step,
       };
+
+      for (const plugin of plugins) {
+        const extra = plugin.methods(step, context);
+        step = { ...step, ...extra };
+        context.step = step;
+      }
 
       const result = await workflow.handler(context);
 
