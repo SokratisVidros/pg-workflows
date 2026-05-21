@@ -241,4 +241,40 @@ describe('otelPlugin', () => {
     const waitForSpan = otel.getSpansByName('pg_workflows.step.waitFor')[0];
     expect(waitForSpan.attributes).toMatchObject({ 'step.id': 'wf', 'step.type': 'waitFor' });
   });
+
+  it('emits step.poll span on each poll attempt', async () => {
+    let attempt = 0;
+    const w = workflow.use(otelPlugin({ tracer: otel.tracer }))('otel-poll', async ({ step }) => {
+      const result = await step.poll(
+        'poller',
+        async () => {
+          attempt += 1;
+          return attempt >= 2 ? { value: attempt } : false;
+        },
+        { interval: '30s', timeout: '60s' },
+      );
+      return result;
+    });
+    await engine.registerWorkflow(w);
+    const run = await engine.startWorkflow({ workflowId: 'otel-poll', input: {} });
+
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }))
+      .toMatchObject({ status: WorkflowStatus.PAUSED });
+
+    // First execution emitted exactly one step.poll span
+    const firstPolls = otel.getSpansByName('pg_workflows.step.poll');
+    expect(firstPolls).toHaveLength(1);
+    expect(firstPolls[0].attributes).toMatchObject({ 'step.id': 'poller', 'step.type': 'poll' });
+
+    // Simulate the poll-interval re-fire via fastForwardWorkflow
+    await engine.fastForwardWorkflow({ runId: run.id });
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }))
+      .toMatchObject({ status: WorkflowStatus.COMPLETED });
+
+    // Second execution emits a new poll span (the previous one is not a cache hit
+    // because the step's *output* is not yet in timeline, only a poll-state entry)
+    expect(otel.getSpansByName('pg_workflows.step.poll').length).toBeGreaterThanOrEqual(2);
+  });
 });

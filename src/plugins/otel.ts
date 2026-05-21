@@ -137,6 +137,41 @@ export function otelPlugin(
           step.waitUntil as never,
         ) as StepBaseContext['waitUntil'],
         pause: wrapVoidish('pause', step.pause as never) as StepBaseContext['pause'],
+        poll: (async <T>(
+          stepId: string,
+          conditionFn: () => Promise<T | false>,
+          pollOptions?: Parameters<StepBaseContext['poll']>[2],
+        ) => {
+          const capturedCtx = otelContext.active();
+          const startTime = new Date();
+          let result: Awaited<ReturnType<StepBaseContext['poll']>> | undefined;
+          let originalErr: unknown;
+          let thrownError: Error | undefined;
+          try {
+            result = await step.poll(stepId, conditionFn, pollOptions);
+          } catch (err) {
+            originalErr = err;
+            thrownError = err instanceof Error ? err : new Error(String(err));
+          }
+          const span = tracer.startSpan(
+            `${prefix}.step.poll`,
+            {
+              startTime,
+              attributes: { 'step.id': stepId, 'step.type': 'poll' },
+            },
+            capturedCtx,
+          );
+          if (thrownError) {
+            span.recordException(thrownError);
+            span.setStatus({ code: SpanStatusCode.ERROR, message: thrownError.message });
+            span.end();
+            throw originalErr;
+          }
+          span.setStatus({ code: SpanStatusCode.OK });
+          span.end();
+          // biome-ignore lint/style/noNonNullAssertion: result is assigned in try when not thrown
+          return result!;
+        }) as StepBaseContext['poll'],
       };
     },
 
