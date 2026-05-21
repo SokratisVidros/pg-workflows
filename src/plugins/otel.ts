@@ -47,29 +47,34 @@ export function otelPlugin(
           return step.run(stepId, handler);
         }
 
-        // Capture the active context (workflow.run span) before the async step runs.
-        // We emit the span only if the step actually ran (result !== undefined).
-        // If the base step skips execution (workflow paused/cancelled), it returns
-        // undefined and we suppress the span to avoid noise on replay paths.
+        // Capture the active context (workflow.run span) and the start time
+        // BEFORE running the step, so the emitted span has correct timing.
+        // We materialise the span only if the step actually ran or threw —
+        // skipped steps (engine short-circuit on paused/cancelled runs) return
+        // undefined and produce no span.
         const capturedCtx = otelContext.active();
+        const startTime = new Date();
         let result: T | undefined;
+        let originalErr: unknown;
         let thrownError: Error | undefined;
 
         try {
           result = await step.run(stepId, handler);
         } catch (err) {
+          originalErr = err;
           thrownError = err instanceof Error ? err : new Error(String(err));
         }
 
         if (result === undefined && !thrownError) {
-          // Step was skipped (workflow is paused/cancelled/failed) — no span.
           return undefined as T;
         }
 
-        // Step ran or threw — emit a span with correct parent.
         const span = tracer.startSpan(
           `${prefix}.step.run`,
-          { attributes: { 'step.id': stepId, 'step.type': 'run' } },
+          {
+            startTime,
+            attributes: { 'step.id': stepId, 'step.type': 'run' },
+          },
           capturedCtx,
         );
 
@@ -77,7 +82,7 @@ export function otelPlugin(
           span.recordException(thrownError);
           span.setStatus({ code: SpanStatusCode.ERROR, message: thrownError.message });
           span.end();
-          throw thrownError;
+          throw originalErr;
         }
 
         span.setStatus({ code: SpanStatusCode.OK });

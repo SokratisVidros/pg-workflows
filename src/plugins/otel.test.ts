@@ -168,4 +168,30 @@ describe('otelPlugin', () => {
     expect(stepSpan.status.message).toBe('nope');
     expect(stepSpan.events.some((e) => e.name === 'exception')).toBe(true);
   });
+
+  it('step.run span has non-zero duration matching the step handler runtime', async () => {
+    const w = workflow.use(otelPlugin({ tracer: otel.tracer }))(
+      'otel-step-duration',
+      async ({ step }) => {
+        return await step.run('slow', async () => {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          return 'done';
+        });
+      },
+    );
+    await engine.registerWorkflow(w);
+    const run = await engine.startWorkflow({ workflowId: 'otel-step-duration', input: {} });
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }))
+      .toMatchObject({ status: WorkflowStatus.COMPLETED });
+
+    const stepSpan = otel.getSpansByName('pg_workflows.step.run')[0];
+    expect(stepSpan).toBeDefined();
+    // Span duration = endTime - startTime in nanoseconds. With a 50ms sleep
+    // inside the handler, we expect at least ~30ms (allow generous margin).
+    const startNs = stepSpan.startTime[0] * 1_000_000_000 + stepSpan.startTime[1];
+    const endNs = stepSpan.endTime[0] * 1_000_000_000 + stepSpan.endTime[1];
+    const durationMs = (endNs - startNs) / 1_000_000;
+    expect(durationMs).toBeGreaterThan(30);
+  });
 });
