@@ -5,6 +5,7 @@ import { workflow } from '../definition';
 import { WorkflowEngine } from '../engine';
 import { getBoss } from '../tests/pgboss';
 import { closeTestDatabase, createTestDatabase } from '../tests/test-db';
+import type { StepBaseContext, WorkflowPlugin } from '../types';
 import { WorkflowStatus } from '../types';
 import { otelPlugin } from './otel';
 import { setupOtel } from './otel-test-helpers';
@@ -307,6 +308,36 @@ describe('otelPlugin', () => {
     // Second execution emits a new poll span (the previous one is not a cache hit
     // because the step's *output* is not yet in timeline, only a poll-state entry)
     expect(otel.getSpansByName('pg_workflows.step.poll').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('composes wrap with another plugin in registration order', async () => {
+    const calls: string[] = [];
+    const trackerPlugin: WorkflowPlugin<StepBaseContext, object> = {
+      name: 'tracker',
+      methods: () => ({}),
+      wrap: async (_ctx, next) => {
+        calls.push('tracker:before');
+        const r = await next();
+        calls.push('tracker:after');
+        return r;
+      },
+    };
+
+    const w = workflow.use(trackerPlugin).use(otelPlugin({ tracer: otel.tracer }))(
+      'otel-compose',
+      async () => 'ok',
+    );
+    await engine.registerWorkflow(w);
+    const run = await engine.startWorkflow({ workflowId: 'otel-compose', input: {} });
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }))
+      .toMatchObject({ status: WorkflowStatus.COMPLETED });
+
+    // tracker registered first, so its wrap is outermost — its before runs
+    // before the workflow.run span opens, and its after runs after the span ends.
+    const wfSpan = otel.getSpansByName('pg_workflows.workflow.run')[0];
+    expect(wfSpan).toBeDefined();
+    expect(calls).toEqual(['tracker:before', 'tracker:after']);
   });
 });
 
