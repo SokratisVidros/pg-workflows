@@ -157,6 +157,48 @@ See [runnable examples](https://github.com/SokratisVidros/pg-workflows/tree/main
 
 ---
 
+## Observability with OpenTelemetry
+
+pg-workflows ships a first-party plugin that emits OTel spans for workflow and step execution. `@opentelemetry/api` is an optional peer dependency — install it only if you want tracing.
+
+```bash
+npm install @opentelemetry/api @opentelemetry/sdk-node
+```
+
+```ts
+import { NodeSDK } from '@opentelemetry/sdk-node'
+import { trace } from '@opentelemetry/api'
+import { workflow, otelPlugin } from 'pg-workflows'
+
+// Initialize your OTel SDK however you normally do — for Node apps the
+// NodeSDK registers an AsyncHooks context manager, which is required for
+// hierarchical (parent/child) spans across async boundaries.
+new NodeSDK({ /* exporters, resource, ... */ }).start()
+
+const tracedWorkflow = workflow.use(otelPlugin())
+
+const myWorkflow = tracedWorkflow('checkout', async ({ step }) => {
+  await step.run('charge', async () => { /* ... */ })
+  await step.waitFor('await-shipment', { eventName: 'shipped' })
+})
+```
+
+The plugin emits a `pg_workflows.workflow.run` span per worker execution (one per resume cycle), with child spans per step kind (`pg_workflows.step.run`, `pg_workflows.step.waitFor`, etc.). Spans carry `workflow.id`, `workflow.run_id`, `workflow.attempt` and, where set, `workflow.resource_id`. Steps replayed from cache after a pause emit no spans.
+
+**Options:**
+
+```ts
+otelPlugin({
+  tracer: trace.getTracer('my-app'),                // default: trace.getTracer('pg-workflows')
+  spanNamePrefix: 'pg_workflows',                   // default shown
+  attributes: (ctx) => ({ tenant: ctx.resourceId }), // extra static attrs on workflow.run
+})
+```
+
+Metrics, distributed trace context propagation across child workflows, and HTTP-caller context propagation are not in v1 — see [the design doc](docs/superpowers/specs/2026-05-21-otel-instrumentation-design.md) for the deferral rationale.
+
+---
+
 ## Requirements
 
 - Node.js >= 18

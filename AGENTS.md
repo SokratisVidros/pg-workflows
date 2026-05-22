@@ -118,6 +118,21 @@ await engine.stop();            // graceful shutdown (also closes pool if engine
 
 **Dependencies**: `pg` is a peer dependency (you install it); `pg-boss` is a regular dependency (bundled, no install needed).
 
+### `otelPlugin(options?)` - OpenTelemetry tracing
+
+```typescript
+import { workflow, otelPlugin } from 'pg-workflows';
+
+// Optional peer dep: install `@opentelemetry/api` and an OTel SDK (e.g. NodeSDK).
+// One `pg_workflows.workflow.run` span per worker execution, with child spans
+// per step kind. Spans replayed from cache after a pause are suppressed.
+const tracedWorkflow = workflow.use(otelPlugin({
+  // tracer?: Tracer            // default: trace.getTracer('pg-workflows')
+  // spanNamePrefix?: string    // default: 'pg_workflows'
+  // attributes?: (ctx) => Record<string, AttributeValue>
+}));
+```
+
 ### Step Types (available on `context.step`)
 
 #### `step.run(stepId, handler)` - Execute a durable step

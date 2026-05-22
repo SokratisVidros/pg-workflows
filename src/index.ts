@@ -7,6 +7,7 @@ export { createWorkflowRef, workflow } from './definition';
 export type { Duration } from './duration';
 export { WorkflowEngine, type WorkflowEngineOptions } from './engine';
 export { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
+export { type OtelPluginOptions, otelPlugin } from './plugins/otel';
 export type {
   InferInputParameters,
   InputParameters,
