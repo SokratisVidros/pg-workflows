@@ -149,6 +149,7 @@ export function otelPlugin(
         },
         waitFor: wrapVoidish('waitFor', step.waitFor as never) as StepBaseContext['waitFor'],
         delay: wrapVoidish('delay', step.delay as never) as StepBaseContext['delay'],
+        sleep: wrapVoidish('delay', step.delay as never) as StepBaseContext['sleep'],
         waitUntil: wrapVoidish(
           'waitUntil',
           step.waitUntil as never,

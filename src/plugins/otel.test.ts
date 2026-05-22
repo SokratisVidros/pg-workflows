@@ -310,6 +310,23 @@ describe('otelPlugin', () => {
     expect(otel.getSpansByName('pg_workflows.step.poll').length).toBeGreaterThanOrEqual(2);
   });
 
+  it('wraps step.sleep (alias for step.delay) with a span', async () => {
+    const w = workflow.use(otelPlugin({ tracer: otel.tracer }))('otel-sleep', async ({ step }) => {
+      await step.sleep('napping', '1ms');
+      return 'ok';
+    });
+    await engine.registerWorkflow(w);
+    const run = await engine.startWorkflow({ workflowId: 'otel-sleep', input: {} });
+    await expect
+      .poll(async () => await engine.getRun({ runId: run.id }), { timeout: 5000 })
+      .toMatchObject({ status: WorkflowStatus.COMPLETED });
+
+    // sleep is an alias for delay — the span name should be pg_workflows.step.delay
+    // so users can search uniformly for "delay" spans regardless of the alias used.
+    const delaySpans = otel.getSpansByName('pg_workflows.step.delay');
+    expect(delaySpans.some((s) => s.attributes['step.id'] === 'napping')).toBe(true);
+  });
+
   it('composes wrap with another plugin in registration order', async () => {
     const calls: string[] = [];
     const trackerPlugin: WorkflowPlugin<StepBaseContext, object> = {

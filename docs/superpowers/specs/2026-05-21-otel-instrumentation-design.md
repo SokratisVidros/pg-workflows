@@ -13,7 +13,7 @@ Allow pg-workflows users to emit OpenTelemetry traces for workflow and step exec
 **In scope:**
 
 - A first-party plugin, `otelPlugin`, shipped from the `pg-workflows` package.
-- A `workflow.run` span per worker execution of a workflow run, with child spans for each step kind (`step.run`, `step.wait_for`, `step.delay`, `step.wait_until`, `step.pause`, `step.poll`, `step.invoke_child_workflow`).
+- A `workflow.run` span per worker execution of a workflow run, with child spans for each step kind (`step.run`, `step.waitFor`, `step.delay`, `step.waitUntil`, `step.pause`, `step.poll`, `step.invokeChildWorkflow`).
 - Hierarchical traces via OpenTelemetry's AsyncLocalStorage active context (no manual context plumbing in user workflows).
 - Suppression of spans for cache-hit step replays.
 - Optional peer dependency on `@opentelemetry/api`. Non-users pay zero cost.
@@ -97,19 +97,19 @@ const tracedWorkflow = workflow.use(otelPlugin({
 ```
 pg_workflows.workflow.run
 ├── pg_workflows.step.run
-├── pg_workflows.step.wait_for
+├── pg_workflows.step.waitFor
 ├── pg_workflows.step.delay
-├── pg_workflows.step.wait_until
+├── pg_workflows.step.waitUntil
 ├── pg_workflows.step.pause
 ├── pg_workflows.step.poll
-└── pg_workflows.step.invoke_child_workflow
+└── pg_workflows.step.invokeChildWorkflow
 ```
 
 | Span                                 | Attributes                                                                                          |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------- |
 | `workflow.run`                       | `workflow.id`, `workflow.run_id`, `workflow.resource_id` (if present), `workflow.attempt` (= `run.retryCount`), plus anything from the user's `attributes(ctx)` callback |
 | `step.<kind>` (all kinds)            | `step.id`, `step.type` (matches the `StepType` enum value)                                          |
-| `step.invoke_child_workflow`         | Plus `child.workflow_id`, `child.run_id` once the child run has been created                        |
+| `step.invokeChildWorkflow`           | Plus `child.workflow_id`, `child.run_id` once the child run has been created                        |
 | Any span on error                    | `recordException(err)`, `setStatus({ code: ERROR, message })`                                       |
 
 ### Cache-hit suppression
@@ -159,9 +159,9 @@ Test setup registers a `BasicTracerProvider` with an `InMemorySpanExporter` once
 Cases:
 
 1. **Single-step happy path** — one `step.run` produces exactly 2 spans: `workflow.run` parent + `step.run` child. Attributes match. Both `OK`.
-2. **Multi-step with pause** — workflow runs `step1.run` → `step2.waitFor`. First execution emits `workflow.run` + `step1.run` + `step2.wait_for`. `triggerEvent` resumes; second execution emits a new `workflow.run` trace containing only the post-pause work (cached `step1` and the resumed `step2` emit no spans).
+2. **Multi-step with pause** — workflow runs `step1.run` → `step2.waitFor`. First execution emits `workflow.run` + `step1.run` + `step2.waitFor`. `triggerEvent` resumes; second execution emits a new `workflow.run` trace containing only the post-pause work (cached `step1` and the resumed `step2` emit no spans).
 3. **Step throws** — `step.run`'s handler throws. The `step.run` span has `ERROR` status with a recorded exception. The error propagates so `run.error` is persisted and pg-boss retry semantics are unchanged.
-4. **`invokeChildWorkflow` cache replay** — parent's `step.invoke_child_workflow` span is emitted on the pause execution. On the resume execution, the binding key is present and the cached output completes, so no span is emitted.
+4. **`invokeChildWorkflow` cache replay** — parent's `step.invokeChildWorkflow` span is emitted on the pause execution. On the resume execution, the binding key is present and the cached output completes, so no span is emitted.
 5. **Plugin composition order** — register a trivial second wrap plugin alongside `otelPlugin` (in both orders) and assert wraps compose in `.use()` registration order.
 6. **Cache-hit predicate unit test** — direct test of the `isCachedHit` predicate against the timeline shapes produced by each step kind.
 
@@ -185,7 +185,7 @@ The issue proposes `pg_workflows.workflow.started`, `pg_workflows.workflow.compl
 
 When a workflow pauses and resumes, the resume execution gets a fresh root span — there is no link to the previous execution's trace beyond shared `workflow.run_id` attributes. Linking them would require persisting the trace context (`traceparent` header value) somewhere durable, e.g. in `workflow_runs.timeline` or a dedicated column.
 
-Same for `step.invoke_child_workflow`: child runs currently start a fresh root span rather than continuing the parent's trace.
+Same for `step.invokeChildWorkflow`: child runs currently start a fresh root span rather than continuing the parent's trace.
 
 Both deferred together because they share the persistence design question.
 
