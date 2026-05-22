@@ -154,6 +154,7 @@ See [runnable examples](https://github.com/SokratisVidros/pg-workflows/tree/main
 - **[Examples](docs/examples.md)** - conditional steps, batch loops, scheduled reminders, retries, monitoring
 - **[API Reference](docs/api-reference.md)** - `WorkflowEngine`, `WorkflowClient`, `WorkflowRef`, types
 - **[Configuration](docs/configuration.md)** - env vars, database setup, requirements
+- **[Observability](docs/observability.md)** - OpenTelemetry tracing via `otelPlugin`
 
 ---
 
@@ -195,7 +196,7 @@ otelPlugin({
 })
 ```
 
-Metrics, distributed trace context propagation across child workflows, and HTTP-caller context propagation are not in v1 — see [the design doc](docs/superpowers/specs/2026-05-21-otel-instrumentation-design.md) for the deferral rationale.
+Metrics, distributed trace context propagation across child workflows, and HTTP-caller context propagation are not in v1 — see [the observability docs](docs/observability.md#not-in-v1) for the deferral rationale.
 
 ---
 
