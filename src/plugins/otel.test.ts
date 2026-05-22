@@ -309,3 +309,32 @@ describe('otelPlugin', () => {
     expect(otel.getSpansByName('pg_workflows.step.poll').length).toBeGreaterThanOrEqual(2);
   });
 });
+
+import { invokeChildWorkflowTimelineKey } from '../constants';
+import { isCachedHit } from './otel';
+
+describe('isCachedHit', () => {
+  it('returns true when output is recorded for stepId', () => {
+    expect(isCachedHit({ s: { output: 'x', timestamp: new Date() } }, 's', 'run')).toBe(true);
+  });
+
+  it('returns false when output is undefined', () => {
+    expect(isCachedHit({ s: { output: undefined, timestamp: new Date() } }, 's', 'run')).toBe(
+      false,
+    );
+  });
+
+  it('returns false when timeline has no entry for stepId', () => {
+    expect(isCachedHit({}, 's', 'run')).toBe(false);
+  });
+
+  it('returns false for non-object entry', () => {
+    expect(isCachedHit({ s: 'not-an-object' }, 's', 'run')).toBe(false);
+  });
+
+  it('returns true for invokeChildWorkflow when only the binding key is present', () => {
+    const timeline = { [invokeChildWorkflowTimelineKey('s')]: { invokeChildWorkflow: {} } };
+    expect(isCachedHit(timeline, 's', 'invokeChildWorkflow')).toBe(true);
+    expect(isCachedHit(timeline, 's', 'run')).toBe(false);
+  });
+});

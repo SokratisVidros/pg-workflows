@@ -28,7 +28,11 @@ type StepKind =
   | 'poll'
   | 'invokeChildWorkflow';
 
-function isCachedHit(timeline: Record<string, unknown>, stepId: string, kind: StepKind): boolean {
+export function isCachedHit(
+  timeline: Record<string, unknown>,
+  stepId: string,
+  kind: StepKind,
+): boolean {
   const entry = timeline[stepId];
   if (
     entry &&
