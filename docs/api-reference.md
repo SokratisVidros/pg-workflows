@@ -159,7 +159,7 @@ The context object passed to workflow handlers:
 
 `startWorkflow()` creates a top-level run and returns immediately. `step.invokeChildWorkflow()` starts a child run from inside a workflow, pauses the parent, and resolves with the child output when the child reaches a terminal state.
 
-`duration` is a string (e.g. `'3 days'`, `'2h'`) or an object (`{ weeks?, days?, hours?, minutes?, seconds? }`). See the `Duration` type and `parseDuration` from the package.
+`duration` is a string (e.g. `'3 days'`, `'2h'`) or an object (`{ weeks?, days?, hours?, minutes?, seconds? }`). See the `Duration` type exported from the package.
 
 ## WorkflowStatus
 
