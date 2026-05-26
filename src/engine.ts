@@ -31,6 +31,7 @@ import {
 import {
   type InferInputParameters,
   type InputParameters,
+  type StartWorkflowOptions,
   StepType,
   type WorkflowContext,
   type WorkflowDefinition,
@@ -39,18 +40,13 @@ import {
   type WorkflowInternalLoggerContext,
   type WorkflowLogger,
   type WorkflowRef,
-  type WorkflowRunOptions,
   type WorkflowRunProgress,
   WorkflowStatus,
 } from './types';
 
 const LOG_PREFIX = '[WorkflowEngine]';
 
-type StartWorkflowOptions = WorkflowRunOptions & {
-  batchSize?: number;
-};
-
-type ResolvedWorkflowRunParameters<TOptions extends WorkflowRunOptions = WorkflowRunOptions> = {
+type ResolvedWorkflowRunParameters<TOptions extends StartWorkflowOptions = StartWorkflowOptions> = {
   workflowId: string;
   input: unknown;
   resourceId?: string;
@@ -308,7 +304,7 @@ export class WorkflowEngine {
 
   private resolveWorkflowRunParameters<
     TInput extends InputParameters,
-    TOptions extends WorkflowRunOptions,
+    TOptions extends StartWorkflowOptions,
   >(
     refOrParams:
       | WorkflowRef<TInput, unknown>
@@ -380,7 +376,7 @@ export class WorkflowEngine {
       this.resolveWorkflowRunParameters(refOrParams, inputArg, optionsArg);
 
     if (!this._started) {
-      await this.start(false, { batchSize: options?.batchSize ?? 1 });
+      await this.start(false);
     }
 
     const { run } = await this.createWorkflowRun({
@@ -415,7 +411,7 @@ export class WorkflowEngine {
     input: unknown;
     resourceId?: string;
     idempotencyKey?: string;
-    options?: WorkflowRunOptions;
+    options?: StartWorkflowOptions;
     parentRunId?: string;
     parentStepId?: string;
     parentResourceId?: string;
@@ -1092,10 +1088,10 @@ export class WorkflowEngine {
                 input: unknown;
                 resourceId?: string;
                 idempotencyKey?: string;
-                options?: WorkflowRunOptions;
+                options?: StartWorkflowOptions;
               },
           inputArg?: InferInputParameters<TInput>,
-          optionsArg?: WorkflowRunOptions,
+          optionsArg?: StartWorkflowOptions,
         ) => {
           if (!run) {
             throw new WorkflowEngineError('Missing workflow run', workflowId, runId);
@@ -1332,7 +1328,7 @@ export class WorkflowEngine {
     input: unknown;
     resourceId?: string;
     idempotencyKey?: string;
-    options?: WorkflowRunOptions;
+    options?: StartWorkflowOptions;
   }): Promise<unknown> {
     let invokeOutput: unknown;
     let hasInvokeOutput = false;

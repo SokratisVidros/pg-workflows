@@ -27,9 +27,9 @@ import {
 import {
   type InferInputParameters,
   type InputParameters,
+  type StartWorkflowOptions,
   type WorkflowLogger,
   type WorkflowRef,
-  type WorkflowRunOptions,
   type WorkflowRunProgress,
   WorkflowStatus,
 } from './types';
@@ -57,8 +57,6 @@ export type WorkflowClientOptions = {
    */
   boss?: PgBoss;
 } & ({ pool: pg.Pool; connectionString?: never } | { connectionString: string; pool?: never });
-
-export type StartWorkflowOptions = WorkflowRunOptions;
 
 const defaultLogger: WorkflowLogger = {
   log: (_message: string) => console.warn(_message),

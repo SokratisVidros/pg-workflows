@@ -24,7 +24,7 @@ export enum StepType {
 export type InputParameters = StandardSchemaV1;
 export type InferInputParameters<P extends InputParameters> = StandardSchemaV1.InferOutput<P>;
 
-export type WorkflowRunOptions = {
+export type StartWorkflowOptions = {
   resourceId?: string;
   timeout?: number;
   retries?: number;
@@ -74,7 +74,7 @@ export type StepBaseContext = {
       stepId: string,
       ref: WorkflowRef<TInput, TOutput>,
       input: InferInputParameters<TInput>,
-      options?: WorkflowRunOptions,
+      options?: StartWorkflowOptions,
     ): Promise<TOutput>;
     <TOutput = unknown>(
       stepId: string,
@@ -83,7 +83,7 @@ export type StepBaseContext = {
         input: unknown;
         resourceId?: string;
         idempotencyKey?: string;
-        options?: WorkflowRunOptions;
+        options?: StartWorkflowOptions;
       },
     ): Promise<TOutput>;
   };
