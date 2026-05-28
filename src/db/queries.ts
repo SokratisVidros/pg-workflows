@@ -29,6 +29,7 @@ type WorkflowRunRow = {
   parent_run_id: string | null;
   parent_step_id: string | null;
   parent_resource_id: string | null;
+  scheduled_at: string | Date | null;
 };
 
 function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
@@ -60,6 +61,7 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
     parentRunId: row.parent_run_id,
     parentStepId: row.parent_step_id,
     parentResourceId: row.parent_resource_id,
+    scheduledAt: row.scheduled_at ? new Date(row.scheduled_at) : null,
   };
 }
 
@@ -76,6 +78,7 @@ export async function insertWorkflowRun(
     parentRunId,
     parentStepId,
     parentResourceId,
+    scheduledAt,
   }: {
     resourceId?: string;
     workflowId: string;
@@ -88,6 +91,7 @@ export async function insertWorkflowRun(
     parentRunId?: string;
     parentStepId?: string;
     parentResourceId?: string;
+    scheduledAt?: Date;
   },
   db: Db,
 ): Promise<{ run: WorkflowRun; created: boolean }> {
@@ -111,9 +115,10 @@ export async function insertWorkflowRun(
       idempotency_key,
       parent_run_id,
       parent_step_id,
-      parent_resource_id
+      parent_resource_id,
+      scheduled_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
     ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
     RETURNING *`,
     [
@@ -133,6 +138,7 @@ export async function insertWorkflowRun(
       parentRunId ?? null,
       parentStepId ?? null,
       parentResourceId ?? null,
+      scheduledAt ?? null,
     ],
   );
 
@@ -184,6 +190,39 @@ export async function getWorkflowRun(
     return null;
   }
 
+  return mapRowToWorkflowRun(run);
+}
+
+export async function getWorkflowLastRun(
+  {
+    workflowId,
+    resourceId,
+  }: {
+    workflowId: string;
+    resourceId?: string;
+  },
+  db: Db,
+): Promise<WorkflowRun | null> {
+  const result = resourceId
+    ? await db.executeSql(
+        `SELECT * FROM workflow_runs
+         WHERE workflow_id = $1 AND resource_id = $2
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [workflowId, resourceId],
+      )
+    : await db.executeSql(
+        `SELECT * FROM workflow_runs
+         WHERE workflow_id = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [workflowId],
+      );
+
+  const run = result.rows[0];
+  if (!run) {
+    return null;
+  }
   return mapRowToWorkflowRun(run);
 }
 

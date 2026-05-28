@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { WorkflowRun } from './db/types';
 import type { Duration } from './duration';
+import type { Schedule } from './schedule';
 
 export enum WorkflowStatus {
   PENDING = 'pending',
@@ -36,6 +37,19 @@ export type WorkflowOptions<I extends InputParameters> = {
   timeout?: number;
   retries?: number;
   inputSchema?: I;
+  /**
+   * Recurring schedule. Accepts a cron expression (`'0 9 * * 1-5'`),
+   * a duration string (`'5m'`, `'1 hour'`), or a `DurationObject`.
+   */
+  schedule?: Schedule;
+  /** IANA timezone for cron expressions. Defaults to UTC. Ignored for duration-based schedules. */
+  timezone?: string;
+};
+
+/** Metadata about a scheduled fire, exposed on `ctx.schedule` for runs triggered by a schedule. */
+export type ScheduleContext = {
+  /** Time the schedule fired this run. */
+  timestamp: Date;
 };
 
 export type StepBaseContext = {
@@ -119,6 +133,8 @@ export type WorkflowContext<
   attempt: number;
   timeline: Record<string, unknown>;
   logger: WorkflowLogger;
+  /** Set only for runs triggered by a recurring schedule. */
+  schedule?: ScheduleContext;
 };
 
 export type WorkflowDefinition<TInput extends InputParameters = InputParameters> = {
@@ -128,6 +144,8 @@ export type WorkflowDefinition<TInput extends InputParameters = InputParameters>
   inputSchema?: TInput;
   timeout?: number; // milliseconds
   retries?: number;
+  schedule?: Schedule;
+  timezone?: string;
   plugins?: WorkflowPlugin[];
 };
 

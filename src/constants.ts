@@ -1,6 +1,11 @@
 export const PAUSE_EVENT_NAME = '__internal_pause';
 export const WORKFLOW_RUN_QUEUE_NAME = 'workflow-run';
 export const WORKFLOW_RUN_DLQ_QUEUE_NAME = 'workflow_run_dlq';
+// pg-boss queue names allow only alphanumeric, _, -, ., or / — keep the
+// prefix in that character set so any valid workflow id stays addressable.
+const SCHEDULE_QUEUE_PREFIX = '__pgw_schedule_';
+export const scheduleQueueNameFor = (workflowId: string): string =>
+  `${SCHEDULE_QUEUE_PREFIX}${workflowId}`;
 export const DEFAULT_PGBOSS_SCHEMA = 'pgboss_v12_pgworkflow';
 export const MAX_WORKFLOW_ID_LENGTH = 256;
 export const MAX_RESOURCE_ID_LENGTH = 256;

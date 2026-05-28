@@ -67,16 +67,56 @@ import { z } from 'zod';
 
 const myWorkflow = workflow(
   'workflow-id',                              // unique string ID
-  async ({ step, input, runId, workflowId, timeline, logger }) => {
+  async ({ step, input, runId, workflowId, timeline, logger, schedule }) => {
     // workflow body with step calls
+    // `schedule` is populated only for runs triggered by a recurring schedule
   },
   {
     inputSchema: z.object({ /* ... */ }),      // optional Zod schema
     timeout: 60000,                            // optional, milliseconds
     retries: 3,                                // optional, max retry count
+    schedule: '*/5 * * * *',                   // optional, recurring schedule (cron or duration)
+    timezone: 'America/New_York',              // optional, only meaningful for cron (default: UTC)
   }
 );
 ```
+
+### Recurring workflows
+
+Workflows can run on a recurring schedule. `schedule` accepts three forms — a
+cron expression, a duration string, or a `DurationObject`:
+
+```typescript
+workflow('cron-style',   handler, { schedule: '0 9 * * 1-5', timezone: 'America/New_York' });
+workflow('every-5-min',  handler, { schedule: '5m' });          // duration string
+workflow('every-hour',   handler, { schedule: '1 hour' });      // natural-language duration
+workflow('every-day',    handler, { schedule: { days: 1 } });   // DurationObject
+```
+
+**Detection rule.** A string that splits into 5 or 6 whitespace tokens of
+cron-charset (`0-9 * / , - ? L W #`) is treated as a cron expression and
+validated by `cron-parser`. Otherwise it's parsed as a duration via
+`parse-duration` and translated into a cron expression — but only if the
+interval divides cleanly (whole minutes that divide 60, whole hours that divide
+24, or 1 day). Non-divisible intervals (`'23m'`, `'7h'`) throw with a clear
+message; use an explicit cron expression for those.
+
+**Schedule context.** Schedule-triggered runs receive `ctx.schedule.timestamp`
+— the time the schedule fired. Manual runs from `engine.startWorkflow()` have
+`ctx.schedule === undefined`. Use that as the "this is a scheduled fire" flag.
+
+```typescript
+async ({ step, schedule, workflowId }) => {
+  // For cursor-style incremental syncs, fetch the previous run separately:
+  const lastRun = await engine.getWorkflowLastRun({ workflowId });
+  const since = lastRun?.completedAt ?? new Date(0);
+  // ... fetch data updated since `since`
+}
+```
+
+**Overlap policy.** Scheduled runs are singletons via pg-boss — if a fire is
+queued while the previous run is still executing, pg-boss handles it
+(configurable overlap policies may be added later).
 
 ### `WorkflowEngine` - Main orchestrator
 
@@ -190,6 +230,7 @@ await engine.triggerEvent({
 
 // Query runs
 const run = await engine.getRun({ runId, resourceId });
+const lastRun = await engine.getWorkflowLastRun({ workflowId, resourceId }); // null if none
 const progress = await engine.checkProgress({ runId, resourceId });
 const { items, nextCursor, hasMore } = await engine.getRuns({
   resourceId: 'user-123',

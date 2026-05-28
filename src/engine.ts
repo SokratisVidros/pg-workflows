@@ -7,12 +7,14 @@ import {
   invokeChildWorkflowTimelineKey,
   isInvokeChildWorkflowTimelineEntry,
   PAUSE_EVENT_NAME,
+  scheduleQueueNameFor,
   WORKFLOW_RUN_DLQ_QUEUE_NAME,
   WORKFLOW_RUN_QUEUE_NAME,
   waitForTimelineKey,
 } from './constants';
 import { runMigrations } from './db/migration';
 import {
+  getWorkflowLastRun,
   getWorkflowRun,
   getWorkflowRuns,
   insertWorkflowRun,
@@ -28,6 +30,7 @@ import {
   WorkflowEngineError,
   WorkflowRunNotFoundError,
 } from './error';
+import { resolveSchedule } from './schedule';
 import {
   type InferInputParameters,
   type InputParameters,
@@ -246,12 +249,81 @@ export class WorkflowEngine {
       this.logger.log(`Worker started for queue ${WORKFLOW_RUN_DLQ_QUEUE_NAME}`);
     }
 
+    if (asEngine) {
+      const scheduled = Array.from(this.workflows.values()).flatMap((wf) =>
+        wf.schedule == null
+          ? []
+          : [{ id: wf.id, resolved: resolveSchedule(wf.schedule, wf.timezone) }],
+      );
+      await Promise.allSettled(
+        scheduled.map(({ id, resolved }) =>
+          this.registerWorkflowSchedule(id, resolved).catch((error: unknown) => {
+            this.logger.error(
+              `Failed to register schedule for "${id}", skipping`,
+              error instanceof Error ? error : new Error(String(error)),
+              { workflowId: id },
+            );
+          }),
+        ),
+      );
+    }
+
     this._started = true;
 
     this.logger.log('Workflow engine started!');
   }
 
+  private async registerWorkflowSchedule(
+    workflowId: string,
+    resolvedSchedule: { cron: string; timezone: string },
+  ): Promise<void> {
+    const scheduleQueueName = scheduleQueueNameFor(workflowId);
+    await this.boss.createQueue(scheduleQueueName);
+    await this.boss.schedule(scheduleQueueName, resolvedSchedule.cron, null, {
+      tz: resolvedSchedule.timezone,
+    });
+    await this.boss.work<unknown>(
+      scheduleQueueName,
+      { batchSize: 1, includeMetadata: true },
+      async (jobs: JobWithMetadata<unknown>[]) => {
+        const scheduledAt = jobs[0]?.startAfter ?? new Date();
+        try {
+          await this.createWorkflowRun({ workflowId, input: {}, scheduledAt });
+        } catch (error) {
+          this.logger.error(
+            `Schedule fire failed to start a run for workflow "${workflowId}"`,
+            error instanceof Error ? error : new Error(String(error)),
+            { workflowId },
+          );
+          throw error;
+        }
+      },
+    );
+    this.logger.log(
+      `Schedule registered for workflow "${workflowId}": ${resolvedSchedule.cron} (${resolvedSchedule.timezone})`,
+      { workflowId },
+    );
+  }
+
+  private async unscheduleWorkflow(workflowId: string): Promise<void> {
+    try {
+      await this.boss.unschedule(scheduleQueueNameFor(workflowId));
+    } catch (error) {
+      this.logger.error(
+        `Failed to unschedule "${workflowId}"`,
+        error instanceof Error ? error : new Error(String(error)),
+        { workflowId },
+      );
+    }
+  }
+
   async stop(): Promise<void> {
+    await Promise.allSettled(
+      Array.from(this.workflows.values())
+        .filter((wf) => wf.schedule != null)
+        .map((wf) => this.unscheduleWorkflow(wf.id)),
+    );
+
     await this.boss.stop();
 
     if (this._ownsPool) {
@@ -275,10 +347,19 @@ export class WorkflowEngine {
       definition.handler as (context: WorkflowContext) => Promise<unknown>,
     );
 
+    // Validate eagerly so authors get a clear error at registration time.
+    const resolvedSchedule = definition.schedule
+      ? resolveSchedule(definition.schedule, definition.timezone)
+      : undefined;
+
     this.workflows.set(definition.id, {
       ...definition,
       steps,
     } as WorkflowInternalDefinition);
+
+    if (this._started && resolvedSchedule) {
+      await this.registerWorkflowSchedule(definition.id, resolvedSchedule);
+    }
 
     this.logger.log(`Registered workflow "${definition.id}" with steps:`);
     for (const step of steps.values()) {
@@ -293,11 +374,22 @@ export class WorkflowEngine {
   }
 
   async unregisterWorkflow(workflowId: string): Promise<WorkflowEngine> {
+    const existing = this.workflows.get(workflowId);
+    if (existing?.schedule != null && this._started) {
+      await this.unscheduleWorkflow(workflowId);
+    }
     this.workflows.delete(workflowId);
     return this;
   }
 
   async unregisterAllWorkflows(): Promise<WorkflowEngine> {
+    if (this._started) {
+      await Promise.allSettled(
+        Array.from(this.workflows.values())
+          .filter((wf) => wf.schedule != null)
+          .map((wf) => this.unscheduleWorkflow(wf.id)),
+      );
+    }
     this.workflows.clear();
     return this;
   }
@@ -404,6 +496,7 @@ export class WorkflowEngine {
     parentRunId,
     parentStepId,
     parentResourceId,
+    scheduledAt,
     enqueue = true,
     db,
   }: {
@@ -415,6 +508,7 @@ export class WorkflowEngine {
     parentRunId?: string;
     parentStepId?: string;
     parentResourceId?: string;
+    scheduledAt?: Date;
     enqueue?: boolean;
     db?: Db;
   }): Promise<{ run: WorkflowRun; created: boolean }> {
@@ -465,6 +559,7 @@ export class WorkflowEngine {
           parentRunId,
           parentStepId,
           parentResourceId,
+          scheduledAt,
         },
         targetDb,
       );
@@ -751,6 +846,23 @@ export class WorkflowEngine {
     }
 
     return run;
+  }
+
+  /**
+   * Fetch the most recently created run for a workflow, optionally scoped to a
+   * `resourceId`. Useful for cron-style incremental syncs where the next run
+   * needs the previous run's completion timestamp as a cursor.
+   */
+  async getWorkflowLastRun({
+    workflowId,
+    resourceId,
+  }: {
+    workflowId: string;
+    resourceId?: string;
+  }): Promise<WorkflowRun | null> {
+    validateWorkflowId(workflowId);
+    validateResourceId(resourceId);
+    return getWorkflowLastRun({ workflowId, resourceId }, this.db);
   }
 
   async updateRun(
@@ -1133,6 +1245,7 @@ export class WorkflowEngine {
         },
         logger: this.logger,
         step,
+        schedule: run.scheduledAt ? { timestamp: run.scheduledAt } : undefined,
       };
 
       for (const plugin of plugins) {

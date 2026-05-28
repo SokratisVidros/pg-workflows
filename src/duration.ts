@@ -11,11 +11,11 @@ export type DurationObject = {
 
 export type Duration = string | DurationObject;
 
-const MS_PER_SECOND = 1000;
-const MS_PER_MINUTE = 60 * MS_PER_SECOND;
-const MS_PER_HOUR = 60 * MS_PER_MINUTE;
-const MS_PER_DAY = 24 * MS_PER_HOUR;
-const MS_PER_WEEK = 7 * MS_PER_DAY;
+const MS_PER_SECOND: number = 1000;
+export const MS_PER_MINUTE: number = 60 * MS_PER_SECOND;
+export const MS_PER_HOUR: number = 60 * MS_PER_MINUTE;
+export const MS_PER_DAY: number = 24 * MS_PER_HOUR;
+const MS_PER_WEEK: number = 7 * MS_PER_DAY;
 
 export function parseDuration(duration: Duration): number {
   if (typeof duration === 'string') {

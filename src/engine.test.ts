@@ -154,6 +154,124 @@ describe('WorkflowEngine', () => {
 
       await expect(engine.registerWorkflow(invalidWorkflow)).rejects.toThrow(WorkflowEngineError);
     });
+
+    describe('schedule option', () => {
+      it('accepts a cron schedule with explicit timezone', async () => {
+        const wf = workflow(
+          'scheduled-cron-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { schedule: '0 9 * * 1-5', timezone: 'America/New_York' },
+        );
+
+        await engine.registerWorkflow(wf);
+        const stored = engine.workflows.get('scheduled-cron-wf');
+        expect(stored?.schedule).toBe('0 9 * * 1-5');
+        expect(stored?.timezone).toBe('America/New_York');
+      });
+
+      it('accepts a duration-string schedule', async () => {
+        const wf = workflow(
+          'scheduled-duration-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { schedule: '5m' },
+        );
+
+        await engine.registerWorkflow(wf);
+        expect(engine.workflows.get('scheduled-duration-wf')?.schedule).toBe('5m');
+      });
+
+      it('accepts a DurationObject schedule', async () => {
+        const wf = workflow(
+          'scheduled-object-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { schedule: { hours: 6 } },
+        );
+
+        await engine.registerWorkflow(wf);
+        expect(engine.workflows.get('scheduled-object-wf')?.schedule).toEqual({ hours: 6 });
+      });
+
+      it('throws when schedule is an invalid cron expression', async () => {
+        const wf = workflow(
+          'scheduled-bad-cron-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { schedule: '99 * * * *' },
+        );
+
+        await expect(engine.registerWorkflow(wf)).rejects.toThrow(WorkflowEngineError);
+      });
+
+      it('throws when schedule duration does not divide cleanly', async () => {
+        const wf = workflow(
+          'scheduled-bad-duration-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { schedule: '23m' },
+        );
+
+        await expect(engine.registerWorkflow(wf)).rejects.toThrow(WorkflowEngineError);
+      });
+
+      it('forwards schedule and timezone through workflow.ref() definitions', async () => {
+        const ref = workflow.ref('scheduled-via-ref');
+        const wf = ref(async ({ step }) => step.run('s1', async () => 'ok'), {
+          schedule: '5m',
+          timezone: 'America/New_York',
+        });
+
+        expect(wf.schedule).toBe('5m');
+        expect(wf.timezone).toBe('America/New_York');
+
+        await engine.registerWorkflow(wf);
+        const stored = engine.workflows.get('scheduled-via-ref');
+        expect(stored?.schedule).toBe('5m');
+        expect(stored?.timezone).toBe('America/New_York');
+      });
+    });
+  });
+
+  describe('getWorkflowLastRun()', () => {
+    let engine: WorkflowEngine;
+    const workflowId = 'last-run-wf';
+
+    beforeEach(async () => {
+      engine = new WorkflowEngine({
+        workflows: [
+          workflow(workflowId, async ({ step, input }) =>
+            step.run('s1', async () => ({ echo: input })),
+          ),
+        ],
+        pool: testPool,
+        boss: testBoss,
+      });
+      await engine.start(false);
+    });
+
+    afterEach(async () => {
+      await engine.stop();
+    });
+
+    it('returns null when no runs exist for the workflow', async () => {
+      const result = await engine.getWorkflowLastRun({ workflowId });
+      expect(result).toBeNull();
+    });
+
+    it('returns the most recently created run for the workflow', async () => {
+      const first = await engine.startWorkflow({ workflowId, input: { n: 1 } });
+      const second = await engine.startWorkflow({ workflowId, input: { n: 2 } });
+
+      const result = await engine.getWorkflowLastRun({ workflowId });
+      expect(result?.id).toBe(second.id);
+      expect(result?.id).not.toBe(first.id);
+    });
+
+    it('scopes by resourceId when provided', async () => {
+      const a = await engine.startWorkflow({ workflowId, input: { n: 1 }, resourceId: 'tenant-a' });
+      await engine.startWorkflow({ workflowId, input: { n: 2 }, resourceId: 'tenant-b' });
+
+      const result = await engine.getWorkflowLastRun({ workflowId, resourceId: 'tenant-a' });
+      expect(result?.id).toBe(a.id);
+      expect(result?.resourceId).toBe('tenant-a');
+    });
   });
 
   describe('workflow.use(plugin)', () => {

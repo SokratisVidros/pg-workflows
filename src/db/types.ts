@@ -21,4 +21,6 @@ export type WorkflowRun = {
   parentRunId: string | null;
   parentStepId: string | null;
   parentResourceId: string | null;
+  /** Set when the run was started by a recurring schedule; the timestamp the schedule fired. */
+  scheduledAt: Date | null;
 };

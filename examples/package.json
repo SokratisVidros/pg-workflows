@@ -11,7 +11,8 @@
     "example:timeout": "npm run build:lib && dotenvx run -- tsx timeout.ts",
     "example:polling": "npm run build:lib && dotenvx run -- tsx polling.ts",
     "example:microservices:worker": "npm run build:lib && dotenvx run -- tsx microservices/worker-service.ts",
-    "example:microservices:api": "npm run build:lib && dotenvx run -- tsx microservices/api-service.ts"
+    "example:microservices:api": "npm run build:lib && dotenvx run -- tsx microservices/api-service.ts",
+    "example:cron": "npm run build:lib && dotenvx run -- tsx cron.ts"
   },
   "dependencies": {
     "pg": "^8.13.1",

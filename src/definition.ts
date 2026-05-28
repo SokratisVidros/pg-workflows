@@ -28,6 +28,8 @@ export function createWorkflowRef<
     inputSchema: options?.inputSchema,
     timeout: defineOptions?.timeout,
     retries: defineOptions?.retries,
+    schedule: defineOptions?.schedule,
+    timezone: defineOptions?.timezone,
   })) as WorkflowRef<TInput, TOutput>;
 
   Object.defineProperty(ref, 'id', { value: id, enumerable: true });
@@ -45,7 +47,7 @@ function createWorkflowFactory<TStepExt extends object = object>(
   const factory = (<I extends InputParameters>(
     id: string,
     handler: (context: WorkflowContext<I, StepBaseContext & TStepExt>) => Promise<unknown>,
-    { inputSchema, timeout, retries }: WorkflowOptions<I> = {},
+    { inputSchema, timeout, retries, schedule, timezone }: WorkflowOptions<I> = {},
   ): WorkflowDefinition<I> => ({
     id,
     handler: handler as (
@@ -54,6 +56,8 @@ function createWorkflowFactory<TStepExt extends object = object>(
     inputSchema,
     timeout,
     retries,
+    schedule,
+    timezone,
     plugins: plugins.length > 0 ? (plugins as WorkflowPlugin[]) : undefined,
   })) as WorkflowFactory<TStepExt>;
 
