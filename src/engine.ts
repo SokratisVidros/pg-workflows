@@ -30,6 +30,7 @@ import {
   WorkflowEngineError,
   WorkflowRunNotFoundError,
 } from './error';
+import { type DefaultWorkflowOptions, defaultWorkflows } from './meta-workflows';
 import { resolveSchedule } from './schedule';
 import {
   type InferInputParameters,
@@ -62,6 +63,7 @@ export type WorkflowEngineOptions = {
   workflows?: WorkflowDefinition[];
   logger?: WorkflowLogger;
   boss?: PgBoss;
+  defaultWorkflowOptions?: DefaultWorkflowOptions;
 } & ({ pool: pg.Pool; connectionString?: never } | { connectionString: string; pool?: never });
 
 const StepTypeToIcon: Record<StepType, string> = {
@@ -152,7 +154,13 @@ export class WorkflowEngine {
   >();
   private logger: WorkflowInternalLogger;
 
-  constructor({ workflows, logger, boss, ...connectionOptions }: WorkflowEngineOptions) {
+  constructor({
+    workflows,
+    logger,
+    boss,
+    defaultWorkflowOptions,
+    ...connectionOptions
+  }: WorkflowEngineOptions) {
     this.logger = this.buildLogger(logger ?? defaultLogger);
 
     if ('pool' in connectionOptions && connectionOptions.pool) {
@@ -162,10 +170,6 @@ export class WorkflowEngine {
       this._ownsPool = true;
     } else {
       throw new WorkflowEngineError('Either pool or connectionString must be provided');
-    }
-
-    if (workflows) {
-      this.unregisteredWorkflows = new Map(workflows.map((workflow) => [workflow.id, workflow]));
     }
 
     const db: Db = {
@@ -179,6 +183,12 @@ export class WorkflowEngine {
       this.boss = new PgBoss({ db, schema: DEFAULT_PGBOSS_SCHEMA });
     }
     this.db = this.boss.getDb();
+
+    const defaults = defaultWorkflows(this, this.db, defaultWorkflowOptions);
+
+    this.unregisteredWorkflows = new Map(
+      [...(workflows ?? []), ...defaults].map((workflow) => [workflow.id, workflow]),
+    );
   }
 
   async start(
@@ -623,7 +633,9 @@ export class WorkflowEngine {
     });
   }
 
-  private async notifyParentOfChildTerminalRun(childRun: WorkflowRun) {
+  async notifyParentOfChildTerminalRun(
+    childRun: Pick<WorkflowRun, 'id' | 'parentRunId' | 'parentStepId' | 'parentResourceId'>,
+  ): Promise<void> {
     if (!childRun.parentRunId || !childRun.parentStepId) {
       return;
     }

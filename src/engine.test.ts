@@ -8,6 +8,7 @@ import type { WorkflowRun } from './db/types';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
+import { metaWorkflowsKeys } from './meta-workflows';
 import { getBoss } from './tests/pgboss';
 import { closeTestDatabase, createTestDatabase } from './tests/test-db';
 import type { StepBaseContext, WorkflowPlugin } from './types';
@@ -15,6 +16,10 @@ import { WorkflowStatus } from './types';
 
 let testBoss: PgBoss;
 let testPool: pg.Pool;
+
+const disableDefaults = {
+  disabled: Object.values(metaWorkflowsKeys) as metaWorkflowsKeys[],
+};
 
 beforeAll(async () => {
   testPool = await createTestDatabase();
@@ -50,6 +55,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
     });
 
@@ -82,6 +88,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start(false);
     });
@@ -242,6 +249,7 @@ describe('WorkflowEngine', () => {
         ],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start(false);
     });
@@ -323,6 +331,7 @@ describe('WorkflowEngine', () => {
         workflows: [],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start();
 
@@ -363,6 +372,7 @@ describe('WorkflowEngine', () => {
         workflows: [],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start();
 
@@ -423,7 +433,12 @@ describe('WorkflowEngine', () => {
         },
       };
 
-      const engine = new WorkflowEngine({ workflows: [], pool: testPool, boss: testBoss });
+      const engine = new WorkflowEngine({
+        workflows: [],
+        pool: testPool,
+        boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
+      });
       await engine.start();
 
       const wrapped = workflow.use(outerPlugin).use(innerPlugin)(
@@ -462,6 +477,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start(false);
     });
@@ -484,6 +500,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start(false);
     });
@@ -506,6 +523,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start();
     });
@@ -864,6 +882,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start();
     });
@@ -931,6 +950,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start();
     });
@@ -986,6 +1006,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start(false);
     });
@@ -1030,6 +1051,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine2.start();
 
@@ -1061,6 +1083,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start();
     });
@@ -2882,6 +2905,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start(false);
     });
@@ -3090,6 +3114,7 @@ describe('WorkflowEngine', () => {
         workflows: [testWorkflow],
         pool: testPool,
         boss: testBoss,
+        defaultWorkflowOptions: disableDefaults,
       });
       await engine.start();
     });
@@ -3389,6 +3414,120 @@ describe('WorkflowEngine', () => {
             'wait-step': { output: {} },
             'step-2': { output: { prev: {} } },
           },
+        });
+    });
+  });
+
+  describe('default workflows', () => {
+    let engine: WorkflowEngine;
+
+    afterEach(async () => {
+      await engine.stop();
+    });
+
+    it('registers built-in default workflows on start', async () => {
+      engine = new WorkflowEngine({ workflows: [], pool: testPool, boss: testBoss });
+      await engine.start(false);
+
+      expect(engine.workflows.has(metaWorkflowsKeys.ScheduledCleanUpByTimeout)).toBe(true);
+    });
+
+    it('skips a default workflow listed in defaultWorkflowOptions.disabled', async () => {
+      engine = new WorkflowEngine({
+        workflows: [],
+        pool: testPool,
+        boss: testBoss,
+        defaultWorkflowOptions: {
+          disabled: [metaWorkflowsKeys.ScheduledCleanUpByTimeout],
+        },
+      });
+      await engine.start(false);
+
+      expect(engine.workflows.has(metaWorkflowsKeys.ScheduledCleanUpByTimeout)).toBe(false);
+    });
+
+    it('applies a per-workflow config override to a default workflow', async () => {
+      engine = new WorkflowEngine({
+        workflows: [],
+        pool: testPool,
+        boss: testBoss,
+        defaultWorkflowOptions: {
+          configs: {
+            [metaWorkflowsKeys.ScheduledCleanUpByTimeout]: { schedule: '30m' },
+          },
+        },
+      });
+      await engine.start(false);
+
+      expect(engine.workflows.get(metaWorkflowsKeys.ScheduledCleanUpByTimeout)?.schedule).toBe(
+        '30m',
+      );
+    });
+  });
+
+  describe('default workflow: timeout reaper', () => {
+    // Defaults ENABLED here — we want the built-in reaper registered so we can
+    // drive it and assert its cross-feature behaviour.
+    let engine: WorkflowEngine;
+
+    beforeEach(async () => {
+      engine = new WorkflowEngine({ workflows: [], pool: testPool, boss: testBoss });
+      await engine.start();
+    });
+
+    afterEach(async () => {
+      await engine.stop();
+    });
+
+    it('fails a parent when its invoked child is reaped by timeout', async () => {
+      const child = workflow(
+        'reaped-child',
+        async ({ step }) => {
+          await step.waitFor('never', { eventName: 'never-arrives' });
+          return { ok: true };
+        },
+        // Tiny timeout → timeout_at is effectively already in the past, so the
+        // reaper's `timeout_at < NOW()` matches on its next run.
+        { timeout: 1 },
+      );
+      const parent = workflow('reaped-parent', async ({ step }) => {
+        return await step.invokeChildWorkflow('call-child', {
+          workflowId: 'reaped-child',
+          input: {},
+        });
+      });
+
+      await engine.registerWorkflow(child);
+      await engine.registerWorkflow(parent);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'reaped-parent',
+        input: {},
+      });
+
+      // Parent pauses waiting on the child; the child pauses on its waitFor with
+      // an already-expired timeout_at.
+      await expect
+        .poll(async () => (await engine.getRun({ runId: parentRun.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      // Drive the reaper directly (its real schedule only fires every 10m).
+      await engine.startWorkflow({
+        workflowId: metaWorkflowsKeys.ScheduledCleanUpByTimeout,
+        input: {},
+      });
+
+      // The reaper fails the child and notifies the parent, which then fails
+      // with the child's error. This is the dropped-side-effect (parent
+      // notification) that this cross-feature test guards.
+      await expect
+        .poll(async () => await engine.getRun({ runId: parentRun.id, resourceId }), {
+          timeout: 15_000,
+        })
+        .toMatchObject({
+          status: WorkflowStatus.FAILED,
+          error: expect.stringContaining('Child workflow'),
         });
     });
   });
