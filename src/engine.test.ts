@@ -577,6 +577,121 @@ describe('WorkflowEngine', () => {
       expect(run.timeoutAt).toBeDefined();
     });
 
+    it('should persist the resolved per-run priority', async () => {
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'test-workflow',
+        input: { data: '42' },
+        options: { priority: 'high' },
+      });
+
+      expect(run.priority).toBe(100);
+      const fetched = await engine.getRun({ runId: run.id, resourceId });
+      expect(fetched.priority).toBe(100);
+    });
+
+    it('should default to normal priority (0) when none is set', async () => {
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'test-workflow',
+        input: { data: '42' },
+      });
+
+      expect(run.priority).toBe(0);
+    });
+
+    it('should use the definition priority as the default', async () => {
+      const prioritizedWorkflow = workflow(
+        'high-priority-workflow',
+        async ({ step }) => {
+          return await step.run('step-1', async () => 'done');
+        },
+        { priority: 'high' },
+      );
+      await engine.registerWorkflow(prioritizedWorkflow);
+
+      const run = await engine.startWorkflow({
+        workflowId: 'high-priority-workflow',
+        input: {},
+      });
+
+      expect(run.priority).toBe(100);
+    });
+
+    it('should let a per-run priority override the definition default', async () => {
+      const prioritizedWorkflow = workflow(
+        'override-priority-workflow',
+        async ({ step }) => {
+          return await step.run('step-1', async () => 'done');
+        },
+        { priority: 'high' },
+      );
+      await engine.registerWorkflow(prioritizedWorkflow);
+
+      const run = await engine.startWorkflow({
+        workflowId: 'override-priority-workflow',
+        input: {},
+        options: { priority: 'low' },
+      });
+
+      expect(run.priority).toBe(-100);
+    });
+
+    it('should forward the resolved priority to pg-boss when enqueueing', async () => {
+      const sendSpy = vi.spyOn(testBoss, 'send');
+      try {
+        await engine.startWorkflow({
+          resourceId,
+          workflowId: 'test-workflow',
+          input: { data: '42' },
+          options: { priority: 250 },
+        });
+
+        expect(sendSpy).toHaveBeenCalledWith(
+          WORKFLOW_RUN_QUEUE_NAME,
+          expect.anything(),
+          expect.objectContaining({ priority: 250 }),
+        );
+      } finally {
+        sendSpy.mockRestore();
+      }
+    });
+
+    it('should make a child workflow inherit the parent run priority', async () => {
+      const childWorkflow = workflow('inherit-child', async ({ step }) => {
+        await step.waitFor('child-wait', { eventName: 'child-ready' });
+        return 'child-done';
+      });
+      const parentWorkflow = workflow(
+        'inherit-parent',
+        async ({ step }) => {
+          await step.invokeChildWorkflow('call-child', {
+            workflowId: 'inherit-child',
+            input: {},
+          });
+          return 'parent-done';
+        },
+        { priority: 'high' },
+      );
+      await engine.registerWorkflow(childWorkflow);
+      await engine.registerWorkflow(parentWorkflow);
+
+      const parentRun = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'inherit-parent',
+        input: {},
+      });
+      expect(parentRun.priority).toBe(100);
+
+      await expect
+        .poll(async () => (await engine.getRun({ runId: parentRun.id, resourceId })).status)
+        .toBe(WorkflowStatus.PAUSED);
+
+      const childRuns = await engine.getRuns({ resourceId, workflowId: 'inherit-child' });
+      expect(childRuns.items).toHaveLength(1);
+      expect(childRuns.items[0].priority).toBe(100);
+    });
+
     it('should throw error for unknown workflow', async () => {
       await expect(
         engine.startWorkflow({

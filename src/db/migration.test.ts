@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { closeTestDatabase, createTestDatabase } from '../tests/test-db';
 import { runMigrations } from './migration';
 
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 
 describe('runMigrations', () => {
   let pool: pg.Pool;
@@ -42,6 +42,26 @@ describe('runMigrations', () => {
     expect(await tableExists('workflow_runs')).toBe(true);
     expect(await tableExists('workflow_schema_version')).toBe(true);
     expect(await schemaVersion()).toBe(CURRENT_SCHEMA_VERSION);
+  });
+
+  it('adds a non-null priority column defaulting to 0', async () => {
+    await runMigrations(db);
+
+    const result = await db.executeSql(
+      `SELECT data_type, is_nullable, column_default FROM information_schema.columns
+       WHERE table_schema = current_schema() AND table_name = 'workflow_runs' AND column_name = 'priority'`,
+      [],
+    );
+
+    expect(result.rows).toHaveLength(1);
+    const col = result.rows[0] as {
+      data_type: string;
+      is_nullable: string;
+      column_default: string;
+    };
+    expect(col.data_type).toBe('integer');
+    expect(col.is_nullable).toBe('NO');
+    expect(col.column_default).toBe('0');
   });
 
   it('is idempotent when run repeatedly', async () => {

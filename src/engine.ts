@@ -30,6 +30,7 @@ import {
   WorkflowEngineError,
   WorkflowRunNotFoundError,
 } from './error';
+import { resolvePriority } from './priority';
 import { resolveSchedule } from './schedule';
 import {
   type InferInputParameters,
@@ -499,6 +500,7 @@ export class WorkflowEngine {
     parentRunId: string;
     parentStepId: string;
     parentResourceId?: string;
+    parentPriority?: number;
     scheduledAt?: Date;
     enqueue?: boolean;
     db?: Db;
@@ -515,6 +517,7 @@ export class WorkflowEngine {
     parentRunId,
     parentStepId,
     parentResourceId,
+    parentPriority,
     scheduledAt,
     enqueue = true,
     db,
@@ -527,6 +530,7 @@ export class WorkflowEngine {
     parentRunId?: string;
     parentStepId?: string;
     parentResourceId?: string;
+    parentPriority?: number;
     scheduledAt?: Date;
     enqueue?: boolean;
     db?: Db;
@@ -573,6 +577,7 @@ export class WorkflowEngine {
           status: WorkflowStatus.RUNNING,
           input,
           maxRetries: options?.retries ?? workflow.retries ?? 0,
+          priority: resolvePriority(options?.priority, workflow.priority, parentPriority),
           timeoutAt,
           idempotencyKey,
           parentRunId,
@@ -618,6 +623,7 @@ export class WorkflowEngine {
     await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
       startAfter: new Date(),
       expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
+      priority: run.priority,
       ...retrySendOptions(run.maxRetries),
       ...(db ? { db } : {}),
     });
@@ -847,6 +853,7 @@ export class WorkflowEngine {
 
     await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
       expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
+      priority: run.priority,
       ...retrySendOptions(run.maxRetries),
     });
 
@@ -1552,6 +1559,7 @@ export class WorkflowEngine {
           parentRunId: run.id,
           parentStepId: stepId,
           parentResourceId: run.resourceId ?? undefined,
+          parentPriority: run.priority,
           enqueue: true,
           db,
         });
@@ -1836,6 +1844,7 @@ export class WorkflowEngine {
         await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
           startAfter: timeoutDate.getTime() <= Date.now() ? new Date() : timeoutDate,
           expireInSeconds: defaultExpireInSeconds,
+          priority: run.priority,
           ...retrySendOptions(run.maxRetries),
         });
       } catch (error) {
@@ -2031,6 +2040,7 @@ export class WorkflowEngine {
         {
           startAfter: new Date(Date.now() + intervalMs),
           expireInSeconds: defaultExpireInSeconds,
+          priority: run.priority,
           ...retrySendOptions(run.maxRetries),
         },
       );

@@ -5,7 +5,7 @@ export const MIGRATION_LOCK_ID = 738291645;
 
 // Bump this when adding new migrations. The engine stores the current version
 // in a `workflow_schema_version` table so migrations only run once per version.
-const CURRENT_SCHEMA_VERSION = 5;
+const CURRENT_SCHEMA_VERSION = 6;
 
 export async function runMigrations(db: Db): Promise<void> {
   // Fast path: skip the advisory lock if schema is already current.
@@ -122,6 +122,12 @@ export async function runMigrations(db: Db): Promise<void> {
   if (currentVersion < 5) {
     commands.push(
       'ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS scheduled_at timestamp with time zone',
+    );
+  }
+
+  if (currentVersion < 6) {
+    commands.push(
+      'ALTER TABLE workflow_runs ADD COLUMN IF NOT EXISTS priority integer DEFAULT 0 NOT NULL',
     );
   }
 
