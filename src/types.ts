@@ -32,11 +32,6 @@ export type StartWorkflowOptions = {
   retries?: number;
   expireInSeconds?: number;
   idempotencyKey?: string;
-  /**
-   * Per-run scheduling priority. Accepts a named level (`'high'`, `'normal'`,
-   * `'low'`) or a raw integer (higher runs first). Overrides the workflow
-   * definition's `priority`. Defaults to `'normal'` (0).
-   */
   priority?: WorkflowPriority;
 };
 
@@ -44,11 +39,6 @@ export type WorkflowOptions<I extends InputParameters> = {
   timeout?: number;
   retries?: number;
   inputSchema?: I;
-  /**
-   * Default scheduling priority for every run of this workflow. Accepts a
-   * named level (`'high'`, `'normal'`, `'low'`) or a raw integer (higher runs
-   * first). A per-run `priority` passed to `startWorkflow` overrides this.
-   */
   priority?: WorkflowPriority;
   /**
    * Recurring schedule. Accepts a cron expression (`'0 9 * * 1-5'`),
