@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.14.0 - 2026-06-23
+
+### Added
+
+- Added workflow run priorities backed by pg-boss's native job priority (higher runs first; `normal` = 0) ([#43](https://github.com/SokratisVidros/pg-workflows/pull/43)). Set a default on the workflow definition or override per run via `startWorkflow` options using named levels (`high`, `normal`, `low`) or a raw integer. Priority is resolved once at run creation, persisted on the `workflow_runs` row (schema v6), reused on every re-enqueue (resume, retry, poll/waitUntil continuations, scheduled fires), and inherited by child workflows unless overridden.
+
+[v0.14.0]: https://github.com/SokratisVidros/pg-workflows/compare/v0.13.2...v0.14.0
+
 ## v0.13.2 - 2026-06-16
 
 ### Fixed
