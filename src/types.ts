@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { WorkflowRun } from './db/types';
 import type { Duration } from './duration';
+import type { WorkflowPriority } from './priority';
 import type { Schedule } from './schedule';
 
 export enum WorkflowStatus {
@@ -31,12 +32,24 @@ export type StartWorkflowOptions = {
   retries?: number;
   expireInSeconds?: number;
   idempotencyKey?: string;
+  /**
+   * Per-run scheduling priority. Accepts a named level (`'high'`, `'normal'`,
+   * `'low'`) or a raw integer (higher runs first). Overrides the workflow
+   * definition's `priority`. Defaults to `'normal'` (0).
+   */
+  priority?: WorkflowPriority;
 };
 
 export type WorkflowOptions<I extends InputParameters> = {
   timeout?: number;
   retries?: number;
   inputSchema?: I;
+  /**
+   * Default scheduling priority for every run of this workflow. Accepts a
+   * named level (`'high'`, `'normal'`, `'low'`) or a raw integer (higher runs
+   * first). A per-run `priority` passed to `startWorkflow` overrides this.
+   */
+  priority?: WorkflowPriority;
   /**
    * Recurring schedule. Accepts a cron expression (`'0 9 * * 1-5'`),
    * a duration string (`'5m'`, `'1 hour'`), or a `DurationObject`.
@@ -144,6 +157,7 @@ export type WorkflowDefinition<TInput extends InputParameters = InputParameters>
   inputSchema?: TInput;
   timeout?: number; // milliseconds
   retries?: number;
+  priority?: WorkflowPriority;
   schedule?: Schedule;
   timezone?: string;
   plugins?: WorkflowPlugin[];

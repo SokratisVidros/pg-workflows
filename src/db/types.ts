@@ -16,6 +16,8 @@ export type WorkflowRun = {
   timeoutAt: Date | null;
   retryCount: number;
   maxRetries: number;
+  /** Resolved scheduling priority (pg-boss integer; higher runs first). */
+  priority: number;
   jobId: string | null;
   idempotencyKey: string | null;
   parentRunId: string | null;

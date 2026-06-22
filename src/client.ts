@@ -24,6 +24,7 @@ import {
   WorkflowEngineError,
   WorkflowRunNotFoundError,
 } from './error';
+import { resolvePriority } from './priority';
 import {
   type InferInputParameters,
   type InputParameters,
@@ -211,6 +212,7 @@ export class WorkflowClient {
             status: WorkflowStatus.RUNNING,
             input,
             maxRetries: options?.retries ?? 0,
+            priority: resolvePriority(options?.priority),
             timeoutAt,
             idempotencyKey,
           },
@@ -232,6 +234,7 @@ export class WorkflowClient {
           await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
             startAfter: new Date(),
             expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
+            priority: insertedRun.priority,
             db: _db,
           });
         }
@@ -276,6 +279,7 @@ export class WorkflowClient {
 
     await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
       expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
+      priority: run.priority,
     });
 
     this.logger.log(`${LOG_PREFIX} Event ${eventName} sent for workflow run ${runId}`);

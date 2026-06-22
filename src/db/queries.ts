@@ -24,6 +24,7 @@ type WorkflowRunRow = {
   timeout_at: string | Date | null;
   retry_count: number;
   max_retries: number;
+  priority: number;
   job_id: string | null;
   idempotency_key: string | null;
   parent_run_id: string | null;
@@ -56,6 +57,7 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
     timeoutAt: row.timeout_at ? new Date(row.timeout_at) : null,
     retryCount: row.retry_count,
     maxRetries: row.max_retries,
+    priority: row.priority,
     jobId: row.job_id,
     idempotencyKey: row.idempotency_key,
     parentRunId: row.parent_run_id,
@@ -73,6 +75,7 @@ export async function insertWorkflowRun(
     status,
     input,
     maxRetries,
+    priority,
     timeoutAt,
     idempotencyKey,
     parentRunId,
@@ -86,6 +89,7 @@ export async function insertWorkflowRun(
     status: string;
     input: unknown;
     maxRetries: number;
+    priority: number;
     timeoutAt: Date | null;
     idempotencyKey?: string;
     parentRunId?: string;
@@ -107,6 +111,7 @@ export async function insertWorkflowRun(
       status,
       input,
       max_retries,
+      priority,
       timeout_at,
       created_at,
       updated_at,
@@ -118,7 +123,7 @@ export async function insertWorkflowRun(
       parent_resource_id,
       scheduled_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
     ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
     RETURNING *`,
     [
@@ -129,6 +134,7 @@ export async function insertWorkflowRun(
       status,
       JSON.stringify(input),
       maxRetries,
+      priority,
       timeoutAt,
       now,
       now,

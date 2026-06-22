@@ -75,11 +75,41 @@ const myWorkflow = workflow(
     inputSchema: z.object({ /* ... */ }),      // optional Zod schema
     timeout: 60000,                            // optional, milliseconds
     retries: 3,                                // optional, max retry count
+    priority: 'high',                          // optional default priority for every run
     schedule: '*/5 * * * *',                   // optional, recurring schedule (cron or duration)
     timezone: 'America/New_York',              // optional, only meaningful for cron (default: UTC)
   }
 );
 ```
+
+### Workflow priorities
+
+Runs can be prioritized in pg-boss's queue. `priority` accepts a named level
+(`'high'`, `'normal'`, `'low'`) or a raw integer — **higher runs first**, and
+`'normal'` is `0` (pg-boss's default). Named levels map to `high = 100`,
+`normal = 0`, `low = -100`; the numeric escape hatch is for fine-grained tuning.
+
+Priority can be set on the workflow definition (default for every run) and
+overridden per-run at `startWorkflow`:
+
+```typescript
+workflow('billing', handler, { priority: 'high' });   // every run defaults to high
+
+await engine.startWorkflow({
+  workflowId: 'billing',
+  priority: 'low',     // this run only; overrides the definition default
+});
+```
+
+**Resolution.** Effective priority is `startWorkflow.priority ?? definition.priority ?? 'normal'`,
+resolved to an integer once when the run row is created and **persisted on the
+run**. Every subsequent re-enqueue (resume after `waitFor`/`pause`, retries,
+poll/`waitUntil` continuations, scheduled fires) reuses the stored value, so a
+high-priority workflow stays high-priority across pauses.
+
+**Child workflows** inherit the parent run's priority by default; the child's
+own definition or call-site `priority` overrides it:
+`childCall.priority ?? childDefinition.priority ?? parentRun.priority`.
 
 ### Recurring workflows
 
@@ -212,7 +242,7 @@ const run = await engine.startWorkflow({
   resourceId: 'user-123',            // optional, for scoping/multi-tenancy
   input: { email: 'user@example.com' },
   idempotencyKey: 'unique-key-123',  // optional, for deduplication
-  options: { timeout, retries, expireInSeconds }, // all optional
+  options: { timeout, retries, expireInSeconds, priority }, // all optional
 });
 
 // Pause / Resume / Cancel
@@ -295,6 +325,7 @@ type WorkflowRun = {
   timeoutAt: Date | null;
   retryCount: number;
   maxRetries: number;
+  priority: number;
   jobId: string | null;
 };
 
