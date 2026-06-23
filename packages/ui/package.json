@@ -1,0 +1,71 @@
+{
+  "name": "@pg-workflows/ui",
+  "version": "0.0.0",
+  "description": "React UI for pg-workflows: browse runs and inspect step timelines.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "./src/styles.css",
+    "./dist/styles.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "default": "./src/client.ts"
+    },
+    "./next": {
+      "types": "./src/next/index.ts",
+      "default": "./src/next/index.ts"
+    },
+    "./tailwind": {
+      "types": "./src/tailwind-preset.ts",
+      "default": "./src/tailwind-preset.ts"
+    },
+    "./styles.css": "./src/styles.css"
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18",
+    "@tanstack/react-query": ">=5",
+    "tailwindcss": "^4",
+    "pg-workflows": ">=0.13.0"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.0",
+    "@radix-ui/react-popover": "^1.1.0",
+    "@radix-ui/react-select": "^2.1.0",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.453.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "jsdom": "^25.0.0",
+    "pg-workflows": "file:../..",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@tanstack/react-query": "^5.59.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  }
+}
