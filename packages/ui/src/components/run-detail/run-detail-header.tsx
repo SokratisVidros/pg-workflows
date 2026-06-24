@@ -27,9 +27,7 @@ export function RunDetailHeader({ run, onBack, className }: RunDetailHeaderProps
         <div className="flex flex-col">
           <span className="text-xs text-pgw-muted-fg">{run.workflowId}</span>
           <h1 className="font-mono text-lg">{run.id}</h1>
-          {resourceId && (
-            <span className="text-xs text-pgw-muted-fg">resource: {resourceId}</span>
-          )}
+          {resourceId && <span className="text-xs text-pgw-muted-fg">resource: {resourceId}</span>}
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={run.status} />

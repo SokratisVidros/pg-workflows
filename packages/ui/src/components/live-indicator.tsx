@@ -9,12 +9,7 @@ export type LiveIndicatorProps = {
   className?: string;
 };
 
-export function LiveIndicator({
-  isLive,
-  isFetching,
-  onToggle,
-  className,
-}: LiveIndicatorProps) {
+export function LiveIndicator({ isLive, isFetching, onToggle, className }: LiveIndicatorProps) {
   return (
     <button
       type="button"
@@ -29,9 +24,7 @@ export function LiveIndicator({
         aria-hidden
         className={cn(
           'h-1.5 w-1.5 rounded-full',
-          isLive
-            ? cn('bg-pgw-status-running', isFetching && 'animate-pulse')
-            : 'bg-pgw-muted-fg',
+          isLive ? cn('bg-pgw-status-running', isFetching && 'animate-pulse') : 'bg-pgw-muted-fg',
         )}
       />
       {isLive ? 'Live' : 'Paused'}

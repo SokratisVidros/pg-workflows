@@ -25,10 +25,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
         className,
       )}
     >
-      <span
-        aria-hidden
-        className={cn('h-1.5 w-1.5 rounded-full', `bg-${token}`)}
-      />
+      <span aria-hidden className={cn('h-1.5 w-1.5 rounded-full', `bg-${token}`)} />
       {status}
     </span>
   );

@@ -13,11 +13,7 @@ export function JsonViewer({ value, className }: JsonViewerProps) {
   const [copied, setCopied] = useState(false);
 
   if (value === undefined) {
-    return (
-      <div className={cn('text-xs text-pgw-muted-fg italic', className)}>
-        No data
-      </div>
-    );
+    return <div className={cn('text-xs text-pgw-muted-fg italic', className)}>No data</div>;
   }
 
   const pretty = JSON.stringify(value, null, 2);

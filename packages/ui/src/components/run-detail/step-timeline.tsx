@@ -64,8 +64,7 @@ function StepDot({ status }: { status: StepInfo['status'] }) {
 
 function WaterfallBar({ step, totalDurationMs }: { step: StepInfo; totalDurationMs: number }) {
   if (totalDurationMs <= 0) return <div className="h-4" />;
-  const leftPct =
-    step.startOffsetMs != null ? (step.startOffsetMs / totalDurationMs) * 100 : 0;
+  const leftPct = step.startOffsetMs != null ? (step.startOffsetMs / totalDurationMs) * 100 : 0;
   const widthPct =
     step.durationMs != null
       ? Math.max(1, (step.durationMs / totalDurationMs) * 100)
@@ -76,10 +75,7 @@ function WaterfallBar({ step, totalDurationMs }: { step: StepInfo; totalDuration
   return (
     <div className="relative h-4 w-full rounded bg-pgw-muted">
       <div
-        className={cn(
-          'absolute inset-y-0 rounded',
-          useHatch ? undefined : STATUS_BAR[step.status],
-        )}
+        className={cn('absolute inset-y-0 rounded', useHatch ? undefined : STATUS_BAR[step.status])}
         style={{
           left: `${leftPct}%`,
           width: `${widthPct}%`,
@@ -117,9 +113,7 @@ function StepRow({ step, totalDurationMs }: { step: StepInfo; totalDurationMs: n
                 <span
                   className={cn(
                     'shrink-0 text-[10px]',
-                    step.status === 'waiting'
-                      ? 'text-pgw-status-paused'
-                      : 'text-pgw-muted-fg',
+                    step.status === 'waiting' ? 'text-pgw-status-paused' : 'text-pgw-muted-fg',
                   )}
                 >
                   {step.status === 'waiting' ? 'Waited ' : ''}
@@ -179,7 +173,10 @@ export function StepTimeline({ run, className }: StepTimelineProps) {
       </div>
 
       <div className="mb-1 flex items-center gap-2">
-        <div className="flex shrink-0 flex-col gap-0.5 text-xs font-medium" style={{ width: '45%' }}>
+        <div
+          className="flex shrink-0 flex-col gap-0.5 text-xs font-medium"
+          style={{ width: '45%' }}
+        >
           <div className="flex items-center gap-1.5">
             Total
             {totalDurationMs > 0 && (
@@ -195,7 +192,10 @@ export function StepTimeline({ run, className }: StepTimelineProps) {
         <div className="relative h-5 flex-1 overflow-hidden rounded bg-pgw-muted">
           {showSplit ? (
             <>
-              <div className="absolute inset-y-0 left-0 bg-pgw-status-running" style={{ width: `${activePct}%` }} />
+              <div
+                className="absolute inset-y-0 left-0 bg-pgw-status-running"
+                style={{ width: `${activePct}%` }}
+              />
               <div
                 className="absolute inset-y-0"
                 style={{ left: `${activePct}%`, width: `${waitPct}%`, ...WAIT_HATCH_STYLE }}
@@ -216,9 +216,7 @@ export function StepTimeline({ run, className }: StepTimelineProps) {
       <div className="mb-1 border-b border-pgw-border" />
 
       {steps.length > 0 ? (
-        steps.map((step) => (
-          <StepRow key={step.id} step={step} totalDurationMs={totalDurationMs} />
-        ))
+        steps.map((step) => <StepRow key={step.id} step={step} totalDurationMs={totalDurationMs} />)
       ) : (
         <p className="py-2 text-xs text-pgw-muted-fg">No steps recorded yet.</p>
       )}
