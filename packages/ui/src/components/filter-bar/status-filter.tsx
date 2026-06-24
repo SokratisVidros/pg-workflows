@@ -1,9 +1,9 @@
-'use client'
+'use client';
 
-import * as Popover from '@radix-ui/react-popover'
-import { ChevronDown } from 'lucide-react'
-import type { WorkflowRunStatus } from '../../client'
-import { cn } from '../../lib/cn'
+import * as Popover from '@radix-ui/react-popover';
+import { ChevronDown } from 'lucide-react';
+import type { WorkflowRunStatus } from '../../client';
+import { cn } from '../../lib/cn';
 
 const STATUSES: WorkflowRunStatus[] = [
   'pending',
@@ -12,12 +12,12 @@ const STATUSES: WorkflowRunStatus[] = [
   'completed',
   'failed',
   'cancelled',
-]
+];
 
 export type StatusFilterProps = {
-  value: WorkflowRunStatus[]
-  onChange: (next: WorkflowRunStatus[]) => void
-}
+  value: WorkflowRunStatus[];
+  onChange: (next: WorkflowRunStatus[]) => void;
+};
 
 export function StatusFilter({ value, onChange }: StatusFilterProps) {
   return (
@@ -38,22 +38,22 @@ export function StatusFilter({ value, onChange }: StatusFilterProps) {
         align="start"
       >
         {STATUSES.map((s) => {
-          const checked = value.includes(s)
+          const checked = value.includes(s);
           return (
             <label key={s} className="flex items-center gap-2 px-1 py-0.5 text-xs">
               <input
                 type="checkbox"
                 checked={checked}
                 onChange={() => {
-                  const next = checked ? value.filter((v) => v !== s) : [...value, s]
-                  onChange(next)
+                  const next = checked ? value.filter((v) => v !== s) : [...value, s];
+                  onChange(next);
                 }}
               />
               {s}
             </label>
-          )
+          );
         })}
       </Popover.Content>
     </Popover.Root>
-  )
+  );
 }

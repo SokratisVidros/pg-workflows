@@ -1,16 +1,16 @@
-'use client'
+'use client';
 
-import * as Popover from '@radix-ui/react-popover'
-import { ChevronDown } from 'lucide-react'
+import * as Popover from '@radix-ui/react-popover';
+import { ChevronDown } from 'lucide-react';
 
 export type DurationFilterProps = {
-  minDuration?: number
-  maxDuration?: number
-  onChange: (next: { minDuration?: number; maxDuration?: number }) => void
-}
+  minDuration?: number;
+  maxDuration?: number;
+  onChange: (next: { minDuration?: number; maxDuration?: number }) => void;
+};
 
 export function DurationFilter({ minDuration, maxDuration, onChange }: DurationFilterProps) {
-  const active = minDuration != null || maxDuration != null
+  const active = minDuration != null || maxDuration != null;
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -56,5 +56,5 @@ export function DurationFilter({ minDuration, maxDuration, onChange }: DurationF
         </label>
       </Popover.Content>
     </Popover.Root>
-  )
+  );
 }

@@ -1,14 +1,14 @@
-'use client'
+'use client';
 
-import * as Select from '@radix-ui/react-select'
-import { ChevronDown } from 'lucide-react'
-import { cn } from '../../lib/cn'
+import * as Select from '@radix-ui/react-select';
+import { ChevronDown } from 'lucide-react';
+import { cn } from '../../lib/cn';
 
 export type WorkflowIdFilterProps = {
-  value?: string
-  options: string[]
-  onChange: (next: string | undefined) => void
-}
+  value?: string;
+  options: string[];
+  onChange: (next: string | undefined) => void;
+};
 
 export function WorkflowIdFilter({ value, options, onChange }: WorkflowIdFilterProps) {
   return (
@@ -48,5 +48,5 @@ export function WorkflowIdFilter({ value, options, onChange }: WorkflowIdFilterP
         </Select.Content>
       </Select.Portal>
     </Select.Root>
-  )
+  );
 }

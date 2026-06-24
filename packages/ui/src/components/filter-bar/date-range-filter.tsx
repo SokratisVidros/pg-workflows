@@ -1,16 +1,16 @@
-'use client'
+'use client';
 
-import * as Popover from '@radix-ui/react-popover'
-import { ChevronDown } from 'lucide-react'
+import * as Popover from '@radix-ui/react-popover';
+import { ChevronDown } from 'lucide-react';
 
 export type DateRangeFilterProps = {
-  from?: string
-  to?: string
-  onChange: (next: { from?: string; to?: string }) => void
-}
+  from?: string;
+  to?: string;
+  onChange: (next: { from?: string; to?: string }) => void;
+};
 
 export function DateRangeFilter({ from, to, onChange }: DateRangeFilterProps) {
-  const active = !!from || !!to
+  const active = !!from || !!to;
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -44,5 +44,5 @@ export function DateRangeFilter({ from, to, onChange }: DateRangeFilterProps) {
         </label>
       </Popover.Content>
     </Popover.Root>
-  )
+  );
 }
