@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { WorkflowRunsClient } from '../client';
 import { WorkflowRunsProvider } from '../provider';
 import { useWorkflowRun } from './use-workflow-run';
-import type { WorkflowRunsClient } from '../client';
 
 function makeClient(status: string): WorkflowRunsClient {
   return {

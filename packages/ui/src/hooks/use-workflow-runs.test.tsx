@@ -1,15 +1,18 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { WorkflowRunsClient } from '../client';
 import { WorkflowRunsProvider } from '../provider';
 import { useWorkflowRuns } from './use-workflow-runs';
-import type { WorkflowRunsClient } from '../client';
 
 function makeClient(): WorkflowRunsClient {
   return {
     listRuns: vi.fn().mockResolvedValue({
       items: [{ id: 'run_1' }, { id: 'run_2' }],
-      nextCursor: null, prevCursor: null, hasMore: false, hasPrev: false,
+      nextCursor: null,
+      prevCursor: null,
+      hasMore: false,
+      hasPrev: false,
     }),
     getRun: vi.fn(),
   };
