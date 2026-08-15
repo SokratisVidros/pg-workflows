@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { WorkflowEngineError, WorkflowRunNotFoundError } from 'pg-workflows';
+import { describe, expect, it } from 'vitest';
 import { HttpError, json, toErrorResponse } from './errors';
 
 async function body(res: Response) {
@@ -33,7 +33,9 @@ describe('toErrorResponse', () => {
   });
 
   it('passes an HttpError through with its own status and body', async () => {
-    const { status, json } = await body(toErrorResponse(new HttpError(400, { error: 'validation' })));
+    const { status, json } = await body(
+      toErrorResponse(new HttpError(400, { error: 'validation' })),
+    );
     expect(status).toBe(400);
     expect(json).toEqual({ error: 'validation' });
   });

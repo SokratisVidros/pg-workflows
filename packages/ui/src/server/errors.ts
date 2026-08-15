@@ -23,7 +23,8 @@ export function toErrorResponse(err: unknown): Response {
     return json({ error: 'not_found', message: err.message }, 404);
   }
   if (err instanceof WorkflowEngineError) {
-    if (err.issues) return json({ error: 'validation', message: err.message, issues: err.issues }, 400);
+    if (err.issues)
+      return json({ error: 'validation', message: err.message, issues: err.issues }, 400);
     return json({ error: 'conflict', message: err.message }, 409);
   }
   return json({ error: 'internal', message: 'Internal Server Error' }, 500);
