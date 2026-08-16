@@ -29,6 +29,7 @@ export type WorkflowRunsApi = {
   resumeRun: (req: Request, id: string) => Promise<Response>;
   fastForwardRun: (req: Request, id: string) => Promise<Response>;
   triggerEvent: (req: Request, id: string) => Promise<Response>;
+  fetch: (req: Request) => Promise<Response>;
 };
 
 export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRunsApi {
@@ -43,8 +44,8 @@ export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRun
     }
   }
 
-  return {
-    async listRuns(req) {
+  const api = {
+    async listRuns(req: Request) {
       const ctx = await context(req);
       if (ctx instanceof Response) return ctx;
       try {
@@ -56,7 +57,7 @@ export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRun
       }
     },
 
-    async getRun(req, id) {
+    async getRun(req: Request, id: string) {
       const ctx = await context(req);
       if (ctx instanceof Response) return ctx;
       try {
@@ -67,7 +68,7 @@ export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRun
       }
     },
 
-    async cancelRun(req, id) {
+    async cancelRun(req: Request, id: string) {
       const ctx = await context(req);
       if (ctx instanceof Response) return ctx;
       try {
@@ -77,7 +78,7 @@ export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRun
       }
     },
 
-    async pauseRun(req, id) {
+    async pauseRun(req: Request, id: string) {
       const ctx = await context(req);
       if (ctx instanceof Response) return ctx;
       try {
@@ -87,7 +88,7 @@ export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRun
       }
     },
 
-    async resumeRun(req, id) {
+    async resumeRun(req: Request, id: string) {
       const ctx = await context(req);
       if (ctx instanceof Response) return ctx;
       try {
@@ -97,7 +98,7 @@ export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRun
       }
     },
 
-    async fastForwardRun(req, id) {
+    async fastForwardRun(req: Request, id: string) {
       const ctx = await context(req);
       if (ctx instanceof Response) return ctx;
       try {
@@ -111,7 +112,7 @@ export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRun
       }
     },
 
-    async triggerEvent(req, id) {
+    async triggerEvent(req: Request, id: string) {
       const ctx = await context(req);
       if (ctx instanceof Response) return ctx;
       try {
@@ -125,4 +126,40 @@ export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRun
       }
     },
   };
+
+  const basePath = (opts.basePath ?? '/workflow-runs').replace(/\/$/, '');
+
+  const ACTIONS: Record<string, (req: Request, id: string) => Promise<Response>> = {
+    cancel: api.cancelRun,
+    pause: api.pauseRun,
+    resume: api.resumeRun,
+    'fast-forward': api.fastForwardRun,
+    trigger: api.triggerEvent,
+  };
+
+  async function fetch(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    if (url.pathname !== basePath && !url.pathname.startsWith(`${basePath}/`)) {
+      return json({ error: 'not_found' }, 404);
+    }
+    const rest = url.pathname.slice(basePath.length).replace(/^\//, '');
+    const segments = rest ? rest.split('/') : [];
+
+    if (segments.length === 0) {
+      if (req.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+      return api.listRuns(req);
+    }
+    const [id, action] = segments;
+    if (segments.length === 1 && id !== undefined) {
+      if (req.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+      return api.getRun(req, id);
+    }
+    if (segments.length === 2 && id !== undefined && action !== undefined && ACTIONS[action]) {
+      if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+      return ACTIONS[action](req, id);
+    }
+    return json({ error: 'not_found' }, 404);
+  }
+
+  return { ...api, fetch };
 }

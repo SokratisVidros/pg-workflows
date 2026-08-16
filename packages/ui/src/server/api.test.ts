@@ -130,3 +130,42 @@ describe('createWorkflowRunsApi — actions', () => {
     expect(engine.triggerEvent).not.toHaveBeenCalled();
   });
 });
+
+describe('createWorkflowRunsApi — fetch dispatcher', () => {
+  it('routes GET /workflow-runs to listRuns', async () => {
+    const engine = mockEngine();
+    const api = createWorkflowRunsApi({ engine });
+    const res = await api.fetch(new Request('http://x/workflow-runs?limit=2'));
+    expect(res.status).toBe(200);
+    expect(engine.getRuns).toHaveBeenCalled();
+  });
+
+  it('routes GET /workflow-runs/:id to getRun', async () => {
+    const engine = mockEngine();
+    const api = createWorkflowRunsApi({ engine });
+    await api.fetch(new Request('http://x/workflow-runs/run_1'));
+    expect(engine.getRun).toHaveBeenCalledWith({ runId: 'run_1', resourceId: undefined });
+  });
+
+  it('routes POST /workflow-runs/:id/cancel to cancelWorkflow', async () => {
+    const engine = mockEngine();
+    const api = createWorkflowRunsApi({ engine });
+    await api.fetch(new Request('http://x/workflow-runs/run_1/cancel', { method: 'POST' }));
+    expect(engine.cancelWorkflow).toHaveBeenCalledWith({ runId: 'run_1', resourceId: undefined });
+  });
+
+  it('honors a custom basePath', async () => {
+    const engine = mockEngine();
+    const api = createWorkflowRunsApi({ engine, basePath: '/api/wfr' });
+    const res = await api.fetch(new Request('http://x/api/wfr/run_1/pause', { method: 'POST' }));
+    expect(res.status).toBe(200);
+    expect(engine.pauseWorkflow).toHaveBeenCalledWith({ runId: 'run_1', resourceId: undefined });
+  });
+
+  it('returns 404 for an unknown path and 405 for a wrong method', async () => {
+    const engine = mockEngine();
+    const api = createWorkflowRunsApi({ engine });
+    expect((await api.fetch(new Request('http://x/other'))).status).toBe(404);
+    expect((await api.fetch(new Request('http://x/workflow-runs/run_1/cancel'))).status).toBe(405);
+  });
+});
