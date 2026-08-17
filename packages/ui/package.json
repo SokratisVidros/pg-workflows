@@ -17,6 +17,10 @@
       "types": "./src/client.ts",
       "default": "./src/client.ts"
     },
+    "./server": {
+      "types": "./src/server/index.ts",
+      "default": "./src/server/index.ts"
+    },
     "./next": {
       "types": "./src/next/index.ts",
       "default": "./src/next/index.ts"
