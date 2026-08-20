@@ -1,0 +1,67 @@
+'use client';
+
+import type { WorkflowRun } from '../client';
+import { cn } from '../lib/cn';
+import { computeDurationMs, formatDuration, timeAgo } from '../lib/duration';
+import { StatusBadge } from './status-badge';
+
+export type RunsTableProps = {
+  runs: WorkflowRun[];
+  onSelectRun: (id: string) => void;
+  isLoading?: boolean;
+  className?: string;
+};
+
+function shortId(id: string): string {
+  return id.length > 8 ? id.slice(0, 8) : id;
+}
+
+function durationLabel(run: WorkflowRun): string {
+  const ms = computeDurationMs(run);
+  return ms == null ? '—' : formatDuration(ms);
+}
+
+export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTableProps) {
+  return (
+    <table className={cn('w-full border-collapse text-sm', className)}>
+      <thead>
+        <tr className="border-b text-left text-xs uppercase text-gray-500">
+          <th className="px-3 py-2 font-medium">Status</th>
+          <th className="px-3 py-2 font-medium">Workflow</th>
+          <th className="px-3 py-2 font-medium">Run</th>
+          <th className="px-3 py-2 font-medium">Resource</th>
+          <th className="px-3 py-2 font-medium">Created</th>
+          <th className="px-3 py-2 font-medium">Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        {runs.length === 0 ? (
+          <tr>
+            <td colSpan={6} className="px-3 py-8 text-center text-gray-500">
+              {isLoading ? 'Loading…' : 'No runs'}
+            </td>
+          </tr>
+        ) : (
+          runs.map((run) => (
+            <tr
+              key={run.id}
+              onClick={() => onSelectRun(run.id)}
+              className="cursor-pointer border-b hover:bg-gray-50"
+            >
+              <td className="px-3 py-2">
+                <StatusBadge status={run.status} />
+              </td>
+              <td className="px-3 py-2">{run.workflowId}</td>
+              <td className="px-3 py-2 font-mono text-xs" title={run.id}>
+                {shortId(run.id)}
+              </td>
+              <td className="px-3 py-2 text-gray-600">{run.resourceId ?? '—'}</td>
+              <td className="px-3 py-2 text-gray-600">{timeAgo(run.createdAt)}</td>
+              <td className="px-3 py-2 text-gray-600">{durationLabel(run)}</td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+  );
+}
