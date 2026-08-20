@@ -97,12 +97,20 @@ function DashboardInner({
           filters={filters}
           hasActiveFilters={hasActiveFilters}
           workflowIds={workflowIds}
-          onFiltersChange={setFilters}
+          onFiltersChange={(p) =>
+            setFilters({ ...p, startingAfter: undefined, endingBefore: undefined })
+          }
           onClear={clearFilters}
         />
         <LiveIndicator isLive={live} isFetching={runsQuery.isFetching} onToggle={onToggleLive} />
       </div>
-      <RunsTable runs={rows} onSelectRun={select} isLoading={runsQuery.isLoading} />
+      {runsQuery.isError ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          Failed to load runs.
+        </div>
+      ) : (
+        <RunsTable runs={rows} onSelectRun={select} isLoading={runsQuery.isLoading} />
+      )}
       <Pagination
         hasPrev={!!runsQuery.data?.hasPrev}
         hasNext={!!runsQuery.data?.hasMore}
