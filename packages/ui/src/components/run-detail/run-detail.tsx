@@ -13,6 +13,7 @@ import { useWorkflowRun } from '../../hooks/use-workflow-run';
 import { cn } from '../../lib/cn';
 import { isTerminalStatus } from '../../lib/duration';
 import { extractSteps } from '../../lib/steps';
+import { RunProgress } from '../run-progress';
 import { JsonViewer } from './json-viewer';
 import { RunDetailHeader } from './run-detail-header';
 import { StepTimeline } from './step-timeline';
@@ -68,6 +69,7 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
   return (
     <div className={cn('flex flex-col gap-4', className)}>
       <RunDetailHeader run={run} onBack={onBack} />
+      <RunProgress run={run} />
       <div className="flex flex-wrap gap-2">
         <button
           type="button"

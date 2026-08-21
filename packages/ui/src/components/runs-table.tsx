@@ -2,7 +2,8 @@
 
 import type { WorkflowRun } from '../client';
 import { cn } from '../lib/cn';
-import { computeDurationMs, formatDuration, timeAgo } from '../lib/duration';
+import { computeDurationMs, formatDuration, isTerminalStatus, timeAgo } from '../lib/duration';
+import { RunProgress } from './run-progress';
 import { StatusBadge } from './status-badge';
 
 export type RunsTableProps = {
@@ -57,7 +58,13 @@ export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTable
               </td>
               <td className="px-3 py-2 text-pgw-muted-fg">{run.resourceId ?? '—'}</td>
               <td className="px-3 py-2 text-pgw-muted-fg">{timeAgo(run.createdAt)}</td>
-              <td className="px-3 py-2 text-pgw-muted-fg">{durationLabel(run)}</td>
+              <td className="px-3 py-2 text-pgw-muted-fg">
+                {isTerminalStatus(run.status) ? (
+                  durationLabel(run)
+                ) : (
+                  <RunProgress run={run} className="min-w-24" />
+                )}
+              </td>
             </tr>
           ))
         )}
