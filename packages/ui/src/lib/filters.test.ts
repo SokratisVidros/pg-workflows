@@ -49,6 +49,11 @@ describe('applyClientFilters', () => {
     expect(result.map((r) => r.id)).toEqual(['run_c']);
   });
 
+  it('filters by search matching a workflow id substring', () => {
+    const result = applyClientFilters(makeRuns(), { search: 'newslet' });
+    expect(result.map((r) => r.id)).toEqual(['run_b']);
+  });
+
   it('filters by min duration in seconds', () => {
     const result = applyClientFilters(makeRuns(), { minDuration: 30 });
     expect(result.map((r) => r.id)).not.toContain('run_a');

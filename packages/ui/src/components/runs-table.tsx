@@ -27,10 +27,10 @@ export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTable
     <table className={cn('w-full border-collapse text-sm', className)}>
       <thead>
         <tr className="border-b border-pgw-border text-left text-xs uppercase text-pgw-muted-fg">
-          <th className="px-3 py-2 font-medium">Status</th>
           <th className="px-3 py-2 font-medium">Workflow</th>
           <th className="px-3 py-2 font-medium">Run</th>
           <th className="px-3 py-2 font-medium">Resource</th>
+          <th className="px-3 py-2 font-medium">Status</th>
           <th className="px-3 py-2 font-medium">Created</th>
           <th className="px-3 py-2 font-medium">Duration</th>
         </tr>
@@ -49,14 +49,14 @@ export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTable
               onClick={() => onSelectRun(run.id)}
               className="cursor-pointer border-b border-pgw-border hover:bg-pgw-muted"
             >
-              <td className="px-3 py-2">
-                <StatusBadge status={run.status} />
-              </td>
               <td className="px-3 py-2">{run.workflowId}</td>
               <td className="px-3 py-2 font-mono text-xs" title={run.id}>
                 {shortId(run.id)}
               </td>
               <td className="px-3 py-2 text-pgw-muted-fg">{run.resourceId ?? '—'}</td>
+              <td className="px-3 py-2">
+                <StatusBadge status={run.status} />
+              </td>
               <td className="px-3 py-2 text-pgw-muted-fg">{timeAgo(run.createdAt)}</td>
               <td className="px-3 py-2 text-pgw-muted-fg">
                 {isTerminalStatus(run.status) ? (

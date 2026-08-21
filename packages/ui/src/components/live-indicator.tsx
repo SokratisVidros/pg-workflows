@@ -16,7 +16,7 @@ export function LiveIndicator({ isLive, isFetching, onToggle, className }: LiveI
       onClick={onToggle}
       aria-pressed={isLive}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md border border-pgw-border px-2 py-1 text-xs hover:bg-pgw-muted',
+        'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-pgw-muted',
         className,
       )}
     >
@@ -24,10 +24,12 @@ export function LiveIndicator({ isLive, isFetching, onToggle, className }: LiveI
         aria-hidden
         className={cn(
           'h-1.5 w-1.5 rounded-full',
-          isLive ? cn('bg-pgw-status-running', isFetching && 'animate-pulse') : 'bg-pgw-muted-fg',
+          isLive ? cn('bg-pgw-status-completed', isFetching && 'animate-pulse') : 'bg-pgw-muted-fg',
         )}
       />
-      {isLive ? 'Live' : 'Paused'}
+      <span className={isLive ? 'text-pgw-status-completed' : 'text-pgw-muted-fg'}>
+        {isLive ? 'Live' : 'Paused'}
+      </span>
     </button>
   );
 }

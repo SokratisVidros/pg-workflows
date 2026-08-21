@@ -24,6 +24,7 @@ export function FilterBar({
 }: FilterBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <SearchFilter value={filters.search} onChange={(search) => onFiltersChange({ search })} />
       <StatusFilter
         value={filters.statuses ?? []}
         onChange={(statuses) =>
@@ -45,7 +46,6 @@ export function FilterBar({
         maxDuration={filters.maxDuration}
         onChange={(next) => onFiltersChange(next)}
       />
-      <SearchFilter value={filters.search} onChange={(search) => onFiltersChange({ search })} />
       {hasActiveFilters && (
         <button
           type="button"
