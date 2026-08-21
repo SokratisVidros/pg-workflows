@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import type { WorkflowRun } from '../../client';
 import { StepWaterfall } from './step-waterfall';
 
@@ -48,5 +48,29 @@ describe('StepWaterfall', () => {
     const empty = { ...completedRun, timeline: {} } as WorkflowRun;
     render(<StepWaterfall run={empty} />);
     expect(screen.getByText(/no steps yet/i)).toBeInTheDocument();
+  });
+
+  it('calls onSelectStep with the step id when a row is clicked', () => {
+    const onSelectStep = vi.fn();
+    render(<StepWaterfall run={completedRun} onSelectStep={onSelectStep} />);
+    fireEvent.click(screen.getByRole('button', { name: /step-a/i }));
+    expect(onSelectStep).toHaveBeenCalledWith('step-a');
+  });
+
+  it('marks the selected row with aria-pressed', () => {
+    const onSelectStep = vi.fn();
+    render(
+      <StepWaterfall run={completedRun} onSelectStep={onSelectStep} selectedStepId="step-b" />,
+    );
+    expect(screen.getByRole('button', { name: /step-b/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /step-a/i })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  it('does not render rows as buttons when onSelectStep is not provided', () => {
+    render(<StepWaterfall run={completedRun} />);
+    expect(screen.queryByRole('button', { name: /step-a/i })).not.toBeInTheDocument();
   });
 });

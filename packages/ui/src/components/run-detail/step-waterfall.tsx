@@ -31,13 +31,28 @@ function computeTotalMs(steps: StepInfo[], run: WorkflowRun): number {
   return computeDurationMs(run) ?? 1;
 }
 
-function WaterfallRow({ step, totalMs }: { step: StepInfo; totalMs: number }) {
+function WaterfallRow({
+  step,
+  totalMs,
+  onSelectStep,
+  selected,
+}: {
+  step: StepInfo;
+  totalMs: number;
+  onSelectStep?: (stepId: string) => void;
+  selected: boolean;
+}) {
   const startOffsetMs = step.startOffsetMs ?? 0;
   const leftPct = (startOffsetMs / totalMs) * 100;
+  const rowClassName = cn(
+    'flex items-center gap-2 rounded py-1',
+    onSelectStep && 'w-full text-left hover:bg-pgw-muted',
+    selected && 'bg-pgw-muted',
+  );
 
-  if (step.durationMs == null) {
-    return (
-      <div className="flex items-center gap-2 py-1">
+  const content =
+    step.durationMs == null ? (
+      <>
         <span className="w-32 shrink-0 truncate font-mono text-xs text-pgw-fg" title={step.id}>
           {step.id}
         </span>
@@ -49,37 +64,57 @@ function WaterfallRow({ step, totalMs }: { step: StepInfo; totalMs: number }) {
           />
         </div>
         <span className="w-12 shrink-0 text-right text-xs text-pgw-muted-fg" />
-      </div>
+      </>
+    ) : (
+      <>
+        <span className="w-32 shrink-0 truncate font-mono text-xs text-pgw-fg" title={step.id}>
+          {step.id}
+        </span>
+        <div className="relative h-4 flex-1 rounded bg-pgw-muted">
+          <div
+            data-waterfall-bar
+            className={cn('absolute inset-y-0 rounded', barClassName(step))}
+            style={{
+              left: `${leftPct}%`,
+              width: `${Math.max((step.durationMs / totalMs) * 100, 0.5)}%`,
+            }}
+          />
+        </div>
+        <span className="w-12 shrink-0 text-right text-xs text-pgw-muted-fg">
+          {formatDuration(step.durationMs)}
+        </span>
+      </>
+    );
+
+  if (onSelectStep) {
+    return (
+      <button
+        type="button"
+        aria-pressed={selected}
+        className={rowClassName}
+        onClick={() => onSelectStep(step.id)}
+      >
+        {content}
+      </button>
     );
   }
 
-  const widthPct = Math.max((step.durationMs / totalMs) * 100, 0.5);
-
-  return (
-    <div className="flex items-center gap-2 py-1">
-      <span className="w-32 shrink-0 truncate font-mono text-xs text-pgw-fg" title={step.id}>
-        {step.id}
-      </span>
-      <div className="relative h-4 flex-1 rounded bg-pgw-muted">
-        <div
-          data-waterfall-bar
-          className={cn('absolute inset-y-0 rounded', barClassName(step))}
-          style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
-        />
-      </div>
-      <span className="w-12 shrink-0 text-right text-xs text-pgw-muted-fg">
-        {formatDuration(step.durationMs)}
-      </span>
-    </div>
-  );
+  return <div className={rowClassName}>{content}</div>;
 }
 
 export type StepWaterfallProps = {
   run: WorkflowRun;
   className?: string;
+  onSelectStep?: (stepId: string) => void;
+  selectedStepId?: string | null;
 };
 
-export function StepWaterfall({ run, className }: StepWaterfallProps) {
+export function StepWaterfall({
+  run,
+  className,
+  onSelectStep,
+  selectedStepId,
+}: StepWaterfallProps) {
   const steps = extractSteps(run);
 
   if (steps.length === 0) {
@@ -91,7 +126,13 @@ export function StepWaterfall({ run, className }: StepWaterfallProps) {
   return (
     <div className={cn('flex flex-col gap-0.5', className)}>
       {steps.map((step) => (
-        <WaterfallRow key={step.id} step={step} totalMs={totalMs} />
+        <WaterfallRow
+          key={step.id}
+          step={step}
+          totalMs={totalMs}
+          onSelectStep={onSelectStep}
+          selected={selectedStepId === step.id}
+        />
       ))}
     </div>
   );

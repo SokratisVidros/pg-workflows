@@ -59,4 +59,56 @@ describe('RunDetail', () => {
     render(<RunDetail runId="run_1" />, { wrapper: wrap(client) });
     await waitFor(() => expect(screen.getByRole('button', { name: /cancel/i })).toBeDisabled());
   });
+
+  it('shows a step-IO panel with the selected step input/output on click', async () => {
+    const client = makeClient({
+      status: 'completed',
+      timeline: {
+        'step-a': {
+          input: { userId: 42 },
+          output: { greeting: 'hi' },
+          timestamp: new Date().toISOString(),
+        },
+      },
+    });
+    render(<RunDetail runId="run_1" />, { wrapper: wrap(client) });
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /step-a/i }).length).toBeGreaterThan(0),
+    );
+    const [waterfallRow] = screen.getAllByRole('button', { name: /step-a/i });
+    fireEvent.click(waterfallRow as HTMLElement);
+    await waitFor(() => expect(screen.getByText(/"userId": 42/)).toBeInTheDocument());
+    expect(screen.getByText(/"greeting": "hi"/)).toBeInTheDocument();
+  });
+
+  it('clears the step-IO panel when the close control is clicked', async () => {
+    const client = makeClient({
+      status: 'completed',
+      timeline: {
+        'step-a': {
+          input: { userId: 42 },
+          output: { greeting: 'hi' },
+          timestamp: new Date().toISOString(),
+        },
+      },
+    });
+    render(<RunDetail runId="run_1" />, { wrapper: wrap(client) });
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /step-a/i }).length).toBeGreaterThan(0),
+    );
+    const [waterfallRow] = screen.getAllByRole('button', { name: /step-a/i });
+    fireEvent.click(waterfallRow as HTMLElement);
+    await waitFor(() => expect(screen.getByText(/"userId": 42/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /close/i }));
+    expect(screen.queryByText(/"userId": 42/)).not.toBeInTheDocument();
+  });
+
+  it('does not use raw palette classes anywhere in the markup', async () => {
+    const NO_RAW_PALETTE =
+      /\b(?:text|bg|border|hover:bg)-(?:gray|red|blue|green|yellow|zinc|slate|neutral)-/;
+    const client = makeClient({ status: 'running' });
+    const { container } = render(<RunDetail runId="run_1" />, { wrapper: wrap(client) });
+    await waitFor(() => expect(screen.getByRole('button', { name: /cancel/i })).toBeEnabled());
+    expect(container.innerHTML).not.toMatch(NO_RAW_PALETTE);
+  });
 });

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import {
   useCancelRun,
   useFastForwardRun,
@@ -10,6 +11,7 @@ import {
 import { useWorkflowRun } from '../../hooks/use-workflow-run';
 import { cn } from '../../lib/cn';
 import { isTerminalStatus } from '../../lib/duration';
+import { extractSteps } from '../../lib/steps';
 import { JsonViewer } from './json-viewer';
 import { RunDetailHeader } from './run-detail-header';
 import { StepTimeline } from './step-timeline';
@@ -31,6 +33,7 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
   const resume = useResumeRun();
   const fastForward = useFastForwardRun();
   const trigger = useTriggerEvent();
+  const [selectedStep, setSelectedStep] = useState<string | null>(null);
 
   if (isLoading) return <div className={cn('p-6 text-pgw-muted-fg', className)}>Loading…</div>;
   if (error || !run) {
@@ -47,6 +50,9 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
   }
 
   const terminal = isTerminalStatus(run.status);
+  const selectedStepInfo = selectedStep
+    ? extractSteps(run).find((s) => s.id === selectedStep)
+    : undefined;
 
   return (
     <div className={cn('flex flex-col gap-4', className)}>
@@ -95,8 +101,31 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
       </div>
       <div>
         <h3 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Timeline</h3>
-        <StepWaterfall run={run} />
+        <StepWaterfall run={run} onSelectStep={setSelectedStep} selectedStepId={selectedStep} />
       </div>
+      {selectedStepInfo && (
+        <section className="flex flex-col gap-3 rounded-md border border-pgw-border p-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-mono text-xs font-medium text-pgw-fg">{selectedStepInfo.id}</h3>
+            <button
+              type="button"
+              aria-label="Close step details"
+              className="rounded border border-pgw-border px-2 py-0.5 text-xs hover:bg-pgw-muted"
+              onClick={() => setSelectedStep(null)}
+            >
+              Close
+            </button>
+          </div>
+          <div>
+            <h4 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Step input</h4>
+            <JsonViewer value={selectedStepInfo.stepInput} />
+          </div>
+          <div>
+            <h4 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Step output</h4>
+            <JsonViewer value={selectedStepInfo.stepOutput} />
+          </div>
+        </section>
+      )}
       <StepTimeline run={run} />
       <section className="flex flex-col gap-3">
         <div>
