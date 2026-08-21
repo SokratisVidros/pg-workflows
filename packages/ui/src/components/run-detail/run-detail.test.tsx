@@ -103,6 +103,25 @@ describe('RunDetail', () => {
     expect(screen.queryByText(/"userId": 42/)).not.toBeInTheDocument();
   });
 
+  it('shows an inline error message when an action mutation rejects', async () => {
+    const client = makeClient({ status: 'running' });
+    client.cancelRun = vi.fn().mockRejectedValue(new Error('network down'));
+    render(<RunDetail runId="run_1" />, { wrapper: wrap(client) });
+    await waitFor(() => expect(screen.getByRole('button', { name: /cancel/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    await waitFor(() => expect(screen.getByText(/network down/)).toBeInTheDocument());
+  });
+
+  it('shows a success confirmation when an action mutation resolves', async () => {
+    const client = makeClient({ status: 'running' });
+    render(<RunDetail runId="run_1" />, { wrapper: wrap(client) });
+    await waitFor(() => expect(screen.getByRole('button', { name: /cancel/i })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    await waitFor(() => expect(client.cancelRun).toHaveBeenCalledWith('run_1'));
+    await waitFor(() => expect(screen.getByText(/cancelled/i)).toBeInTheDocument());
+    expect(screen.queryByText(/network down/)).not.toBeInTheDocument();
+  });
+
   it('does not use raw palette classes anywhere in the markup', async () => {
     const NO_RAW_PALETTE =
       /\b(?:text|bg|border|hover:bg)-(?:gray|red|blue|green|yellow|zinc|slate|neutral)-/;
