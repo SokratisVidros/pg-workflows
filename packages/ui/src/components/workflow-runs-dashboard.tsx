@@ -13,6 +13,7 @@ import { LiveIndicator } from './live-indicator';
 import { Pagination } from './pagination';
 import { RunDetail } from './run-detail/run-detail';
 import { RunsTable } from './runs-table';
+import { StatusSummary } from './status-summary';
 
 type SelectionProps = {
   selectedRunId?: string | null;
@@ -65,10 +66,12 @@ function DashboardInner({
     onSelectRun?.(id);
   };
 
+  const unfilteredItems = workflowsQuery.data?.items ?? [];
+
   const workflowIds = useMemo(() => {
-    const ids = new Set((workflowsQuery.data?.items ?? []).map((r) => r.workflowId));
+    const ids = new Set(unfilteredItems.map((r) => r.workflowId));
     return [...ids].sort();
-  }, [workflowsQuery.data]);
+  }, [unfilteredItems]);
 
   const rows = useMemo(() => {
     const items = runsQuery.data?.items ?? [];
@@ -92,6 +95,12 @@ function DashboardInner({
 
   return (
     <div className={cn('pgw-root flex flex-col gap-3 p-4', className)}>
+      <StatusSummary
+        runs={unfilteredItems}
+        onSelectStatus={(s) =>
+          setFilters({ statuses: [s], startingAfter: undefined, endingBefore: undefined })
+        }
+      />
       <div className="flex items-center justify-between gap-2">
         <FilterBar
           filters={filters}
