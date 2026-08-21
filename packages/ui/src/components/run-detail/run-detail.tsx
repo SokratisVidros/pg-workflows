@@ -13,6 +13,7 @@ import { isTerminalStatus } from '../../lib/duration';
 import { JsonViewer } from './json-viewer';
 import { RunDetailHeader } from './run-detail-header';
 import { StepTimeline } from './step-timeline';
+import { StepWaterfall } from './step-waterfall';
 
 export type RunDetailProps = {
   runId: string;
@@ -91,6 +92,10 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
         >
           Trigger
         </button>
+      </div>
+      <div>
+        <h3 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Timeline</h3>
+        <StepWaterfall run={run} />
       </div>
       <StepTimeline run={run} />
       <section className="flex flex-col gap-3">
