@@ -71,4 +71,11 @@ describe('StatusSummary', () => {
       /\b(?:text|bg|border|hover:bg)-(?:gray|red|blue|green|yellow|zinc|slate|neutral)-/,
     );
   });
+
+  it('applies the full literal status classes so Tailwind can statically discover them', () => {
+    render(<StatusSummary runs={[run({ status: 'running' })]} />);
+    const pill = screen.getByRole('button', { name: /running/i });
+    expect(pill.innerHTML).toContain('text-pgw-status-running');
+    expect(pill.innerHTML).toContain('bg-pgw-status-running');
+  });
 });

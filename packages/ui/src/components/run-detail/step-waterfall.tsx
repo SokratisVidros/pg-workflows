@@ -28,7 +28,7 @@ function computeTotalMs(steps: StepInfo[], run: WorkflowRun): number {
     if (end > max) max = end;
   }
   if (max > 0) return max;
-  return computeDurationMs(run) ?? 1;
+  return Math.max(computeDurationMs(run) ?? 1, 1);
 }
 
 function WaterfallRow({
@@ -56,13 +56,13 @@ function WaterfallRow({
         <span className="w-32 shrink-0 truncate font-mono text-xs text-pgw-fg" title={step.id}>
           {step.id}
         </span>
-        <div className="relative h-4 flex-1 rounded bg-pgw-muted">
-          <div
+        <span className="relative block h-4 flex-1 rounded bg-pgw-muted">
+          <span
             data-waterfall-bar
             className="absolute inset-y-0 w-1 rounded-full bg-pgw-muted-fg opacity-60"
             style={{ left: `${leftPct}%`, width: '0.5%' }}
           />
-        </div>
+        </span>
         <span className="w-12 shrink-0 text-right text-xs text-pgw-muted-fg" />
       </>
     ) : (
@@ -70,8 +70,8 @@ function WaterfallRow({
         <span className="w-32 shrink-0 truncate font-mono text-xs text-pgw-fg" title={step.id}>
           {step.id}
         </span>
-        <div className="relative h-4 flex-1 rounded bg-pgw-muted">
-          <div
+        <span className="relative block h-4 flex-1 rounded bg-pgw-muted">
+          <span
             data-waterfall-bar
             className={cn('absolute inset-y-0 rounded', barClassName(step))}
             style={{
@@ -79,7 +79,7 @@ function WaterfallRow({
               width: `${Math.max((step.durationMs / totalMs) * 100, 0.5)}%`,
             }}
           />
-        </div>
+        </span>
         <span className="w-12 shrink-0 text-right text-xs text-pgw-muted-fg">
           {formatDuration(step.durationMs)}
         </span>

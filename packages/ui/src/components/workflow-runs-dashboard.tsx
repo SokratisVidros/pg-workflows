@@ -88,7 +88,7 @@ function DashboardInner({
   if (selected) {
     return (
       <div className={cn('pgw-root p-4', className)}>
-        <RunDetail runId={selected} onBack={() => select(null)} />
+        <RunDetail key={selected} runId={selected} onBack={() => select(null)} />
       </div>
     );
   }

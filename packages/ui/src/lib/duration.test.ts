@@ -54,6 +54,16 @@ describe('computeDurationMs', () => {
     });
     expect(computeDurationMs(run)).toBe(3_000);
   });
+
+  it('freezes at updatedAt for failed runs without completedAt, not wall-clock now', () => {
+    const run = makeRun({
+      status: 'failed',
+      createdAt: '2026-06-17T12:00:00Z',
+      completedAt: null,
+      updatedAt: '2026-06-17T12:00:07Z',
+    });
+    expect(computeDurationMs(run)).toBe(7_000);
+  });
 });
 
 describe('formatDuration', () => {

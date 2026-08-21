@@ -2,15 +2,7 @@
 
 import type { WorkflowRun, WorkflowRunStatus } from '../client';
 import { cn } from '../lib/cn';
-
-const TOKEN_BY_STATUS: Record<WorkflowRunStatus, string> = {
-  completed: 'pgw-status-completed',
-  failed: 'pgw-status-failed',
-  running: 'pgw-status-running',
-  paused: 'pgw-status-paused',
-  cancelled: 'pgw-status-cancelled',
-  pending: 'pgw-status-pending',
-};
+import { STATUS_DOT_CLASS, STATUS_TEXT_CLASS } from '../lib/status-classes';
 
 const STATUS_ORDER: WorkflowRunStatus[] = [
   'pending',
@@ -43,7 +35,6 @@ export function StatusSummary({ runs, onSelectStatus, className }: StatusSummary
   return (
     <div className={cn('flex flex-wrap items-center gap-2', className)}>
       {present.map((status) => {
-        const token = TOKEN_BY_STATUS[status];
         return (
           <button
             key={status}
@@ -53,9 +44,12 @@ export function StatusSummary({ runs, onSelectStatus, className }: StatusSummary
               'inline-flex items-center gap-1.5 rounded-md border border-pgw-border px-2 py-1 text-xs hover:bg-pgw-muted',
             )}
           >
-            <span aria-hidden className={cn('h-1.5 w-1.5 rounded-full', `bg-${token}`)} />
+            <span
+              aria-hidden
+              className={cn('h-1.5 w-1.5 rounded-full', STATUS_DOT_CLASS[status])}
+            />
             <span className="font-medium">{counts[status]}</span>
-            <span className={`text-${token}`}>{status}</span>
+            <span className={STATUS_TEXT_CLASS[status]}>{status}</span>
           </button>
         );
       })}

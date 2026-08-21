@@ -7,7 +7,9 @@ export function isTerminalStatus(status: string): boolean {
 }
 
 export function runAsOfMs(run: WorkflowRun): number {
-  if (run.completedAt) return new Date(run.completedAt).getTime();
+  if (isTerminalStatus(run.status)) {
+    return new Date(run.completedAt ?? run.updatedAt).getTime();
+  }
   if (run.status === 'paused' && run.pausedAt) {
     return new Date(run.pausedAt).getTime();
   }
