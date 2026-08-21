@@ -39,6 +39,16 @@ describe('WorkflowRunsDashboard', () => {
     expect(screen.getByText('email')).toBeInTheDocument();
   });
 
+  it('uses themeable tokens, not hardcoded palette colors', async () => {
+    const { container } = render(
+      <WorkflowRunsDashboard client={makeClient()} pollIntervalMs={0} />,
+    );
+    await waitFor(() => expect(screen.getByText('ingest')).toBeInTheDocument());
+    expect(container.innerHTML).not.toMatch(
+      /\b(?:text|bg|border|hover:bg)-(?:gray|red|blue|green|yellow|zinc|slate|neutral)-/,
+    );
+  });
+
   it('navigates to the detail page when a row is clicked and back again', async () => {
     const client = makeClient();
     render(<WorkflowRunsDashboard client={client} pollIntervalMs={0} />);

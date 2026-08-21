@@ -25,7 +25,7 @@ export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTable
   return (
     <table className={cn('w-full border-collapse text-sm', className)}>
       <thead>
-        <tr className="border-b text-left text-xs uppercase text-gray-500">
+        <tr className="border-b border-pgw-border text-left text-xs uppercase text-pgw-muted-fg">
           <th className="px-3 py-2 font-medium">Status</th>
           <th className="px-3 py-2 font-medium">Workflow</th>
           <th className="px-3 py-2 font-medium">Run</th>
@@ -37,7 +37,7 @@ export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTable
       <tbody>
         {runs.length === 0 ? (
           <tr>
-            <td colSpan={6} className="px-3 py-8 text-center text-gray-500">
+            <td colSpan={6} className="px-3 py-8 text-center text-pgw-muted-fg">
               {isLoading ? 'Loading…' : 'No runs'}
             </td>
           </tr>
@@ -46,7 +46,7 @@ export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTable
             <tr
               key={run.id}
               onClick={() => onSelectRun(run.id)}
-              className="cursor-pointer border-b hover:bg-gray-50"
+              className="cursor-pointer border-b border-pgw-border hover:bg-pgw-muted"
             >
               <td className="px-3 py-2">
                 <StatusBadge status={run.status} />
@@ -55,9 +55,9 @@ export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTable
               <td className="px-3 py-2 font-mono text-xs" title={run.id}>
                 {shortId(run.id)}
               </td>
-              <td className="px-3 py-2 text-gray-600">{run.resourceId ?? '—'}</td>
-              <td className="px-3 py-2 text-gray-600">{timeAgo(run.createdAt)}</td>
-              <td className="px-3 py-2 text-gray-600">{durationLabel(run)}</td>
+              <td className="px-3 py-2 text-pgw-muted-fg">{run.resourceId ?? '—'}</td>
+              <td className="px-3 py-2 text-pgw-muted-fg">{timeAgo(run.createdAt)}</td>
+              <td className="px-3 py-2 text-pgw-muted-fg">{durationLabel(run)}</td>
             </tr>
           ))
         )}

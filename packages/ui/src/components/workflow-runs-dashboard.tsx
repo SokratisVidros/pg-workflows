@@ -84,14 +84,14 @@ function DashboardInner({
 
   if (selected) {
     return (
-      <div className={cn('p-4', className)}>
+      <div className={cn('pgw-root p-4', className)}>
         <RunDetail runId={selected} onBack={() => select(null)} />
       </div>
     );
   }
 
   return (
-    <div className={cn('flex flex-col gap-3 p-4', className)}>
+    <div className={cn('pgw-root flex flex-col gap-3 p-4', className)}>
       <div className="flex items-center justify-between gap-2">
         <FilterBar
           filters={filters}
@@ -105,7 +105,7 @@ function DashboardInner({
         <LiveIndicator isLive={live} isFetching={runsQuery.isFetching} onToggle={onToggleLive} />
       </div>
       {runsQuery.isError ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+        <div className="rounded-md border border-pgw-status-failed bg-pgw-muted px-3 py-2 text-sm text-pgw-status-failed">
           Failed to load runs.
         </div>
       ) : (

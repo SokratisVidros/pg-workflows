@@ -18,4 +18,13 @@ describe('Pagination', () => {
     expect(onPrev).toHaveBeenCalledOnce();
     expect(onNext).toHaveBeenCalledOnce();
   });
+
+  it('uses themeable tokens, not hardcoded palette colors', () => {
+    const { container } = render(
+      <Pagination hasPrev hasNext onPrev={() => {}} onNext={() => {}} />,
+    );
+    expect(container.innerHTML).not.toMatch(
+      /\b(?:text|bg|border|hover:bg)-(?:gray|red|blue|green|yellow|zinc|slate|neutral)-/,
+    );
+  });
 });

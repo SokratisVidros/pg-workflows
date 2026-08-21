@@ -20,7 +20,7 @@ export function Pagination({
   className,
 }: PaginationProps) {
   const btn =
-    'rounded border px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 hover:bg-gray-50';
+    'rounded border border-pgw-border px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 hover:bg-pgw-muted';
   return (
     <div className={cn('flex items-center gap-2', className)}>
       <button type="button" className={btn} onClick={onPrev} disabled={!hasPrev || isFetching}>

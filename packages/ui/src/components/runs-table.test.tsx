@@ -37,4 +37,11 @@ describe('RunsTable', () => {
     render(<RunsTable runs={[]} onSelectRun={() => {}} />);
     expect(screen.getByText(/no runs/i)).toBeInTheDocument();
   });
+
+  it('uses themeable tokens, not hardcoded palette colors', () => {
+    const { container } = render(<RunsTable runs={[]} onSelectRun={() => {}} />);
+    expect(container.innerHTML).not.toMatch(
+      /\b(?:text|bg|border|hover:bg)-(?:gray|red|blue|green|yellow|zinc|slate|neutral)-/,
+    );
+  });
 });

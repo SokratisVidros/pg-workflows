@@ -21,7 +21,7 @@ export type RunDetailProps = {
 };
 
 const actionBtn =
-  'rounded border px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 hover:bg-gray-50';
+  'rounded border border-pgw-border px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 hover:bg-pgw-muted';
 
 export function RunDetail({ runId, onBack, className }: RunDetailProps) {
   const { data: run, isLoading, error } = useWorkflowRun(runId);
@@ -31,10 +31,10 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
   const fastForward = useFastForwardRun();
   const trigger = useTriggerEvent();
 
-  if (isLoading) return <div className={cn('p-6 text-gray-500', className)}>Loading…</div>;
+  if (isLoading) return <div className={cn('p-6 text-pgw-muted-fg', className)}>Loading…</div>;
   if (error || !run) {
     return (
-      <div className={cn('p-6 text-red-600', className)}>
+      <div className={cn('p-6 text-pgw-status-failed', className)}>
         Failed to load run.{' '}
         {onBack && (
           <button type="button" className="underline" onClick={onBack}>
@@ -95,18 +95,18 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
       <StepTimeline run={run} />
       <section className="flex flex-col gap-3">
         <div>
-          <h3 className="mb-1 text-xs font-medium uppercase text-gray-500">Input</h3>
+          <h3 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Input</h3>
           <JsonViewer value={run.input} />
         </div>
         {run.output != null && (
           <div>
-            <h3 className="mb-1 text-xs font-medium uppercase text-gray-500">Output</h3>
+            <h3 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Output</h3>
             <JsonViewer value={run.output} />
           </div>
         )}
         {run.error != null && (
           <div>
-            <h3 className="mb-1 text-xs font-medium uppercase text-red-500">Error</h3>
+            <h3 className="mb-1 text-xs font-medium uppercase text-pgw-status-failed">Error</h3>
             <JsonViewer value={run.error} />
           </div>
         )}
