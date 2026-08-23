@@ -12,12 +12,10 @@ import {
 import { useWorkflowRun } from '../../hooks/use-workflow-run';
 import { cn } from '../../lib/cn';
 import { isTerminalStatus } from '../../lib/duration';
-import { extractSteps } from '../../lib/steps';
 import { RunProgress } from '../run-progress';
 import { JsonViewer } from './json-viewer';
 import { RunDetailHeader } from './run-detail-header';
 import { StepTimeline } from './step-timeline';
-import { StepWaterfall } from './step-waterfall';
 
 export type RunDetailProps = {
   runId: string;
@@ -26,7 +24,7 @@ export type RunDetailProps = {
 };
 
 const actionBtn =
-  'inline-flex items-center gap-1.5 rounded border border-pgw-border px-3 py-1 text-sm disabled:cursor-not-allowed disabled:opacity-50 hover:bg-pgw-muted';
+  'inline-flex items-center gap-1 text-sm text-pgw-fg hover:text-pgw-accent hover:underline disabled:cursor-not-allowed disabled:opacity-40';
 
 type ActionFeedback = { kind: 'success' | 'error'; message: string };
 
@@ -37,7 +35,6 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
   const resume = useResumeRun();
   const fastForward = useFastForwardRun();
   const trigger = useTriggerEvent();
-  const [selectedStep, setSelectedStep] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<ActionFeedback | null>(null);
 
   function feedbackCallbacks(label: string) {
@@ -62,15 +59,10 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
   }
 
   const terminal = isTerminalStatus(run.status);
-  const selectedStepInfo = selectedStep
-    ? extractSteps(run).find((s) => s.id === selectedStep)
-    : undefined;
 
   return (
     <div className={cn('flex flex-col gap-4', className)}>
-      <RunDetailHeader run={run} onBack={onBack} />
-      <RunProgress run={run} />
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <button
           type="button"
           className={actionBtn}
@@ -154,45 +146,18 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
           {feedback.message}
         </div>
       )}
-      <div>
-        <h3 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Timeline</h3>
-        <StepWaterfall run={run} onSelectStep={setSelectedStep} selectedStepId={selectedStep} />
-      </div>
-      {selectedStepInfo && (
-        <section className="flex flex-col gap-3 rounded-md border border-pgw-border p-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-mono text-xs font-medium text-pgw-fg">{selectedStepInfo.id}</h3>
-            <button
-              type="button"
-              aria-label="Close step details"
-              className="rounded border border-pgw-border px-2 py-0.5 text-xs hover:bg-pgw-muted"
-              onClick={() => setSelectedStep(null)}
-            >
-              Close
-            </button>
-          </div>
-          <div>
-            <h4 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Step input</h4>
-            <JsonViewer value={selectedStepInfo.stepInput} />
-          </div>
-          <div>
-            <h4 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Step output</h4>
-            <JsonViewer value={selectedStepInfo.stepOutput} />
-          </div>
-        </section>
-      )}
+      <RunDetailHeader run={run} onBack={onBack} />
+      <RunProgress run={run} />
       <StepTimeline run={run} />
       <section className="flex flex-col gap-3">
         <div>
           <h3 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Input</h3>
           <JsonViewer value={run.input} />
         </div>
-        {run.output != null && (
-          <div>
-            <h3 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Output</h3>
-            <JsonViewer value={run.output} />
-          </div>
-        )}
+        <div>
+          <h3 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Output</h3>
+          <JsonViewer value={run.output} />
+        </div>
         {run.error != null && (
           <div>
             <h3 className="mb-1 text-xs font-medium uppercase text-pgw-status-failed">Error</h3>

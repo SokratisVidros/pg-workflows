@@ -60,7 +60,7 @@ describe('RunDetail', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /cancel/i })).toBeDisabled());
   });
 
-  it('shows a step-IO panel with the selected step input/output on click', async () => {
+  it('reveals a step input/output via the StepTimeline expandable row on click', async () => {
     const client = makeClient({
       status: 'completed',
       timeline: {
@@ -75,32 +75,18 @@ describe('RunDetail', () => {
     await waitFor(() =>
       expect(screen.getAllByRole('button', { name: /step-a/i }).length).toBeGreaterThan(0),
     );
-    const [waterfallRow] = screen.getAllByRole('button', { name: /step-a/i });
-    fireEvent.click(waterfallRow as HTMLElement);
+    const [stepRow] = screen.getAllByRole('button', { name: /step-a/i });
+    fireEvent.click(stepRow as HTMLElement);
     await waitFor(() => expect(screen.getByText(/"userId": 42/)).toBeInTheDocument());
     expect(screen.getByText(/"greeting": "hi"/)).toBeInTheDocument();
   });
 
-  it('clears the step-IO panel when the close control is clicked', async () => {
-    const client = makeClient({
-      status: 'completed',
-      timeline: {
-        'step-a': {
-          input: { userId: 42 },
-          output: { greeting: 'hi' },
-          timestamp: new Date().toISOString(),
-        },
-      },
-    });
+  it('always renders Input and Output sections, even when output is null', async () => {
+    const client = makeClient({ status: 'running', input: { a: 1 }, output: null });
     render(<RunDetail runId="run_1" />, { wrapper: wrap(client) });
-    await waitFor(() =>
-      expect(screen.getAllByRole('button', { name: /step-a/i }).length).toBeGreaterThan(0),
-    );
-    const [waterfallRow] = screen.getAllByRole('button', { name: /step-a/i });
-    fireEvent.click(waterfallRow as HTMLElement);
-    await waitFor(() => expect(screen.getByText(/"userId": 42/)).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /close/i }));
-    expect(screen.queryByText(/"userId": 42/)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /cancel/i })).toBeEnabled());
+    expect(screen.getByRole('heading', { name: /input/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /output/i })).toBeInTheDocument();
   });
 
   it('shows an inline error message when an action mutation rejects', async () => {
