@@ -35,7 +35,7 @@ export function StatusSummary({ runs, onSelectStatus, className }: StatusSummary
   return (
     <div
       className={cn(
-        'flex flex-wrap items-stretch overflow-hidden rounded-md border border-pgw-border',
+        'inline-flex items-stretch overflow-hidden rounded-md border border-pgw-border',
         className,
       )}
     >
@@ -46,7 +46,7 @@ export function StatusSummary({ runs, onSelectStatus, className }: StatusSummary
             type="button"
             onClick={() => onSelectStatus?.(status)}
             className={cn(
-              'flex w-24 min-w-20 flex-col items-center gap-0.5 px-3 py-2 text-center hover:bg-pgw-muted',
+              'flex w-24 flex-col items-center gap-0.5 px-3 py-2 text-center hover:bg-pgw-muted',
               index > 0 && 'border-l border-pgw-border',
             )}
           >
