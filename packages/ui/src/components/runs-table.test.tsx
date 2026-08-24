@@ -44,4 +44,10 @@ describe('RunsTable', () => {
       /\b(?:text|bg|border|hover:bg)-(?:gray|red|blue|green|yellow|zinc|slate|neutral)-/,
     );
   });
+
+  it('shows the absolute UTC timestamp as a title on the created cell', () => {
+    const createdAt = '2024-03-15T12:34:56.000Z';
+    render(<RunsTable runs={[run({ createdAt })]} onSelectRun={() => {}} />);
+    expect(screen.getByTitle(new Date(createdAt).toISOString())).toBeInTheDocument();
+  });
 });

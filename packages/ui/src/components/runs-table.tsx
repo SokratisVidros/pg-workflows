@@ -32,7 +32,7 @@ export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTable
           <th className="px-3 py-2 font-medium">Resource</th>
           <th className="px-3 py-2 font-medium">Status</th>
           <th className="px-3 py-2 font-medium">Created</th>
-          <th className="px-3 py-2 font-medium">Duration</th>
+          <th className="px-3 py-2 font-medium">Progress</th>
         </tr>
       </thead>
       <tbody>
@@ -57,7 +57,12 @@ export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTable
               <td className="px-3 py-2">
                 <StatusBadge status={run.status} />
               </td>
-              <td className="px-3 py-2 text-pgw-muted-fg">{timeAgo(run.createdAt)}</td>
+              <td
+                className="px-3 py-2 text-pgw-muted-fg"
+                title={new Date(run.createdAt).toISOString()}
+              >
+                {timeAgo(run.createdAt)}
+              </td>
               <td className="px-3 py-2 text-pgw-muted-fg">
                 {isTerminalStatus(run.status) ? (
                   durationLabel(run)
