@@ -33,7 +33,12 @@ export function StatusSummary({ runs, onSelectStatus, className }: StatusSummary
   if (present.length === 0) return null;
 
   return (
-    <div className={cn('flex flex-wrap items-stretch', className)}>
+    <div
+      className={cn(
+        'flex flex-wrap items-stretch overflow-hidden rounded-md border border-pgw-border',
+        className,
+      )}
+    >
       {present.map((status, index) => {
         return (
           <button
