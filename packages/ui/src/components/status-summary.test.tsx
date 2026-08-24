@@ -15,7 +15,7 @@ const run = (over: Partial<WorkflowRun> = {}): WorkflowRun =>
   }) as unknown as WorkflowRun;
 
 describe('StatusSummary', () => {
-  it('renders a box per present status with the correct count', () => {
+  it('renders a counter per present status with the correct count', () => {
     render(
       <StatusSummary
         runs={[
@@ -35,14 +35,14 @@ describe('StatusSummary', () => {
     expect(screen.getByRole('button', { name: /1\s*failed/i })).toBeInTheDocument();
   });
 
-  it('renders the label underneath the count inside each box', () => {
+  it('renders the label underneath the count inside each counter', () => {
     render(<StatusSummary runs={[run({ status: 'running' }), run({ status: 'failed' })]} />);
-    const runningBox = screen.getByRole('button', { name: /running/i });
-    expect(runningBox).toHaveTextContent('1');
-    expect(runningBox).toHaveTextContent('running');
+    const runningCounter = screen.getByRole('button', { name: /running/i });
+    expect(runningCounter).toHaveTextContent('1');
+    expect(runningCounter).toHaveTextContent('running');
   });
 
-  it('renders no box for a status with zero runs', () => {
+  it('renders no counter for a status with zero runs', () => {
     render(<StatusSummary runs={[run({ status: 'running' })]} />);
     expect(screen.queryByRole('button', { name: /paused/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /completed/i })).not.toBeInTheDocument();
@@ -81,7 +81,19 @@ describe('StatusSummary', () => {
 
   it('applies the full literal status class so Tailwind can statically discover it', () => {
     render(<StatusSummary runs={[run({ status: 'running' })]} />);
-    const box = screen.getByRole('button', { name: /running/i });
-    expect(box.innerHTML).toContain('text-pgw-status-running');
+    const counter = screen.getByRole('button', { name: /running/i });
+    expect(counter.innerHTML).toContain('text-pgw-status-running');
+  });
+
+  it('separates counters with a vertical divider on every counter except the first', () => {
+    render(
+      <StatusSummary
+        runs={[run({ status: 'running' }), run({ status: 'failed' }), run({ status: 'completed' })]}
+      />,
+    );
+    const [first, second, third] = screen.getAllByRole('button');
+    expect(first.className).not.toMatch(/border-l/);
+    expect(second.className).toMatch(/border-l border-pgw-border/);
+    expect(third.className).toMatch(/border-l border-pgw-border/);
   });
 });
