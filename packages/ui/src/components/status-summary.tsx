@@ -2,7 +2,7 @@
 
 import type { WorkflowRun, WorkflowRunStatus } from '../client';
 import { cn } from '../lib/cn';
-import { STATUS_DOT_CLASS, STATUS_TEXT_CLASS } from '../lib/status-classes';
+import { STATUS_TEXT_CLASS } from '../lib/status-classes';
 
 const STATUS_ORDER: WorkflowRunStatus[] = [
   'pending',
@@ -33,23 +33,16 @@ export function StatusSummary({ runs, onSelectStatus, className }: StatusSummary
   if (present.length === 0) return null;
 
   return (
-    <div className={cn('flex flex-wrap items-center border-b border-pgw-border pb-2', className)}>
-      {present.map((status, index) => {
+    <div className={cn('flex flex-wrap gap-2', className)}>
+      {present.map((status) => {
         return (
           <button
             key={status}
             type="button"
             onClick={() => onSelectStatus?.(status)}
-            className={cn(
-              'flex items-center gap-1.5 px-3 first:pl-0 hover:bg-pgw-muted',
-              index > 0 && 'border-l border-pgw-border',
-            )}
+            className="flex min-w-16 flex-col items-center gap-0.5 rounded-md border border-pgw-border px-3 py-2 text-center hover:bg-pgw-muted"
           >
-            <span
-              aria-hidden
-              className={cn('h-1.5 w-1.5 rounded-full', STATUS_DOT_CLASS[status])}
-            />
-            <span className={cn('text-base font-medium', STATUS_TEXT_CLASS[status])}>
+            <span className={cn('text-lg font-semibold', STATUS_TEXT_CLASS[status])}>
               {counts[status]}
             </span>
             <span className="text-xs text-pgw-muted-fg">{status}</span>
