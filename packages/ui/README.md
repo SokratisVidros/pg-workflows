@@ -25,7 +25,7 @@ npm install react react-dom @tanstack/react-query tailwindcss pg-workflows
 | `tailwindcss` | `^4` | components are styled with Tailwind v4 utilities + design tokens |
 | `pg-workflows` | `>=0.13.0` | the engine the server adapter drives (server-side only) |
 
-> **Requires a bundler that transpiles TypeScript/JSX** (Next.js, Vite, etc.). The package is consumed as source through its `exports`, so your bundler compiles it alongside your app.
+> Ships compiled ESM with type declarations, so no TypeScript/JSX transpilation of `node_modules` is needed. Module structure is preserved rather than bundled, which keeps the `'use client'` directives intact for the React Server Components boundary — you can import the dashboard from a server component in the Next.js App Router.
 
 ---
 
@@ -57,7 +57,7 @@ In your global CSS:
 @import '@pg-workflows/ui/styles.css';          /* --pgw-* variables (light + dark) + .pgw-root base */
 
 /* Let Tailwind generate the utility classes the components use: */
-@source '../node_modules/@pg-workflows/ui/src';
+@source '../node_modules/@pg-workflows/ui/dist';
 ```
 
 If you use a JS Tailwind config instead, add the preset (for the `pgw-*` colors) and include the package in `content`:
@@ -66,7 +66,7 @@ If you use a JS Tailwind config instead, add the preset (for the `pgw-*` colors)
 import pgwPreset from '@pg-workflows/ui/tailwind'
 export default {
   presets: [pgwPreset],
-  content: ['./node_modules/@pg-workflows/ui/src/**/*.{ts,tsx}', /* your files */],
+  content: ['./node_modules/@pg-workflows/ui/dist/**/*.js', /* your files */],
 }
 ```
 

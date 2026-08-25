@@ -1,6 +1,6 @@
 {
   "name": "@pg-workflows/ui",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "React UI for pg-workflows: browse runs and inspect step timelines.",
   "license": "MIT",
   "type": "module",
@@ -10,36 +10,40 @@
   ],
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./client": {
-      "types": "./src/client.ts",
-      "default": "./src/client.ts"
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
     },
     "./server": {
-      "types": "./src/server/index.ts",
-      "default": "./src/server/index.ts"
+      "types": "./dist/server/index.d.ts",
+      "default": "./dist/server/index.js"
     },
     "./next": {
-      "types": "./src/next/index.ts",
-      "default": "./src/next/index.ts"
+      "types": "./dist/next/index.d.ts",
+      "default": "./dist/next/index.js"
     },
     "./tailwind": {
-      "types": "./src/tailwind-preset.ts",
-      "default": "./src/tailwind-preset.ts"
+      "types": "./dist/tailwind-preset.d.ts",
+      "default": "./dist/tailwind-preset.js"
     },
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./dist/styles.css",
+    "./package.json": "./package.json"
   },
   "files": [
-    "src",
     "dist",
+    "src",
     "README.md"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/fix-esm-extensions.mjs && cp src/styles.css dist/styles.css",
+    "clean": "rm -rf dist",
     "check-types": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "bun run clean && bun run build"
   },
   "peerDependencies": {
     "react": ">=18",
@@ -72,5 +76,10 @@
     "tailwindcss": "^4.0.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.14"
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
   }
 }
