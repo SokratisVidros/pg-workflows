@@ -7,7 +7,7 @@ const listQuery = z.object({
   ending_before: z.string().optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
   workflow_id: z.string().optional(),
-  statuses: z.array(z.nativeEnum(WorkflowStatus)).optional(),
+  statuses: z.array(z.enum(WorkflowStatus)).optional(),
 });
 
 export function parseListParams(url: URL) {
@@ -33,11 +33,11 @@ export function parseListParams(url: URL) {
 
 const triggerBody = z.object({
   eventName: z.string().min(1),
-  data: z.record(z.unknown()).optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
 });
 
 const fastForwardBody = z.object({
-  data: z.record(z.unknown()).optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
 });
 
 export function parseTriggerBody(raw: unknown) {

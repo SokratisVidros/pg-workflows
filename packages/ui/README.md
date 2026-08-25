@@ -141,6 +141,8 @@ Full route tree (`h` = `createRouteHandlers(runsApi)`):
 
 Then point the dashboard at it: `<WorkflowRunsDashboard baseUrl="/workflow-runs" />`. (Handlers support both Next 14 sync and Next 15 async `params`.)
 
+> A complete working version of this setup — route tree, engine singleton, and a seed script covering every run state — lives in [`examples/dashboard`](../../examples/dashboard).
+
 ### Next.js — Pages Router
 
 One catch-all API route. Create the api with a `basePath` matching the mount:

@@ -37,7 +37,7 @@
     },
     "packages/ui": {
       "name": "@pg-workflows/ui",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@radix-ui/react-dialog": "^1.1.0",
         "@radix-ui/react-popover": "^1.1.0",
@@ -45,7 +45,7 @@
         "clsx": "^2.1.1",
         "date-fns": "^4.1.0",
         "lucide-react": "^0.453.0",
-        "zod": "^3.24.0",
+        "zod": "^4.3.6",
       },
       "devDependencies": {
         "@tanstack/react-query": "^5.59.0",
@@ -874,6 +874,8 @@
     "@babel/traverse/@babel/parser": ["@babel/parser@7.29.7", "", { "dependencies": { "@babel/types": "^7.29.7" }, "bin": "./bin/babel-parser.js" }, "sha512-hnORnjP/1P/zFEndoeX+n+t1RwWRJiJpM/jO7FW32Kn9r5+sJB2JWOdYo4L6k78j15eCwY3Gm/7364B1EMwtNg=="],
 
     "@pg-workflows/ui/pg-workflows": ["pg-workflows@0.14.0", "", { "dependencies": { "@standard-schema/spec": "^1.1.0", "cron-parser": "^5.5.0", "es-toolkit": "^1.44.0", "ksuid": "^3.0.0", "parse-duration": "^2.1.5", "pg-boss": "^12.16.0", "typescript": "^5.9.3" }, "peerDependencies": { "@opentelemetry/api": "^1.9.0", "pg": "^8.0.0" }, "optionalPeers": ["@opentelemetry/api"] }, "sha512-gBpXvvy2zHhIWxMkqQldjor+jsIDf3XNtipFGireH8KkaMhgMyeriLS+xoHkNlpCqERaQLl4kzGXKPXfKFwuzQ=="],
+
+    "@pg-workflows/ui/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "@testing-library/dom/aria-query": ["aria-query@5.3.0", "", { "dependencies": { "dequal": "^2.0.3" } }, "sha512-b0P0sZPKtyu8HkeRAfCq0IfURZK+SuwMjY1UXGBU27wpAiTwQAIlq56IbIO+ytk/JjS1fMR14ee5WBBfKi5J6A=="],
 
