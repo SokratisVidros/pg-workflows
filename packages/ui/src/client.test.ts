@@ -25,14 +25,12 @@ describe('createFetchClient', () => {
   });
 
   it('gets a run by id', async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ id: 'run_x', workflowId: 'k', status: 'completed' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      );
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: 'run_x', workflowId: 'k', status: 'completed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
     const client = createFetchClient({ baseUrl: '/api/wfr', fetch });
     const run = await client.getRun('run_x');
     expect(run.id).toBe('run_x');
