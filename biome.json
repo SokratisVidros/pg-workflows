@@ -16,7 +16,10 @@
         "noConsole": {
           "level": "warn",
           "options": {
-            "allow": ["warn", "error"]
+            "allow": [
+              "warn",
+              "error"
+            ]
           }
         },
         "noDebugger": "error",
@@ -51,9 +54,17 @@
       "bracketSameLine": false
     }
   },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
   "overrides": [
     {
-      "includes": ["**/*.test.ts", "**/*.spec.ts"],
+      "includes": [
+        "**/*.test.ts",
+        "**/*.spec.ts"
+      ],
       "linter": {
         "rules": {
           "suspicious": {
@@ -63,7 +74,9 @@
       }
     },
     {
-      "includes": ["examples/**"],
+      "includes": [
+        "examples/**"
+      ],
       "linter": {
         "rules": {
           "suspicious": {
@@ -73,7 +86,9 @@
       }
     },
     {
-      "includes": ["dist/**"],
+      "includes": [
+        "dist/**"
+      ],
       "linter": {
         "enabled": false
       },

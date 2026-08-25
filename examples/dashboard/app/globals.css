@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* --pgw-* design tokens (light + dark) and the .pgw-root base styles. */
+@import "@pg-workflows/ui/styles.css";
+
+/*
+ * Tailwind only generates utilities it can see used. The dashboard's classes
+ * live in the installed package, so point the scanner at its compiled output.
+ */
+@source "../node_modules/@pg-workflows/ui/dist";

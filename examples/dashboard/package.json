@@ -1,0 +1,35 @@
+{
+  "name": "pg-workflows-dashboard-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:lib": "test -d ../../dist || (cd ../.. && bun run build); test -d ../../packages/ui/dist || (cd ../.. && bun run build:ui)",
+    "dev": "npm run build:lib && dotenvx run -- next dev",
+    "build": "npm run build:lib && next build",
+    "start": "dotenvx run -- next start",
+    "seed": "npm run build:lib && dotenvx run -- tsx scripts/seed.ts",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pg-workflows/ui": "file:../../packages/ui",
+    "@tanstack/react-query": "^5.102.3",
+    "next": "^16.3.2",
+    "pg": "^8.13.1",
+    "pg-workflows": "file:../..",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@dotenvx/dotenvx": "^1.52.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3"
+  }
+}
