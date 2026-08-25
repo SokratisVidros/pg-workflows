@@ -43,8 +43,13 @@ try {
     input: { source: 'legacy-crm', size: 2048 },
   });
 
-  // Waiting: these stop at `await-payment-confirmation` until an event arrives.
-  const waiting = await Promise.all(
+  /**
+   * These stop at `await-payment-confirmation`. Note that a run blocked on
+   * `step.waitFor` reports status `paused` — there is no separate "waiting"
+   * status, so these are already the paused runs and calling `pauseWorkflow`
+   * on one would throw.
+   */
+  const awaitingEvent = await Promise.all(
     [1, 2, 3].map((n) =>
       engine.startWorkflow({
         workflowId: 'order-fulfillment',
@@ -57,9 +62,10 @@ try {
   // Give the workers time to advance each run to its resting state.
   await sleep(4000);
 
-  // Drive one waiting run to completion, so there's a run with a full timeline
-  // including a satisfied waitFor step.
-  const [first, , third] = waiting;
+  const [first, , third] = awaitingEvent;
+
+  // Deliver the event to one, so there's a run with a full timeline including a
+  // satisfied waitFor step.
   if (first) {
     await engine.triggerEvent({
       runId: first.id,
@@ -69,15 +75,15 @@ try {
     });
   }
 
-  // Paused: an explicitly paused run, distinct from one waiting on an event.
+  // Cancel another, for a terminal run that neither completed nor failed.
   if (third) {
-    await engine.pauseWorkflow({ runId: third.id, resourceId: 'tenant-apac' });
+    await engine.cancelWorkflow({ runId: third.id, resourceId: 'tenant-apac' });
   }
 
   await sleep(2000);
 
   const summary = await Promise.all(
-    [...completed, failed, ...waiting].map(async (run) => {
+    [...completed, failed, ...awaitingEvent].map(async (run) => {
       const current = await engine.getRun({
         runId: run.id,
         resourceId: run.resourceId ?? undefined,

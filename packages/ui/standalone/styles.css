@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* --pgw-* tokens (light + dark) and the .pgw-root base styles. */
+@import "../src/styles.css";
+
+/* The dashboard's utility classes live in the package source. */
+@source "../src";

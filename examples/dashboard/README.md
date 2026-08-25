@@ -42,7 +42,11 @@ in each state:
 - **`order-fulfillment`** — stops at a `step.waitFor` until a
   `payment-confirmed` event arrives. The seed script drives one of these to
   completion (giving a run with a satisfied `waitFor` in its timeline), leaves
-  one waiting, and explicitly pauses a third
+  one waiting, and cancels a third
+
+Note that a run blocked on `step.waitFor` reports status **`paused`** — there is
+no separate "waiting" status, so those runs *are* the paused ones and calling
+`pauseWorkflow` on one throws.
 
 ## Two things worth copying
 

@@ -41,6 +41,7 @@ The package is split so client code never pulls in server/engine code:
 | `@pg-workflows/ui/next` | `createRouteHandlers` (App Router), `createPagesApiHandler` (Pages Router) | server only |
 | `@pg-workflows/ui/tailwind` | Tailwind preset exposing the `pgw-*` color tokens | build |
 | `@pg-workflows/ui/styles.css` | CSS variables (light/dark) + base styles | client |
+| `pg-workflows-ui` (bin) | Standalone localhost dashboard — see Variant 3 | CLI |
 
 The architecture: **browser → hooks → HTTP → server adapter → `WorkflowEngine` → Postgres.**
 
@@ -188,7 +189,29 @@ The client + hooks are pure React — host the dashboard in a Vite SPA and point
 
 ---
 
-## Variant 3 — Headless (build your own UI)
+## Variant 3 — `npx` standalone (no app at all)
+
+To inspect runs without integrating anything, run the bundled dashboard straight
+against a database:
+
+```bash
+npx @pg-workflows/ui --database-url=postgres://… [--port=3777]
+```
+
+It starts an engine, mounts the adapter at `/workflow-runs`, and serves a
+prebuilt SPA. `DATABASE_URL` works instead of the flag.
+
+> **Binds `127.0.0.1` only, with no authentication and no `resolveContext`** —
+> every run in that database is readable *and mutable* by anyone who can reach
+> the port. Localhost is the entire trust boundary; don't put it behind a tunnel
+> or a reverse proxy.
+
+Actions (cancel/pause/resume/fast-forward/trigger) are live, but this process
+registers no workflow definitions — it drives runs owned by whichever app does.
+
+---
+
+## Variant 4 — Headless (build your own UI)
 
 Everything the dashboard uses is exported, so you can compose your own interface. Provide a client via `WorkflowRunsProvider`, then use the hooks:
 
@@ -284,6 +307,25 @@ All under `basePath` (default `/workflow-runs`); `:id` is the run id.
 | `POST /:id/trigger` | `triggerEvent` (body: `{ eventName, data? }`) |
 
 Errors map to `400` (validation), `401` (`resolveContext` threw), `404` (unknown run), `409` (illegal transition), `500`.
+
+## Not built yet
+
+Ledgered deliberately, not oversights — each needs a design decision more than
+it needs code:
+
+| | Notes |
+|---|---|
+| Dark-mode **toggle** | The tokens already switch on `prefers-color-scheme`; this is an explicit override control, which needs somewhere to persist the choice |
+| Keyboard navigation | Arrow-key row traversal and shortcuts for the action bar |
+| Bulk actions | Multi-select plus a confirm step; the adapter has no batch endpoint, so it would be N requests |
+| Sortable column headers | The engine paginates by cursor, so sorting has to happen server-side to stay correct across pages |
+| Real Trigger event form | Currently a stub. A useful form needs to know a workflow's event names, which the engine doesn't expose |
+| Copy / deep-link a run | Shareable URL per run; needs the host app's routing, since the dashboard doesn't own the URL bar |
+
+Also out of scope by design: starting workflows from the UI, metrics, alerting,
+and realtime streaming.
+
+---
 
 ## License
 

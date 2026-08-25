@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "rootDir": "./src",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
@@ -8,5 +9,13 @@
     "types": []
   },
   "include": ["src/**/*"],
-  "exclude": ["dist", "node_modules", "src/test-setup.ts", "**/*.test.ts", "**/*.test.tsx"]
+  "exclude": [
+    "dist",
+    "node_modules",
+    "standalone",
+    "vite.config.ts",
+    "src/test-setup.ts",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ]
 }
