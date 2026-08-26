@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - develop
+      - 'feat/**'
   push:
     branches:
       - main
@@ -33,6 +34,9 @@ jobs:
       - name: Type check
         run: bun run tsc --noEmit
 
+      - name: Type check UI package
+        run: bun run check-types:ui
+
   unit-test:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -51,6 +55,9 @@ jobs:
 
       - name: Run unit tests
         run: bun run test:unit
+
+      - name: Run UI package tests
+        run: bun run test:ui
 
   integration-test:
     name: Integration Tests

@@ -3,6 +3,9 @@
   "description": "The simplest Postgres workflow engine for TypeScript - durable execution, event-driven orchestration, and automatic retries powered entirely by PostgreSQL",
   "version": "0.14.0",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "files": [
     "dist"
   ],
@@ -35,8 +38,10 @@
   "scripts": {
     "build": "bunup",
     "dev": "bunup --watch",
-    "test": "bun run test:unit && bun run test:integration",
+    "test": "bun run test:unit && bun run test:ui && bun run test:integration",
     "test:unit": "vitest --typecheck run --config src/vitest.unit.config.ts ",
+    "test:ui": "bun run --filter '@pg-workflows/ui' test",
+    "check-types:ui": "bun run --filter '@pg-workflows/ui' check-types",
     "test:integration": "vitest run --config src/vitest.integration.config.ts",
     "test:watch": "vitest watch --config src/vitest.unit.config.ts",
     "lint": "biome check .",
