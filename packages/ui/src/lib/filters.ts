@@ -4,8 +4,8 @@ import { computeDurationMs } from './duration';
 export type ClientFilters = {
   from?: string;
   to?: string;
-  minDuration?: number;
-  maxDuration?: number;
+  minDurationMs?: number;
+  maxDurationMs?: number;
   search?: string;
 };
 
@@ -21,24 +21,25 @@ export function applyClientFilters(runs: WorkflowRun[], filters: ClientFilters):
     }
     const durationMs = computeDurationMs(run);
     if (
-      filters.minDuration != null &&
-      (durationMs == null || durationMs < filters.minDuration * 1000)
+      filters.minDurationMs != null &&
+      (durationMs == null || durationMs < filters.minDurationMs)
     ) {
       return false;
     }
     if (
-      filters.maxDuration != null &&
-      (durationMs == null || durationMs > filters.maxDuration * 1000)
+      filters.maxDurationMs != null &&
+      (durationMs == null || durationMs > filters.maxDurationMs)
     ) {
       return false;
     }
     if (filters.search) {
       const query = filters.search.toLowerCase();
       const matchesRunId = run.id.toLowerCase().includes(query);
+      const matchesWorkflowId = run.workflowId.toLowerCase().includes(query);
       const resourceId = (run as unknown as { resourceId?: string }).resourceId;
       const matchesResourceId =
         typeof resourceId === 'string' && resourceId.toLowerCase().includes(query);
-      if (!matchesRunId && !matchesResourceId) return false;
+      if (!matchesRunId && !matchesWorkflowId && !matchesResourceId) return false;
     }
     return true;
   });

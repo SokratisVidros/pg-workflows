@@ -2,15 +2,16 @@
 
 import * as Popover from '@radix-ui/react-popover';
 import { ChevronDown } from 'lucide-react';
+import { msToSeconds, secondsToMs } from '../../lib/duration';
 
 export type DurationFilterProps = {
-  minDuration?: number;
-  maxDuration?: number;
-  onChange: (next: { minDuration?: number; maxDuration?: number }) => void;
+  minDurationMs?: number;
+  maxDurationMs?: number;
+  onChange: (next: { minDurationMs?: number; maxDurationMs?: number }) => void;
 };
 
-export function DurationFilter({ minDuration, maxDuration, onChange }: DurationFilterProps) {
-  const active = minDuration != null || maxDuration != null;
+export function DurationFilter({ minDurationMs, maxDurationMs, onChange }: DurationFilterProps) {
+  const active = minDurationMs != null || maxDurationMs != null;
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -31,11 +32,11 @@ export function DurationFilter({ minDuration, maxDuration, onChange }: DurationF
           <input
             type="number"
             min={0}
-            value={minDuration ?? ''}
+            value={minDurationMs != null ? msToSeconds(minDurationMs) : ''}
             onChange={(e) =>
               onChange({
-                minDuration: e.target.value ? Number(e.target.value) : undefined,
-                maxDuration,
+                minDurationMs: e.target.value ? secondsToMs(Number(e.target.value)) : undefined,
+                maxDurationMs,
               })
             }
           />
@@ -45,11 +46,11 @@ export function DurationFilter({ minDuration, maxDuration, onChange }: DurationF
           <input
             type="number"
             min={0}
-            value={maxDuration ?? ''}
+            value={maxDurationMs != null ? msToSeconds(maxDurationMs) : ''}
             onChange={(e) =>
               onChange({
-                minDuration,
-                maxDuration: e.target.value ? Number(e.target.value) : undefined,
+                minDurationMs,
+                maxDurationMs: e.target.value ? secondsToMs(Number(e.target.value)) : undefined,
               })
             }
           />

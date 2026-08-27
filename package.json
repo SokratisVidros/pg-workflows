@@ -37,6 +37,7 @@
   },
   "scripts": {
     "build": "bunup",
+    "build:ui": "bun run --filter '@pg-workflows/ui' build",
     "dev": "bunup --watch",
     "test": "bun run test:unit && bun run test:ui && bun run test:integration",
     "test:unit": "vitest --typecheck run --config src/vitest.unit.config.ts ",

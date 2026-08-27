@@ -1,6 +1,6 @@
 {
   "name": "@pg-workflows/ui",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "React UI for pg-workflows: browse runs and inspect step timelines.",
   "license": "MIT",
   "type": "module",
@@ -10,32 +10,43 @@
   ],
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./client": {
-      "types": "./src/client.ts",
-      "default": "./src/client.ts"
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "default": "./dist/server/index.js"
     },
     "./next": {
-      "types": "./src/next/index.ts",
-      "default": "./src/next/index.ts"
+      "types": "./dist/next/index.d.ts",
+      "default": "./dist/next/index.js"
     },
     "./tailwind": {
-      "types": "./src/tailwind-preset.ts",
-      "default": "./src/tailwind-preset.ts"
+      "types": "./dist/tailwind-preset.d.ts",
+      "default": "./dist/tailwind-preset.js"
     },
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./dist/styles.css",
+    "./package.json": "./package.json"
   },
   "files": [
-    "src",
     "dist",
+    "src",
+    "bin",
     "README.md"
   ],
   "scripts": {
+    "build": "bun run build:lib && bun run build:standalone",
+    "build:lib": "tsc -p tsconfig.build.json && node scripts/fix-esm-extensions.mjs && cp src/styles.css dist/styles.css",
+    "build:standalone": "vite build",
+    "clean": "rm -rf dist",
     "check-types": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "bun run clean && bun run build"
   },
   "peerDependencies": {
     "react": ">=18",
@@ -51,9 +62,11 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.453.0",
-    "zod": "^3.24.0"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-query": "^5.59.0",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",
@@ -64,9 +77,17 @@
     "pg-workflows": "file:../..",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@tanstack/react-query": "^5.59.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.9.3",
+    "vite": "^8.2.2",
     "vitest": "^4.0.14"
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "pg-workflows-ui": "./bin/pg-workflows-ui.mjs"
   }
 }

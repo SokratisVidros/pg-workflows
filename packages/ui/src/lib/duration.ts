@@ -7,7 +7,9 @@ export function isTerminalStatus(status: string): boolean {
 }
 
 export function runAsOfMs(run: WorkflowRun): number {
-  if (run.completedAt) return new Date(run.completedAt).getTime();
+  if (isTerminalStatus(run.status)) {
+    return new Date(run.completedAt ?? run.updatedAt).getTime();
+  }
   if (run.status === 'paused' && run.pausedAt) {
     return new Date(run.pausedAt).getTime();
   }
@@ -18,6 +20,15 @@ export function computeDurationMs(run: WorkflowRun): number | null {
   if (run.status === 'pending') return null;
   const start = new Date(run.createdAt).getTime();
   return runAsOfMs(run) - start;
+}
+
+/** Durations are milliseconds throughout; these convert at a UI boundary. */
+export function secondsToMs(seconds: number): number {
+  return seconds * 1000;
+}
+
+export function msToSeconds(ms: number): number {
+  return ms / 1000;
 }
 
 export function formatDuration(ms: number): string {

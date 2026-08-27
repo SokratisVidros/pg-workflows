@@ -12,8 +12,8 @@ export type RunFilters = {
   workflowId?: string;
   from?: string;
   to?: string;
-  minDuration?: number;
-  maxDuration?: number;
+  minDurationMs?: number;
+  maxDurationMs?: number;
   search?: string;
   sort: SortKey;
   dir: SortDir;
@@ -57,8 +57,8 @@ export function useRunFilters(initial?: Partial<RunFilters>) {
       !!filters.workflowId ||
       !!filters.from ||
       !!filters.to ||
-      filters.minDuration != null ||
-      filters.maxDuration != null ||
+      filters.minDurationMs != null ||
+      filters.maxDurationMs != null ||
       !!filters.search
     );
   }, [filters]);

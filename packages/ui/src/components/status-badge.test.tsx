@@ -20,4 +20,10 @@ describe('StatusBadge', () => {
     const el = screen.getByText(/failed/i);
     expect(el.className).toMatch(/pgw-status-failed/);
   });
+
+  it('applies the full literal text class so Tailwind can statically discover it', () => {
+    render(<StatusBadge status="running" />);
+    const el = screen.getByText(/running/i);
+    expect(el.className).toContain('text-pgw-status-running');
+  });
 });

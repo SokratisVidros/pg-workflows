@@ -37,6 +37,9 @@ jobs:
       - name: Type check UI package
         run: bun run check-types:ui
 
+      - name: Build UI package
+        run: bun run build:ui
+
   unit-test:
     name: Unit Tests
     runs-on: ubuntu-latest
