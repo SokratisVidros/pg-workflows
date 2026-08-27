@@ -108,3 +108,5 @@ console.log({
   totalSteps: progress.totalSteps,
 })
 ```
+
+To render runs in a React app, use the separate [`@pg-workflows/ui`](../packages/ui/README.md) package rather than calling the engine from the browser.

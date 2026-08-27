@@ -1,7 +1,7 @@
 'use client';
 
+import { clsx } from 'clsx';
 import type { WorkflowRun } from '../client';
-import { cn } from '../lib/cn';
 import { extractSteps, getCompletedStepCount } from '../lib/steps';
 
 export type RunProgressProps = {
@@ -17,7 +17,7 @@ export function RunProgress({ run, className }: RunProgressProps) {
   const pct = (completed / total) * 100;
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div className={clsx('flex items-center gap-2', className)}>
       <div className="h-1.5 w-full min-w-12 flex-1 overflow-hidden rounded-full bg-pgw-muted">
         <div className="h-full rounded-full bg-pgw-accent" style={{ width: `${pct}%` }} />
       </div>

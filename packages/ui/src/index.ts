@@ -1,6 +1,5 @@
-// Provider + context
-
-// Client
+// Client factory is also available from `@pg-workflows/ui/client` for
+// bundles that don't need React.
 export {
   type CreateFetchClientOptions,
   createFetchClient,
@@ -12,34 +11,69 @@ export {
   type WorkflowRunStatus,
   type WorkflowRunsClient,
 } from './client';
-export { FilterBar, type FilterBarProps } from './components/filter-bar/filter-bar';
-export { LiveToggle, type LiveToggleProps } from './components/live-toggle';
-export { Pagination, type PaginationProps } from './components/pagination';
-export { JsonViewer, type JsonViewerProps } from './components/run-detail/json-viewer';
-export { RunDetail, type RunDetailProps } from './components/run-detail/run-detail';
+
 export {
+  DateRangeFilter,
+  type DateRangeFilterProps,
+  DurationFilter,
+  type DurationFilterProps,
+  FilterBar,
+  type FilterBarProps,
+  JsonViewer,
+  type JsonViewerProps,
+  LiveToggle,
+  type LiveToggleProps,
+  Pagination,
+  type PaginationProps,
+  RunDetail,
   RunDetailHeader,
   type RunDetailHeaderProps,
-} from './components/run-detail/run-detail-header';
-export { StepTimeline, type StepTimelineProps } from './components/run-detail/step-timeline';
-export { RunsTable, type RunsTableProps } from './components/runs-table';
-export { StatusBadge, type StatusBadgeProps } from './components/status-badge';
-// Components
-export {
+  type RunDetailProps,
+  RunProgress,
+  type RunProgressProps,
+  RunsTable,
+  type RunsTableProps,
+  SearchFilter,
+  type SearchFilterProps,
+  StatusBadge,
+  type StatusBadgeProps,
+  StatusFilter,
+  type StatusFilterProps,
+  StatusSummary,
+  type StatusSummaryProps,
+  StepTimeline,
+  type StepTimelineProps,
+  WorkflowIdFilter,
+  type WorkflowIdFilterProps,
   WorkflowRunsDashboard,
   type WorkflowRunsDashboardProps,
-} from './components/workflow-runs-dashboard';
-export { WorkflowRunsContext, type WorkflowRunsContextValue } from './context';
-export { type RunFilters, useRunFilters } from './hooks/use-run-filters';
+} from './components';
+
 export {
+  applyClientFilters,
+  type ClientFilters,
+  computeDurationMs,
+  formatDuration,
+  isTerminalStatus,
+  type SortDir,
+  type SortKey,
+  sortRuns,
+  timeAgo,
+} from './helpers';
+
+export {
+  type RunFilters,
+  type UseRunFiltersResult,
   useCancelRun,
   useFastForwardRun,
   usePauseRun,
   useResumeRun,
+  useRunFilters,
   useTriggerEvent,
-} from './hooks/use-run-mutations';
-export { useWorkflowRun } from './hooks/use-workflow-run';
-// Hooks (queries + mutations + filters)
-export { useWorkflowRuns } from './hooks/use-workflow-runs';
-export { useWorkflowRunsClient } from './hooks/use-workflow-runs-client';
+  useWorkflowRun,
+  useWorkflowRuns,
+  useWorkflowRunsClient,
+  type WorkflowRunsContextValue,
+} from './hooks';
+
 export { WorkflowRunsProvider, type WorkflowRunsProviderProps } from './provider';

@@ -1,25 +1,35 @@
 'use client';
 
+import { clsx } from 'clsx';
 import { Check, Copy } from 'lucide-react';
-import { useState } from 'react';
-import { cn } from '../../lib/cn';
+import { forwardRef, useState } from 'react';
 
 export type JsonViewerProps = {
   value: unknown;
   className?: string;
 };
 
-export function JsonViewer({ value, className }: JsonViewerProps) {
+export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function JsonViewer(
+  { value, className },
+  ref,
+) {
   const [copied, setCopied] = useState(false);
 
   if (value === undefined) {
-    return <div className={cn('text-xs text-pgw-muted-fg italic', className)}>No data</div>;
+    return (
+      <div ref={ref} className={clsx('text-xs text-pgw-muted-fg italic', className)}>
+        No data
+      </div>
+    );
   }
 
   const pretty = JSON.stringify(value, null, 2);
 
   return (
-    <div className={cn('relative rounded-md border border-pgw-border bg-pgw-muted', className)}>
+    <div
+      ref={ref}
+      className={clsx('relative rounded-md border border-pgw-border bg-pgw-muted', className)}
+    >
       <button
         type="button"
         aria-label="Copy"
@@ -36,4 +46,4 @@ export function JsonViewer({ value, className }: JsonViewerProps) {
       <pre className="overflow-x-auto p-3 text-xs">{pretty}</pre>
     </div>
   );
-}
+});

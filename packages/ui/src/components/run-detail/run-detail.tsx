@@ -1,5 +1,6 @@
 'use client';
 
+import { clsx } from 'clsx';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import {
@@ -10,7 +11,6 @@ import {
   useTriggerEvent,
 } from '../../hooks/use-run-mutations';
 import { useWorkflowRun } from '../../hooks/use-workflow-run';
-import { cn } from '../../lib/cn';
 import { isTerminalStatus } from '../../lib/duration';
 import { RunProgress } from '../run-progress';
 import { JsonViewer } from './json-viewer';
@@ -44,10 +44,10 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
     };
   }
 
-  if (isLoading) return <div className={cn('p-6 text-pgw-muted-fg', className)}>Loading…</div>;
+  if (isLoading) return <div className={clsx('p-6 text-pgw-muted-fg', className)}>Loading…</div>;
   if (error || !run) {
     return (
-      <div className={cn('p-6 text-pgw-status-failed', className)}>
+      <div className={clsx('p-6 text-pgw-status-failed', className)}>
         Failed to load run.{' '}
         {onBack && (
           <button type="button" className="underline" onClick={onBack}>
@@ -61,7 +61,7 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
   const terminal = isTerminalStatus(run.status);
 
   return (
-    <div className={cn('flex flex-col gap-4', className)}>
+    <div className={clsx('flex flex-col gap-4', className)}>
       <div className="flex flex-wrap items-center justify-end gap-3">
         <button
           type="button"
@@ -136,7 +136,7 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
       </div>
       {feedback && (
         <div
-          className={cn(
+          className={clsx(
             'rounded-md border px-3 py-2 text-sm',
             feedback.kind === 'error'
               ? 'border-pgw-status-failed text-pgw-status-failed'

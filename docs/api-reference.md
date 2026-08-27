@@ -177,3 +177,9 @@ enum WorkflowStatus {
   CANCELLED = 'cancelled',
 }
 ```
+
+## UI (`@pg-workflows/ui`)
+
+React hooks and components for inspecting runs live in a **separate package**: [`@pg-workflows/ui`](../packages/ui/README.md).
+
+Install it only in apps that render UI. The engine API above (`WorkflowEngine`, `WorkflowClient`, `getRun`, `getRuns`) is what that package talks to over HTTP — it does not replace those methods, and it is not exported from `pg-workflows`.

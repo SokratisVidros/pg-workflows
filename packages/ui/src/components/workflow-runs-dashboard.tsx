@@ -1,11 +1,11 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { clsx } from 'clsx';
 import { useMemo, useState } from 'react';
 import { createFetchClient, type WorkflowRunsClient } from '../client';
 import { useRunFilters } from '../hooks/use-run-filters';
 import { useWorkflowRuns } from '../hooks/use-workflow-runs';
-import { cn } from '../lib/cn';
 import { applyClientFilters, sortRuns } from '../lib/filters';
 import { WorkflowRunsProvider } from '../provider';
 import { FilterBar } from './filter-bar/filter-bar';
@@ -87,14 +87,14 @@ function DashboardInner({
 
   if (selected) {
     return (
-      <div className={cn('pgw-root p-4', className)}>
+      <div className={clsx('pgw-root p-4', className)}>
         <RunDetail key={selected} runId={selected} onBack={() => select(null)} />
       </div>
     );
   }
 
   return (
-    <div className={cn('pgw-root flex flex-col gap-3 p-4', className)}>
+    <div className={clsx('pgw-root flex flex-col gap-3 p-4', className)}>
       <StatusSummary
         runs={unfilteredItems}
         onSelectStatus={(s) =>

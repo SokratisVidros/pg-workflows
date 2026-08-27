@@ -131,6 +131,22 @@ await engine.start()
 
 The `pg-workflows/client` entrypoint bundles only the client, refs, and types — no AST parser, no handler code, no workflow registration logic.
 
+## Inspecting runs (UI)
+
+The engine has no built-in dashboard. [`@pg-workflows/ui`](../packages/ui/README.md) is an **optional, separate package** of React hooks and components for browsing runs and step timelines.
+
+```
+┌─────────────┐     HTTP      ┌─────────────┐     pg-workflows     ┌────────────┐
+│  Browser    │ ────────────► │  Your API   │ ───────────────────► │  Postgres  │
+│  @pg-workflows/ui           │  getRun /   │     WorkflowEngine   │            │
+│  (React)    │               │  getRuns    │                      │            │
+└─────────────┘               └─────────────┘                      └────────────┘
+```
+
+The browser never opens a database connection. You expose list/get HTTP endpoints (or any `WorkflowRunsClient`) on top of `engine.getRuns()` / `engine.getRun()`, then compose `WorkflowRunsProvider`, hooks, and leaf components.
+
+Do **not** add `@pg-workflows/ui` to worker services. Its peers are React, Tailwind, and TanStack Query — the engine's peers stay `pg` only. Usage, styling, and the public entry points are in the [UI package README](../packages/ui/README.md).
+
 ## How It Works
 
 pg-workflows uses PostgreSQL as both the **job queue** and the **state store**. Under the hood:

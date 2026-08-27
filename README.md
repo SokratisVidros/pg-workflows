@@ -54,6 +54,7 @@ That's it. Each step runs **exactly once**. Crash, redeploy, or retry - the work
 - **Schedules & polling built in** - `step.delay('3 days')`, `step.waitUntil('2025-01-01')`, `step.poll(...)` - no cron, no external scheduler.
 - **Built for AI agents** - cache expensive LLM calls, retry on 429s, pause for human review. [See AI patterns →](docs/ai-agents.md)
 - **Client/worker separation** - keep your API service light; run handlers in a worker. [See architecture →](docs/architecture.md)
+- **Optional React UI** - browse runs and step timelines with [`@pg-workflows/ui`](packages/ui/README.md). Separate package, so workers never take a React peer.
 - **Idempotent starts** - pass an `idempotencyKey` and duplicate calls safely return the same run.
 
 ---
@@ -155,6 +156,7 @@ See [runnable examples](https://github.com/SokratisVidros/pg-workflows/tree/main
 - **[API Reference](docs/api-reference.md)** - `WorkflowEngine`, `WorkflowClient`, `WorkflowRef`, types
 - **[Configuration](docs/configuration.md)** - env vars, database setup, requirements
 - **[Observability](docs/observability.md)** - OpenTelemetry tracing via `otelPlugin`
+- **[UI](packages/ui/README.md)** - `@pg-workflows/ui`: hooks and components for inspecting runs
 
 ---
 

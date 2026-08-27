@@ -1,7 +1,7 @@
 'use client';
 
+import { clsx } from 'clsx';
 import { forwardRef } from 'react';
-import { cn } from '../lib/cn';
 import { STATUS_DOT_CLASS, STATUS_TEXT_CLASS } from '../lib/status-classes';
 
 /**
@@ -28,14 +28,14 @@ export const LiveToggle = forwardRef<HTMLButtonElement, LiveToggleProps>(functio
       type="button"
       onClick={onToggle}
       aria-pressed={isLive}
-      className={cn(TOGGLE_CLASS, className)}
+      className={clsx(TOGGLE_CLASS, className)}
     >
       <span
         aria-hidden
-        className={cn(
+        className={clsx(
           'h-1.5 w-1.5 rounded-full',
           isLive
-            ? cn(STATUS_DOT_CLASS.completed, isFetching && 'animate-pulse')
+            ? clsx(STATUS_DOT_CLASS.completed, isFetching && 'animate-pulse')
             : 'bg-pgw-muted-fg',
         )}
       />

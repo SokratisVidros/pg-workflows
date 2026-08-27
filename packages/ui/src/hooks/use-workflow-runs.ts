@@ -1,10 +1,10 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { type UseQueryResult, useQuery } from '@tanstack/react-query';
 import type { ListRunsParams, ListRunsResult } from '../client';
 import { useWorkflowRunsClient } from './use-workflow-runs-client';
 
-export function useWorkflowRuns(params: ListRunsParams) {
+export function useWorkflowRuns(params: ListRunsParams): UseQueryResult<ListRunsResult> {
   const { client, pollIntervalMs } = useWorkflowRunsClient();
   return useQuery<ListRunsResult>({
     queryKey: ['pgw', 'runs', params],

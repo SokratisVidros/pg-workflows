@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '../lib/cn';
+import { clsx } from 'clsx';
 
 export type PaginationProps = {
   hasPrev: boolean;
@@ -22,7 +22,7 @@ export function Pagination({
   const btn =
     'rounded border border-pgw-border px-2 py-0.5 text-xs disabled:cursor-not-allowed disabled:opacity-50 hover:bg-pgw-muted';
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div className={clsx('flex items-center gap-2', className)}>
       <button type="button" className={btn} onClick={onPrev} disabled={!hasPrev || isFetching}>
         ‹ Prev
       </button>

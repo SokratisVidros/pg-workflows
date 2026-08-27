@@ -2,6 +2,8 @@
 
 React dashboard and HTTP adapters for [pg-workflows](https://github.com/SokratisVidros/pg-workflows) — browse, monitor, and manage workflow runs, or build your own UI on the headless hooks. It talks to your `WorkflowEngine` through a small, framework-agnostic HTTP layer, so the browser never touches your database.
 
+This is a **separate package** from `pg-workflows`. Install it only in apps that render UI. Workers and API services that just run the engine do not need it.
+
 This guide is for developers integrating the UI into an app. It covers installation and every entry-point variant.
 
 ---
@@ -247,7 +249,7 @@ function MyRunsView() {
 
 **Query hooks:** `useWorkflowRuns(params)`, `useWorkflowRun(id)`, `useRunFilters(initial?)`, `useWorkflowRunsClient()`.
 **Mutation hooks:** `useCancelRun`, `usePauseRun`, `useResumeRun`, `useFastForwardRun`, `useTriggerEvent` — each `.mutate({ id, ... })` and invalidates the relevant queries on success.
-**Building blocks (all exported):** `RunsTable`, `Pagination`, `RunDetail`, `StatusBadge`, `StatusSummary`, `RunProgress`, `StepTimeline`, `FilterBar`, `LiveIndicator`, `JsonViewer`, `RunDetailHeader`.
+**Building blocks (all exported):** `RunsTable`, `Pagination`, `RunDetail`, `StatusBadge`, `StatusSummary`, `RunProgress`, `StepTimeline`, `FilterBar`, `LiveToggle`, `JsonViewer`, `RunDetailHeader`. Individual filters (`StatusFilter`, `WorkflowIdFilter`, `DateRangeFilter`, `DurationFilter`, `SearchFilter`) and helpers (`formatDuration`, `timeAgo`, `applyClientFilters`, `sortRuns`, …) are also on the main entry.
 
 You can also skip React entirely and call `createFetchClient({ baseUrl })` from `@pg-workflows/ui/client` (`listRuns`, `getRun`, `cancelRun`, `pauseRun`, `resumeRun`, `fastForwardRun`, `triggerEvent`).
 
@@ -324,6 +326,12 @@ it needs code:
 
 Also out of scope by design: starting workflows from the UI, metrics, alerting,
 and realtime streaming.
+
+---
+
+## Why a separate package
+
+`pg-workflows` is a Node/Postgres engine. Its peers are `pg`, not React. Putting the dashboard on `pg-workflows/ui` would make every worker install Radix and see a React peer. Keep the engine in workers; add `@pg-workflows/ui` only where you render a UI.
 
 ---
 

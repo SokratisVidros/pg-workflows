@@ -1,9 +1,9 @@
 'use client';
 
+import { clsx } from 'clsx';
 import { Check, ChevronRight, Circle, Loader2, Pause, X } from 'lucide-react';
-import { useState } from 'react';
+import { forwardRef, useState } from 'react';
 import type { WorkflowRun } from '../../client';
-import { cn } from '../../lib/cn';
 import { computeDurationMs, formatDuration } from '../../lib/duration';
 import {
   computeActiveWaitSplitMs,
@@ -31,31 +31,31 @@ function StepDot({ status }: { status: StepInfo['status'] }) {
   switch (status) {
     case 'completed':
       return (
-        <div className={cn(common, 'bg-pgw-status-completed')}>
+        <div className={clsx(common, 'bg-pgw-status-completed')}>
           <Check className="h-1.5 w-1.5 text-white" />
         </div>
       );
     case 'running':
       return (
-        <div className={cn(common, 'bg-pgw-status-running')}>
+        <div className={clsx(common, 'bg-pgw-status-running')}>
           <Loader2 className="h-1.5 w-1.5 animate-spin text-white" />
         </div>
       );
     case 'waiting':
       return (
-        <div className={cn(common, 'bg-pgw-status-paused')}>
+        <div className={clsx(common, 'bg-pgw-status-paused')}>
           <Pause className="h-1.5 w-1.5 fill-white text-white" />
         </div>
       );
     case 'failed':
       return (
-        <div className={cn(common, 'bg-pgw-status-failed')}>
+        <div className={clsx(common, 'bg-pgw-status-failed')}>
           <X className="h-1.5 w-1.5 text-white" />
         </div>
       );
     default:
       return (
-        <div className={cn(common, 'bg-pgw-muted-fg')}>
+        <div className={clsx(common, 'bg-pgw-muted-fg')}>
           <Circle className="h-1.5 w-1.5 text-white" />
         </div>
       );
@@ -75,7 +75,10 @@ function WaterfallBar({ step, totalDurationMs }: { step: StepInfo; totalDuration
   return (
     <div className="relative h-4 w-full rounded bg-pgw-muted">
       <div
-        className={cn('absolute inset-y-0 rounded', useHatch ? undefined : STATUS_BAR[step.status])}
+        className={clsx(
+          'absolute inset-y-0 rounded',
+          useHatch ? undefined : STATUS_BAR[step.status],
+        )}
         style={{
           left: `${leftPct}%`,
           width: `${widthPct}%`,
@@ -101,7 +104,7 @@ function StepRow({ step, totalDurationMs }: { step: StepInfo; totalDurationMs: n
           </div>
           <ChevronRight
             aria-hidden
-            className={cn(
+            className={clsx(
               'mt-0.5 h-3.5 w-3.5 shrink-0 text-pgw-muted-fg transition-transform duration-200',
               open && 'rotate-90',
             )}
@@ -111,7 +114,7 @@ function StepRow({ step, totalDurationMs }: { step: StepInfo; totalDurationMs: n
               <span className="truncate font-mono text-xs">{step.id}</span>
               {step.durationMs != null && (
                 <span
-                  className={cn(
+                  className={clsx(
                     'shrink-0 text-[10px]',
                     step.status === 'waiting' ? 'text-pgw-status-paused' : 'text-pgw-muted-fg',
                   )}
@@ -144,7 +147,10 @@ export type StepTimelineProps = {
   className?: string;
 };
 
-export function StepTimeline({ run, className }: StepTimelineProps) {
+export const StepTimeline = forwardRef<HTMLDivElement, StepTimelineProps>(function StepTimeline(
+  { run, className },
+  ref,
+) {
   const steps = extractSteps(run);
   const completedCount = getCompletedStepCount(run);
   const totalDurationMs = computeDurationMs(run) ?? 0;
@@ -155,13 +161,13 @@ export function StepTimeline({ run, className }: StepTimelineProps) {
   const waitPct = showSplit ? (waitMs / splitSumMs) * 100 : 0;
 
   return (
-    <div className={cn('space-y-0', className)}>
+    <div ref={ref} className={clsx('space-y-0', className)}>
       <div className="mb-3 flex items-center justify-between text-xs text-pgw-muted-fg">
         <span>
           {completedCount}/{steps.length} steps
         </span>
         <span
-          className={cn(
+          className={clsx(
             run.status === 'paused' && 'inline-flex items-center gap-1 text-pgw-status-paused',
           )}
         >
@@ -203,7 +209,7 @@ export function StepTimeline({ run, className }: StepTimelineProps) {
             </>
           ) : (
             <div
-              className={cn(
+              className={clsx(
                 'absolute inset-y-0 left-0 rounded',
                 STATUS_BAR[run.status] ?? 'bg-pgw-muted-fg',
               )}
@@ -222,4 +228,4 @@ export function StepTimeline({ run, className }: StepTimelineProps) {
       )}
     </div>
   );
-}
+});
