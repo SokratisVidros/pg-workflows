@@ -42,8 +42,8 @@ export function FilterBar({
         onChange={(next) => onFiltersChange(next)}
       />
       <DurationFilter
-        minDuration={filters.minDuration}
-        maxDuration={filters.maxDuration}
+        minDurationMs={filters.minDurationMs}
+        maxDurationMs={filters.maxDurationMs}
         onChange={(next) => onFiltersChange(next)}
       />
       {hasActiveFilters && (

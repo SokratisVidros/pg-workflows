@@ -22,6 +22,15 @@ export function computeDurationMs(run: WorkflowRun): number | null {
   return runAsOfMs(run) - start;
 }
 
+/** Durations are milliseconds throughout; these convert at a UI boundary. */
+export function secondsToMs(seconds: number): number {
+  return seconds * 1000;
+}
+
+export function msToSeconds(ms: number): number {
+  return ms / 1000;
+}
+
 export function formatDuration(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   if (totalSeconds < 60) return `${totalSeconds}s`;

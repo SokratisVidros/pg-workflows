@@ -54,8 +54,8 @@ describe('applyClientFilters', () => {
     expect(result.map((r) => r.id)).toEqual(['run_b']);
   });
 
-  it('filters by min duration in seconds', () => {
-    const result = applyClientFilters(makeRuns(), { minDuration: 30 });
+  it('filters by min duration in milliseconds', () => {
+    const result = applyClientFilters(makeRuns(), { minDurationMs: 30_000 });
     expect(result.map((r) => r.id)).not.toContain('run_a');
   });
 });

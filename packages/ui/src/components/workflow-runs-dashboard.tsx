@@ -9,7 +9,7 @@ import { cn } from '../lib/cn';
 import { applyClientFilters, sortRuns } from '../lib/filters';
 import { WorkflowRunsProvider } from '../provider';
 import { FilterBar } from './filter-bar/filter-bar';
-import { LiveIndicator } from './live-indicator';
+import { LiveToggle } from './live-toggle';
 import { Pagination } from './pagination';
 import { RunDetail } from './run-detail/run-detail';
 import { RunsTable } from './runs-table';
@@ -78,8 +78,8 @@ function DashboardInner({
     const clientFiltered = applyClientFilters(items, {
       from: filters.from,
       to: filters.to,
-      minDuration: filters.minDuration,
-      maxDuration: filters.maxDuration,
+      minDurationMs: filters.minDurationMs,
+      maxDurationMs: filters.maxDurationMs,
       search: filters.search,
     });
     return sortRuns(clientFiltered, filters.sort, filters.dir);
@@ -111,7 +111,7 @@ function DashboardInner({
           }
           onClear={clearFilters}
         />
-        <LiveIndicator isLive={live} isFetching={runsQuery.isFetching} onToggle={onToggleLive} />
+        <LiveToggle isLive={live} isFetching={runsQuery.isFetching} onToggle={onToggleLive} />
       </div>
       {runsQuery.isError ? (
         <div className="rounded-md border border-pgw-status-failed bg-pgw-muted px-3 py-2 text-sm text-pgw-status-failed">

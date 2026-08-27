@@ -13,7 +13,7 @@ export {
   type WorkflowRunsClient,
 } from './client';
 export { FilterBar, type FilterBarProps } from './components/filter-bar/filter-bar';
-export { LiveIndicator, type LiveIndicatorProps } from './components/live-indicator';
+export { LiveToggle, type LiveToggleProps } from './components/live-toggle';
 export { Pagination, type PaginationProps } from './components/pagination';
 export { JsonViewer, type JsonViewerProps } from './components/run-detail/json-viewer';
 export { RunDetail, type RunDetailProps } from './components/run-detail/run-detail';

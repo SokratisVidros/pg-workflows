@@ -4,8 +4,8 @@ import { computeDurationMs } from './duration';
 export type ClientFilters = {
   from?: string;
   to?: string;
-  minDuration?: number;
-  maxDuration?: number;
+  minDurationMs?: number;
+  maxDurationMs?: number;
   search?: string;
 };
 
@@ -21,14 +21,14 @@ export function applyClientFilters(runs: WorkflowRun[], filters: ClientFilters):
     }
     const durationMs = computeDurationMs(run);
     if (
-      filters.minDuration != null &&
-      (durationMs == null || durationMs < filters.minDuration * 1000)
+      filters.minDurationMs != null &&
+      (durationMs == null || durationMs < filters.minDurationMs)
     ) {
       return false;
     }
     if (
-      filters.maxDuration != null &&
-      (durationMs == null || durationMs > filters.maxDuration * 1000)
+      filters.maxDurationMs != null &&
+      (durationMs == null || durationMs > filters.maxDurationMs)
     ) {
       return false;
     }
