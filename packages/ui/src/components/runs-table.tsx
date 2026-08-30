@@ -1,6 +1,7 @@
 'use client';
 
 import { clsx } from 'clsx';
+import { forwardRef } from 'react';
 import type { WorkflowRun } from '../client';
 import { computeDurationMs, formatDuration, isTerminalStatus, timeAgo } from '../lib/duration';
 import { RunProgress } from './run-progress';
@@ -22,9 +23,12 @@ function durationLabel(run: WorkflowRun): string {
   return ms == null ? '—' : formatDuration(ms);
 }
 
-export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTableProps) {
+export const RunsTable = forwardRef<HTMLTableElement, RunsTableProps>(function RunsTable(
+  { runs, onSelectRun, isLoading, className },
+  ref,
+) {
   return (
-    <table className={clsx('w-full border-collapse text-sm', className)}>
+    <table ref={ref} className={clsx('w-full border-collapse text-sm', className)}>
       <thead>
         <tr className="border-b border-pgw-border text-left text-xs uppercase text-pgw-muted-fg">
           <th className="px-3 py-2 font-medium">Workflow</th>
@@ -76,4 +80,4 @@ export function RunsTable({ runs, onSelectRun, isLoading, className }: RunsTable
       </tbody>
     </table>
   );
-}
+});

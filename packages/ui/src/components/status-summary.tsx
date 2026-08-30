@@ -1,6 +1,7 @@
 'use client';
 
 import { clsx } from 'clsx';
+import { forwardRef } from 'react';
 import type { WorkflowRun, WorkflowRunStatus } from '../client';
 import { STATUS_TEXT_CLASS } from '../lib/status-classes';
 
@@ -19,7 +20,10 @@ export type StatusSummaryProps = {
   className?: string;
 };
 
-export function StatusSummary({ runs, onSelectStatus, className }: StatusSummaryProps) {
+export const StatusSummary = forwardRef<HTMLDivElement, StatusSummaryProps>(function StatusSummary(
+  { runs, onSelectStatus, className },
+  ref,
+) {
   const counts = runs.reduce(
     (acc, run) => {
       acc[run.status] = (acc[run.status] ?? 0) + 1;
@@ -34,6 +38,7 @@ export function StatusSummary({ runs, onSelectStatus, className }: StatusSummary
 
   return (
     <div
+      ref={ref}
       className={clsx(
         'inline-flex items-stretch overflow-hidden rounded-md border border-pgw-border',
         className,
@@ -59,4 +64,4 @@ export function StatusSummary({ runs, onSelectStatus, className }: StatusSummary
       })}
     </div>
   );
-}
+});

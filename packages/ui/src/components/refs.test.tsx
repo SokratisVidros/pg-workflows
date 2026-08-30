@@ -1,19 +1,27 @@
-import { render } from '@testing-library/react';
-import { createRef } from 'react';
-import { describe, expect, it } from 'vitest';
-import type { WorkflowRun } from '../client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, waitFor } from '@testing-library/react';
+import { createRef, type ReactNode } from 'react';
+import { describe, expect, it, vi } from 'vitest';
+import type { WorkflowRun, WorkflowRunsClient } from '../client';
+import { WorkflowRunsProvider } from '../provider';
 import {
   DateRangeFilter,
   DurationFilter,
   FilterBar,
   JsonViewer,
   LiveToggle,
+  Pagination,
+  RunDetail,
   RunDetailHeader,
+  RunProgress,
+  RunsTable,
   SearchFilter,
   StatusBadge,
   StatusFilter,
+  StatusSummary,
   StepTimeline,
   WorkflowIdFilter,
+  WorkflowRunsDashboard,
 } from './index';
 
 const run = {
@@ -28,6 +36,44 @@ const run = {
   input: {},
   timeline: {},
 } as unknown as WorkflowRun;
+
+const runWithSteps = {
+  ...run,
+  timeline: {
+    'step-a': { output: { x: 1 }, timestamp: '2026-06-17T12:00:01Z' },
+  },
+  currentStepId: 'step-b',
+  status: 'running',
+} as unknown as WorkflowRun;
+
+function makeClient(full: WorkflowRun = run): WorkflowRunsClient {
+  return {
+    listRuns: vi.fn().mockResolvedValue({
+      items: [full],
+      nextCursor: null,
+      prevCursor: null,
+      hasMore: false,
+      hasPrev: false,
+    }),
+    getRun: vi.fn().mockResolvedValue(full),
+    cancelRun: vi.fn(),
+    pauseRun: vi.fn(),
+    resumeRun: vi.fn(),
+    fastForwardRun: vi.fn(),
+    triggerEvent: vi.fn(),
+  };
+}
+
+function wrap(client: WorkflowRunsClient) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={qc}>
+      <WorkflowRunsProvider client={client} pollIntervalMs={0}>
+        {children}
+      </WorkflowRunsProvider>
+    </QueryClientProvider>
+  );
+}
 
 describe('ref forwarding', () => {
   it('forwards a ref to StatusBadge’s root span', () => {
@@ -109,5 +155,52 @@ describe('ref forwarding', () => {
     const ref = createRef<HTMLButtonElement>();
     render(<WorkflowIdFilter ref={ref} options={['demo']} onChange={() => {}} />);
     expect(ref.current?.tagName).toBe('BUTTON');
+  });
+
+  it('forwards a ref to Pagination’s root', () => {
+    const ref = createRef<HTMLDivElement>();
+    render(
+      <Pagination
+        ref={ref}
+        className="custom-cls"
+        hasPrev={false}
+        hasNext={false}
+        onPrev={() => {}}
+        onNext={() => {}}
+      />,
+    );
+    expect(ref.current).toBeInstanceOf(HTMLDivElement);
+    expect(ref.current?.className).toContain('custom-cls');
+  });
+
+  it('forwards a ref to RunsTable’s table', () => {
+    const ref = createRef<HTMLTableElement>();
+    render(<RunsTable ref={ref} runs={[run]} onSelectRun={() => {}} />);
+    expect(ref.current?.tagName).toBe('TABLE');
+  });
+
+  it('forwards a ref to StatusSummary’s root', () => {
+    const ref = createRef<HTMLDivElement>();
+    render(<StatusSummary ref={ref} runs={[run]} />);
+    expect(ref.current).toBeInstanceOf(HTMLDivElement);
+  });
+
+  it('forwards a ref to RunProgress when steps exist', () => {
+    const ref = createRef<HTMLDivElement>();
+    render(<RunProgress ref={ref} run={runWithSteps} />);
+    expect(ref.current).toBeInstanceOf(HTMLDivElement);
+  });
+
+  it('forwards a ref to RunDetail’s root after load', async () => {
+    const ref = createRef<HTMLDivElement>();
+    render(<RunDetail ref={ref} runId="run_a" />, { wrapper: wrap(makeClient()) });
+    await waitFor(() => expect(ref.current).toBeInstanceOf(HTMLDivElement));
+  });
+
+  it('forwards a ref to WorkflowRunsDashboard’s root', async () => {
+    const ref = createRef<HTMLDivElement>();
+    render(<WorkflowRunsDashboard ref={ref} client={makeClient()} pollIntervalMs={0} />);
+    await waitFor(() => expect(ref.current).toBeInstanceOf(HTMLDivElement));
+    expect(ref.current?.className).toContain('pgw-root');
   });
 });

@@ -2,7 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { clsx } from 'clsx';
-import { useMemo, useState } from 'react';
+import { forwardRef, useMemo, useState } from 'react';
 import { createFetchClient, type WorkflowRunsClient } from '../client';
 import { useRunFilters } from '../hooks/use-run-filters';
 import { useWorkflowRuns } from '../hooks/use-workflow-runs';
@@ -26,35 +26,41 @@ export type WorkflowRunsDashboardProps = (
   | { baseUrl: string; client?: never }
 ) & { pollIntervalMs?: number } & SelectionProps;
 
-export function WorkflowRunsDashboard(props: WorkflowRunsDashboardProps) {
-  // biome-ignore lint/correctness/useExhaustiveDependencies: build the client once per mount
-  const client = useMemo(
-    () =>
-      'client' in props && props.client
-        ? props.client
-        : createFetchClient({ baseUrl: props.baseUrl as string }),
-    [],
-  );
-  const [qc] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }));
-  const [live, setLive] = useState(true);
-  const pollIntervalMs = props.pollIntervalMs ?? (live ? 5000 : 0);
+export const WorkflowRunsDashboard = forwardRef<HTMLDivElement, WorkflowRunsDashboardProps>(
+  function WorkflowRunsDashboard(props, ref) {
+    // biome-ignore lint/correctness/useExhaustiveDependencies: build the client once per mount
+    const client = useMemo(
+      () =>
+        'client' in props && props.client
+          ? props.client
+          : createFetchClient({ baseUrl: props.baseUrl as string }),
+      [],
+    );
+    const [qc] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+    const [live, setLive] = useState(true);
+    const pollIntervalMs = props.pollIntervalMs ?? (live ? 5000 : 0);
 
-  return (
-    <QueryClientProvider client={qc}>
-      <WorkflowRunsProvider client={client} pollIntervalMs={pollIntervalMs}>
-        <DashboardInner {...props} live={live} onToggleLive={() => setLive((v) => !v)} />
-      </WorkflowRunsProvider>
-    </QueryClientProvider>
-  );
-}
+    return (
+      <QueryClientProvider client={qc}>
+        <WorkflowRunsProvider client={client} pollIntervalMs={pollIntervalMs}>
+          <DashboardInner
+            selectedRunId={props.selectedRunId}
+            onSelectRun={props.onSelectRun}
+            className={props.className}
+            live={live}
+            onToggleLive={() => setLive((v) => !v)}
+            ref={ref}
+          />
+        </WorkflowRunsProvider>
+      </QueryClientProvider>
+    );
+  },
+);
 
-function DashboardInner({
-  selectedRunId,
-  onSelectRun,
-  className,
-  live,
-  onToggleLive,
-}: SelectionProps & { live: boolean; onToggleLive: () => void }) {
+const DashboardInner = forwardRef<
+  HTMLDivElement,
+  SelectionProps & { live: boolean; onToggleLive: () => void }
+>(function DashboardInner({ selectedRunId, onSelectRun, className, live, onToggleLive }, ref) {
   const { filters, setFilters, clearFilters, hasActiveFilters, serverParams } = useRunFilters();
   const runsQuery = useWorkflowRuns(serverParams);
   const workflowsQuery = useWorkflowRuns({ limit: 100 });
@@ -87,14 +93,14 @@ function DashboardInner({
 
   if (selected) {
     return (
-      <div className={clsx('pgw-root p-4', className)}>
+      <div ref={ref} className={clsx('pgw-root p-4', className)}>
         <RunDetail key={selected} runId={selected} onBack={() => select(null)} />
       </div>
     );
   }
 
   return (
-    <div className={clsx('pgw-root flex flex-col gap-3 p-4', className)}>
+    <div ref={ref} className={clsx('pgw-root flex flex-col gap-3 p-4', className)}>
       <StatusSummary
         runs={unfilteredItems}
         onSelectStatus={(s) =>
@@ -139,4 +145,4 @@ function DashboardInner({
       />
     </div>
   );
-}
+});
