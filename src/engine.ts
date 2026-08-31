@@ -174,11 +174,11 @@ export class WorkflowEngine {
         this.pool.query(text, values) as Promise<{ rows: unknown[] }>,
     };
 
-    if (boss) {
-      this.boss = boss;
-    } else {
-      this.boss = new PgBoss({ db, schema: DEFAULT_PGBOSS_SCHEMA });
-    }
+    this.boss = boss ?? new PgBoss({ db, schema: DEFAULT_PGBOSS_SCHEMA });
+    // 12.26+ surfaces fetch/work DB errors here; without a listener Node crashes.
+    this.boss.on('error', (error) => {
+      this.logger.error('pg-boss error', error);
+    });
     this.db = this.boss.getDb();
   }
 
@@ -232,10 +232,10 @@ export class WorkflowEngine {
       await Promise.all(
         Array.from({ length: numWorkers }, (_, i) =>
           this.boss
-            .work<WorkflowRunJobParameters>(
+            .work(
               WORKFLOW_RUN_QUEUE_NAME,
-              { pollingIntervalSeconds: 0.5, batchSize, includeMetadata: true },
-              (jobs) => this.handleWorkflowRun(jobs),
+              { pollingIntervalSeconds: 0.5, batchSize, includeMetadata: true as const },
+              (jobs: JobWithMetadata<WorkflowRunJobParameters>[]) => this.handleWorkflowRun(jobs),
             )
             .then(() => {
               this.logger.log(
@@ -286,10 +286,10 @@ export class WorkflowEngine {
     await this.boss.schedule(scheduleQueueName, resolvedSchedule.cron, null, {
       tz: resolvedSchedule.timezone,
     });
-    await this.boss.work<unknown>(
+    await this.boss.work(
       scheduleQueueName,
-      { batchSize: 1, includeMetadata: true },
-      async (jobs: JobWithMetadata<unknown>[]) => {
+      { batchSize: 1, includeMetadata: true as const },
+      async (jobs) => {
         const scheduledAt = jobs[0]?.startAfter ?? new Date();
         try {
           await this.createWorkflowRun({ workflowId, input: {}, scheduledAt });

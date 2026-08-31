@@ -20,7 +20,13 @@ export async function getBoss(db?: pg.Pool): Promise<PgBoss> {
 
   const boss = new PgBoss({
     db: wrapPool(db),
-    migrate: false,
+    backend: 'pglite',
+  });
+
+  // 12.26+ surfaces fetch/work DB errors on the `error` event; without a listener
+  // Node treats that as an unhandled exception and crashes the test process.
+  boss.on('error', (error) => {
+    console.error('pg-boss error', error);
   });
 
   bossInstance = boss;
