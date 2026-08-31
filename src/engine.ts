@@ -178,6 +178,10 @@ export class WorkflowEngine {
       this.boss = boss;
     } else {
       this.boss = new PgBoss({ db, schema: DEFAULT_PGBOSS_SCHEMA });
+      // 12.26+ surfaces fetch/work DB errors here; without a listener Node crashes.
+      this.boss.on('error', (error) => {
+        this.logger.error('pg-boss error', error);
+      });
     }
     this.db = this.boss.getDb();
   }
