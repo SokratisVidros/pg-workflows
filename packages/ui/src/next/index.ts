@@ -1,36 +1,30 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { WorkflowRunsApi } from '../server/api';
+import { type FetchHandler, type FetchHandlerSource, toFetchHandler } from '../server/fetch';
 import { toNodeHandler } from '../server/node';
 
 /**
- * App Router route context for the per-file handlers from
- * {@link createRouteHandlers}. `params` may be a plain object (Next 14) or a
- * Promise (Next 15+); both are supported.
+ * App Router route context. Kept so hosts that wrap a per-file handler can
+ * type Next's second argument. The handlers themselves dispatch on
+ * `request.url` and ignore `params`.
  */
 export type RouteContext = { params: { id: string } | Promise<{ id: string }> };
 
-async function routeId(ctx: RouteContext): Promise<string> {
-  return (await ctx.params).id;
-}
-
 export type RouteHandlers = {
-  list: (req: Request) => Promise<Response>;
-  detail: (req: Request, ctx: RouteContext) => Promise<Response>;
-  cancel: (req: Request, ctx: RouteContext) => Promise<Response>;
-  pause: (req: Request, ctx: RouteContext) => Promise<Response>;
-  resume: (req: Request, ctx: RouteContext) => Promise<Response>;
-  fastForward: (req: Request, ctx: RouteContext) => Promise<Response>;
-  trigger: (req: Request, ctx: RouteContext) => Promise<Response>;
+  list: FetchHandler;
+  detail: FetchHandler;
+  cancel: FetchHandler;
+  pause: FetchHandler;
+  resume: FetchHandler;
+  fastForward: FetchHandler;
+  trigger: FetchHandler;
 };
 
-export type AppRouterHandler = (request: Request) => Promise<Response>;
-
+export type AppRouterHandler = FetchHandler;
 export type AppRouterHandlers = {
   GET: AppRouterHandler;
   POST: AppRouterHandler;
 };
-
-export type AppRouterHandlerSource = Pick<WorkflowRunsApi, 'fetch'> | AppRouterHandler;
+export type AppRouterHandlerSource = FetchHandlerSource;
 
 /**
  * App Router: one optional catch-all. Mount at
@@ -44,28 +38,29 @@ export type AppRouterHandlerSource = Pick<WorkflowRunsApi, 'fetch'> | AppRouterH
  * Pass either the api or a `(request) => api.fetch(request)` wrapper (e.g. to
  * await engine startup before the first request).
  */
-export function createAppRouterHandler(apiOrFetch: AppRouterHandlerSource): AppRouterHandlers {
-  const handler: AppRouterHandler =
-    typeof apiOrFetch === 'function' ? apiOrFetch : (request) => apiOrFetch.fetch(request);
+export function createAppRouterHandler(source: FetchHandlerSource): AppRouterHandlers {
+  const handler = toFetchHandler(source);
   return { GET: handler, POST: handler };
 }
 
 /**
  * App Router handlers as one export per endpoint. Prefer
  * {@link createAppRouterHandler} unless you need a `route.ts` per path (for
- * example to wrap mutations in extra auth). Wire each into a `route.ts`, e.g.
- * `export const GET = handlers.list` (collection) /
- * `export const POST = handlers.cancel` (`[id]/cancel/route.ts`).
+ * example to wrap mutations in extra auth). Each export is `api.fetch` —
+ * Next still provides the full URL, so routing is not reimplemented here.
+ * Wire each into a `route.ts`, e.g. `export const GET = handlers.list`
+ * / `export const POST = handlers.cancel` (`[id]/cancel/route.ts`).
  */
-export function createRouteHandlers(api: WorkflowRunsApi): RouteHandlers {
+export function createRouteHandlers(source: FetchHandlerSource): RouteHandlers {
+  const handler = toFetchHandler(source);
   return {
-    list: (req) => api.listRuns(req),
-    detail: async (req, ctx) => api.getRun(req, await routeId(ctx)),
-    cancel: async (req, ctx) => api.cancelRun(req, await routeId(ctx)),
-    pause: async (req, ctx) => api.pauseRun(req, await routeId(ctx)),
-    resume: async (req, ctx) => api.resumeRun(req, await routeId(ctx)),
-    fastForward: async (req, ctx) => api.fastForwardRun(req, await routeId(ctx)),
-    trigger: async (req, ctx) => api.triggerEvent(req, await routeId(ctx)),
+    list: handler,
+    detail: handler,
+    cancel: handler,
+    pause: handler,
+    resume: handler,
+    fastForward: handler,
+    trigger: handler,
   };
 }
 
@@ -75,7 +70,7 @@ export function createRouteHandlers(api: WorkflowRunsApi): RouteHandlers {
  * `basePath` (e.g. `createWorkflowRunsApi({ engine, basePath: '/api/workflow-runs' })`).
  */
 export function createPagesApiHandler(
-  api: WorkflowRunsApi,
+  source: FetchHandlerSource,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  return toNodeHandler(api.fetch);
+  return toNodeHandler(source);
 }

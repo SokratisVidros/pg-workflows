@@ -53,4 +53,41 @@ describe('toNodeHandler', () => {
     expect(res.statusCode).toBe(201);
     expect(JSON.parse(res.body)).toEqual({ eventName: 'e' });
   });
+
+  it('prefers Express originalUrl so a mounted app.use prefix still routes', async () => {
+    const handler = toNodeHandler(async (req) => {
+      expect(new URL(req.url).pathname).toBe('/workflow-runs/run_1');
+      return new Response('ok');
+    });
+    const req = fakeReq('GET', '/run_1');
+    req.originalUrl = '/workflow-runs/run_1';
+    const res = fakeRes();
+    await handler(req as any, res as any);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe('ok');
+  });
+
+  it('writes a 500 JSON body when the fetch handler throws', async () => {
+    const handler = toNodeHandler(async () => {
+      throw new Error('boom');
+    });
+    const res = fakeRes();
+    await handler(fakeReq('GET', '/workflow-runs') as any, res as any);
+    expect(res.statusCode).toBe(500);
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'internal',
+      message: 'Internal Server Error',
+    });
+  });
+
+  it('accepts an object with a fetch method, not only a bare function', async () => {
+    const api = {
+      fetch: async (req: Request) => new Response(new URL(req.url).pathname),
+    };
+    const handler = toNodeHandler(api);
+    const res = fakeRes();
+    await handler(fakeReq('GET', '/workflow-runs') as any, res as any);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe('/workflow-runs');
+  });
 });

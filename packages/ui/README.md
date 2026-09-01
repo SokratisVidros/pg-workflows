@@ -39,7 +39,7 @@ The package is split so client code never pulls in server/engine code:
 |--------|----------|------|
 | `@pg-workflows/ui` | Dashboard component, all components, hooks, provider, client re-export | client |
 | `@pg-workflows/ui/client` | `createFetchClient` + types (no React) | client or server |
-| `@pg-workflows/ui/server` | `createWorkflowRunsApi`, `toNodeHandler` — the HTTP adapter over your engine | server only |
+| `@pg-workflows/ui/server` | `createWorkflowRunsApi`, `toFetchHandler`, `toNodeHandler` — Fetch handler + Node `(req, res)` converter | server only |
 | `@pg-workflows/ui/next` | `createAppRouterHandler` (App Router catch-all), `createPagesApiHandler` (Pages Router), `createRouteHandlers` (optional per-file App Router) | server only |
 | `@pg-workflows/ui/tailwind` | Tailwind preset exposing the `pgw-*` color tokens | build |
 | `@pg-workflows/ui/styles.css` | CSS variables (light/dark) + base styles | client |
@@ -134,7 +134,7 @@ Use `[[...path]]` (optional) so both `GET /workflow-runs` (list) and `POST /work
 
 > A complete working version of this setup — catch-all route, engine singleton, and a seed script covering every run state — lives in [`examples/dashboard`](../../examples/dashboard).
 
-If you need a file per endpoint (for example to wrap mutations in extra auth), `createRouteHandlers(api)` still returns one handler per route (`const h = createRouteHandlers(runsApi)`). Handlers support both Next 14 sync and Next 15 async `params`:
+If you need a file per endpoint (for example to wrap mutations in extra auth), `createRouteHandlers(api)` still returns one named export per route (`const h = createRouteHandlers(runsApi)`). Every export is `api.fetch` — Next provides the full URL, so routing is not reimplemented:
 
 | File | Export |
 |------|--------|
@@ -164,7 +164,7 @@ Use `<WorkflowRunsDashboard baseUrl="/api/workflow-runs" />`.
 
 ### TanStack Start / Hono / Bun / Deno / Cloudflare Workers
 
-Any Web-standard server can call `api.fetch(request)` directly:
+Any Web-standard server can call `api.fetch(request)` directly (or `toFetchHandler(runsApi)` if you already have a wrapper):
 
 ```ts
 // e.g. a TanStack Start server route or a Hono handler
@@ -174,7 +174,7 @@ export const handler = (request: Request) => runsApi.fetch(request)
 
 ### Express / Node
 
-Bridge the Web handler to Node with `toNodeHandler`:
+Bridge the Web handler to Node with `toNodeHandler` (Express, Fastify `req.raw`/`reply.raw`, Nest, raw `node:http`). Pass the api or `api.fetch`:
 
 ```ts
 import express from 'express'
@@ -182,7 +182,8 @@ import { toNodeHandler } from '@pg-workflows/ui/server'
 import { runsApi } from './runs-api'
 
 const app = express()
-app.use('/workflow-runs', toNodeHandler(runsApi.fetch)) // create the api with basePath: '/workflow-runs'
+// create the api with basePath: '/workflow-runs' — originalUrl keeps the mount prefix
+app.use('/workflow-runs', toNodeHandler(runsApi))
 ```
 
 ### Vite / SPA (no server of your own)
