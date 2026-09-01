@@ -27,7 +27,7 @@ if their `dist/` is missing, so a fresh clone works without extra steps.
 | Path | What it does |
 |------|--------------|
 | `app/page.tsx` | Server component rendering `<WorkflowRunsDashboard baseUrl="/workflow-runs" />` |
-| `app/workflow-runs/**/route.ts` | The seven adapter routes, from `createRouteHandlers` |
+| `app/workflow-runs/[[...path]]/route.ts` | Optional catch-all adapter, from `createAppRouterHandler` |
 | `lib/workflows.ts` | Three workflows covering the completed / failed / waiting states |
 | `lib/engine.ts` | Lazily-constructed engine singleton |
 | `lib/runs-api.ts` | `createWorkflowRunsApi` + startup gating |
@@ -53,13 +53,13 @@ no separate "waiting" status, so those runs *are* the paused ones and calling
 **Nothing is constructed at import time.** `next build` imports every route
 module to collect metadata, so building a connection pool — or even reading
 `DATABASE_URL` — at module scope would make your build depend on a reachable
-database. `getEngine()` and `getHandlers()` defer everything to the first
+database. `getEngine()` and `runsApi.fetch` defer everything to the first
 request.
 
-**Route handlers await engine startup.** Lifecycle actions can't enqueue a job
+**The catch-all awaits engine startup.** Lifecycle actions can't enqueue a job
 until `engine.start()` has resolved, and a route handler has no lifecycle hook
-in which to wait for that. Every handler awaits one shared, cached start
-promise instead — see `gated()` in `lib/runs-api.ts`.
+in which to wait for that. `runsApi.fetch` awaits one shared, cached start
+promise first — see `lib/runs-api.ts`.
 
 ## Security
 

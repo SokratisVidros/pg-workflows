@@ -3,7 +3,8 @@ import type { WorkflowRunsApi } from '../server/api';
 import { toNodeHandler } from '../server/node';
 
 /**
- * App Router route context. `params` may be a plain object (Next 14) or a
+ * App Router route context for the per-file handlers from
+ * {@link createRouteHandlers}. `params` may be a plain object (Next 14) or a
  * Promise (Next 15+); both are supported.
  */
 export type RouteContext = { params: { id: string } | Promise<{ id: string }> };
@@ -22,8 +23,37 @@ export type RouteHandlers = {
   trigger: (req: Request, ctx: RouteContext) => Promise<Response>;
 };
 
+export type AppRouterHandler = (request: Request) => Promise<Response>;
+
+export type AppRouterHandlers = {
+  GET: AppRouterHandler;
+  POST: AppRouterHandler;
+};
+
+export type AppRouterHandlerSource = Pick<WorkflowRunsApi, 'fetch'> | AppRouterHandler;
+
 /**
- * App Router handlers. Wire each into a `route.ts`, e.g.
+ * App Router: one optional catch-all. Mount at
+ * `app/workflow-runs/[[...path]]/route.ts` (or any path matching `basePath`)
+ * and re-export:
+ *
+ *   export const { GET, POST } = createAppRouterHandler(api)
+ *
+ * Prefers this over {@link createRouteHandlers} — `api.fetch` already
+ * dispatches on method + path, so one file covers list, detail, and actions.
+ * Pass either the api or a `(request) => api.fetch(request)` wrapper (e.g. to
+ * await engine startup before the first request).
+ */
+export function createAppRouterHandler(apiOrFetch: AppRouterHandlerSource): AppRouterHandlers {
+  const handler: AppRouterHandler =
+    typeof apiOrFetch === 'function' ? apiOrFetch : (request) => apiOrFetch.fetch(request);
+  return { GET: handler, POST: handler };
+}
+
+/**
+ * App Router handlers as one export per endpoint. Prefer
+ * {@link createAppRouterHandler} unless you need a `route.ts` per path (for
+ * example to wrap mutations in extra auth). Wire each into a `route.ts`, e.g.
  * `export const GET = handlers.list` (collection) /
  * `export const POST = handlers.cancel` (`[id]/cancel/route.ts`).
  */
