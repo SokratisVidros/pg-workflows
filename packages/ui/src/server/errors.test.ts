@@ -27,6 +27,22 @@ describe('toErrorResponse', () => {
     expect(json).toMatchObject({ error: 'validation' });
   });
 
+  it('maps WorkflowRunInProgressError to 409', async () => {
+    const err = new WorkflowEngineError(
+      'Workflow "nightly-sync" already has an in-progress run',
+      'nightly-sync',
+      'run_1',
+    );
+    err.name = 'WorkflowRunInProgressError';
+    const { status, json } = await body(toErrorResponse(err));
+    expect(status).toBe(409);
+    expect(json).toMatchObject({
+      error: 'in_progress',
+      workflowId: 'nightly-sync',
+      runId: 'run_1',
+    });
+  });
+
   it('maps a plain WorkflowEngineError (illegal transition) to 409', async () => {
     const err = new WorkflowEngineError("Cannot resume workflow run in 'running' status");
     expect((await body(toErrorResponse(err))).status).toBe(409);

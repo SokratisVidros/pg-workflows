@@ -7,7 +7,7 @@ import { WORKFLOW_RUN_DLQ_QUEUE_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constant
 import type { WorkflowRun } from './db/types';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
-import { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
+import { WorkflowEngineError, WorkflowRunInProgressError, WorkflowRunNotFoundError } from './error';
 import { getBoss } from './tests/pgboss';
 import { closeTestDatabase, createTestDatabase } from './tests/test-db';
 import type { StepBaseContext, WorkflowPlugin } from './types';
@@ -225,6 +225,30 @@ describe('WorkflowEngine', () => {
         const stored = engine.workflows.get('scheduled-via-ref');
         expect(stored?.schedule).toBe('5m');
         expect(stored?.timezone).toBe('America/New_York');
+      });
+    });
+
+    describe('singleton option', () => {
+      it('stores singleton on the registered definition', async () => {
+        const wf = workflow(
+          'singleton-def-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { singleton: true },
+        );
+
+        await engine.registerWorkflow(wf);
+        expect(engine.workflows.get('singleton-def-wf')?.singleton).toBe(true);
+      });
+
+      it('forwards singleton through workflow.ref() definitions', async () => {
+        const ref = workflow.ref('singleton-via-ref', { singleton: true });
+        const wf = ref(async ({ step }) => step.run('s1', async () => 'ok'));
+
+        expect(ref.singleton).toBe(true);
+        expect(wf.singleton).toBe(true);
+
+        await engine.registerWorkflow(wf);
+        expect(engine.workflows.get('singleton-via-ref')?.singleton).toBe(true);
       });
     });
   });
@@ -916,6 +940,118 @@ describe('WorkflowEngine', () => {
       });
     });
 
+    describe('singleton', () => {
+      it('allows a new run after the previous run pauses', async () => {
+        const wf = workflow(
+          'singleton-paused-wf',
+          async ({ step }) => {
+            await step.pause('hold');
+            return 'done';
+          },
+          { singleton: true },
+        );
+        await engine.registerWorkflow(wf);
+
+        const run1 = await engine.startWorkflow({
+          workflowId: 'singleton-paused-wf',
+          input: {},
+        });
+        await expect
+          .poll(async () => (await engine.getRun({ runId: run1.id })).status)
+          .toBe(WorkflowStatus.PAUSED);
+
+        const run2 = await engine.startWorkflow({
+          workflowId: 'singleton-paused-wf',
+          input: {},
+        });
+        expect(run2.id).not.toBe(run1.id);
+      });
+
+      it('allows a new run after the previous run completes', async () => {
+        const wf = workflow(
+          'singleton-complete-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { singleton: true },
+        );
+        await engine.registerWorkflow(wf);
+
+        const run1 = await engine.startWorkflow({
+          workflowId: 'singleton-complete-wf',
+          input: {},
+        });
+        await expect
+          .poll(async () => (await engine.getRun({ runId: run1.id })).status)
+          .toBe(WorkflowStatus.COMPLETED);
+
+        const run2 = await engine.startWorkflow({
+          workflowId: 'singleton-complete-wf',
+          input: {},
+        });
+        expect(run2.id).not.toBe(run1.id);
+        expect(run2.singleton).toBe(true);
+      });
+
+      it('allows a new run after the previous run is cancelled', async () => {
+        const wf = workflow(
+          'singleton-cancel-wf',
+          async ({ step }) => {
+            await step.waitFor('gate', { eventName: 'go' });
+            return 'done';
+          },
+          { singleton: true },
+        );
+        await engine.registerWorkflow(wf);
+
+        const run1 = await engine.startWorkflow({
+          workflowId: 'singleton-cancel-wf',
+          input: {},
+        });
+        await expect
+          .poll(async () => (await engine.getRun({ runId: run1.id })).status)
+          .toBe(WorkflowStatus.PAUSED);
+
+        await engine.cancelWorkflow({ runId: run1.id });
+
+        const run2 = await engine.startWorkflow({
+          workflowId: 'singleton-cancel-wf',
+          input: {},
+        });
+        expect(run2.id).not.toBe(run1.id);
+      });
+
+      it('does not block a different singleton workflow id', async () => {
+        const wfA = workflow(
+          'singleton-a-wf',
+          async ({ step }) => {
+            await step.waitFor('gate', { eventName: 'go' });
+            return 'a';
+          },
+          { singleton: true },
+        );
+        const wfB = workflow(
+          'singleton-b-wf',
+          async ({ step }) => {
+            await step.waitFor('gate', { eventName: 'go' });
+            return 'b';
+          },
+          { singleton: true },
+        );
+        await engine.registerWorkflow(wfA);
+        await engine.registerWorkflow(wfB);
+
+        const runA = await engine.startWorkflow({ workflowId: 'singleton-a-wf', input: {} });
+        await expect
+          .poll(async () => (await engine.getRun({ runId: runA.id })).status)
+          .toBe(WorkflowStatus.PAUSED);
+
+        const runB = await engine.startWorkflow({ workflowId: 'singleton-b-wf', input: {} });
+        expect(runB.id).not.toBe(runA.id);
+        await expect
+          .poll(async () => (await engine.getRun({ runId: runB.id })).status)
+          .toBe(WorkflowStatus.PAUSED);
+      });
+    });
+
     it('should fall back to options.resourceId / options.idempotencyKey when not passed at the top level', async () => {
       // Documents the resolveWorkflowRunParameters behavior: for the params-
       // object form, `resourceId` and `idempotencyKey` may be supplied either
@@ -1469,12 +1605,14 @@ describe('WorkflowEngine', () => {
         timeoutAt: null,
         retryCount: 0,
         maxRetries: 0,
+        priority: 0,
         jobId: null,
         idempotencyKey: null,
         parentRunId: null,
         parentStepId: null,
         parentResourceId: null,
         scheduledAt: null,
+        singleton: false,
       };
       const lockedParentRun: WorkflowRun = {
         ...parentRun,
@@ -1531,12 +1669,14 @@ describe('WorkflowEngine', () => {
         timeoutAt: null,
         retryCount: 0,
         maxRetries: 0,
+        priority: 0,
         jobId: null,
         idempotencyKey: null,
         parentRunId: null,
         parentStepId: null,
         parentResourceId: null,
         scheduledAt: null,
+        singleton: false,
       };
       const childRun: WorkflowRun = {
         id: 'invoke-child-resource-replay-run',
@@ -1556,12 +1696,14 @@ describe('WorkflowEngine', () => {
         timeoutAt: null,
         retryCount: 0,
         maxRetries: 0,
+        priority: 0,
         jobId: null,
         idempotencyKey: null,
         parentRunId: parentRun.id,
         parentStepId: 'call-child',
         parentResourceId: resourceId,
         scheduledAt: null,
+        singleton: false,
       };
       const lockedParentRun: WorkflowRun = {
         ...parentRun,
@@ -3505,6 +3647,68 @@ describe('WorkflowEngine', () => {
             'step-2': { output: { prev: {} } },
           },
         });
+    });
+  });
+
+  describe('singleton slot', () => {
+    let engine: WorkflowEngine;
+    const workflowId = 'singleton-slot-wf';
+
+    beforeEach(async () => {
+      engine = new WorkflowEngine({
+        workflows: [
+          workflow(
+            workflowId,
+            async ({ step }) => step.run('s1', async () => 'ok'),
+            { singleton: true },
+          ),
+        ],
+        pool: testPool,
+        boss: testBoss,
+      });
+      await engine.start(false);
+    });
+
+    afterEach(async () => {
+      const { items } = await engine.getRuns({
+        workflowId,
+        statuses: [WorkflowStatus.PENDING, WorkflowStatus.RUNNING, WorkflowStatus.PAUSED],
+      });
+      await Promise.all(items.map((run) => engine.cancelWorkflow({ runId: run.id })));
+      await engine.stop();
+    });
+
+    it('rejects a second start while the previous run is running', async () => {
+      const run1 = await engine.startWorkflow({ workflowId, input: {} });
+      expect(run1.status).toBe(WorkflowStatus.RUNNING);
+
+      const err = await engine
+        .startWorkflow({ workflowId, input: {} })
+        .catch((error: unknown) => error);
+      expect(err).toBeInstanceOf(WorkflowRunInProgressError);
+      expect(err).toMatchObject({ workflowId, runId: run1.id });
+    });
+
+    it('allows a new run after the previous run is paused', async () => {
+      const run1 = await engine.startWorkflow({ workflowId, input: {} });
+      await engine.pauseWorkflow({ runId: run1.id });
+      expect((await engine.getRun({ runId: run1.id })).status).toBe(WorkflowStatus.PAUSED);
+
+      const run2 = await engine.startWorkflow({ workflowId, input: {} });
+      expect(run2.id).not.toBe(run1.id);
+      expect(run2.status).toBe(WorkflowStatus.RUNNING);
+    });
+
+    it('rejects resuming a paused run while another run is running', async () => {
+      const run1 = await engine.startWorkflow({ workflowId, input: {} });
+      await engine.pauseWorkflow({ runId: run1.id });
+
+      const run2 = await engine.startWorkflow({ workflowId, input: {} });
+      expect(run2.status).toBe(WorkflowStatus.RUNNING);
+
+      await expect(engine.resumeWorkflow({ runId: run1.id })).rejects.toBeInstanceOf(
+        WorkflowRunInProgressError,
+      );
     });
   });
 });

@@ -22,6 +22,18 @@ export function toErrorResponse(err: unknown): Response {
   if (err instanceof WorkflowRunNotFoundError) {
     return json({ error: 'not_found', message: err.message }, 404);
   }
+  if (err instanceof Error && err.name === 'WorkflowRunInProgressError') {
+    const engineErr = err as WorkflowEngineError;
+    return json(
+      {
+        error: 'in_progress',
+        message: err.message,
+        workflowId: engineErr.workflowId,
+        runId: engineErr.runId,
+      },
+      409,
+    );
+  }
   if (err instanceof WorkflowEngineError) {
     if (err.issues)
       return json({ error: 'validation', message: err.message, issues: err.issues }, 400);

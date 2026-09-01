@@ -168,6 +168,34 @@ const again = await engine.startWorkflow({
 
 The returned `WorkflowRun` includes `idempotencyKey` (or `null` if omitted).
 
+## Singleton Workflows
+
+Set `singleton: true` on a workflow to allow at most one **pending or running** run of that workflow ID. A second `startWorkflow` throws `WorkflowRunInProgressError` until the current run **pauses, completes, fails, or is cancelled**. Paused runs (`waitFor`, `pause`, `waitUntil`, `poll`) release the slot so another run can start.
+
+```typescript
+const nightlySync = workflow(
+  'nightly-sync',
+  async ({ step }) => {
+    await step.run('pull', async () => syncAll())
+  },
+  { singleton: true },
+)
+
+const run = await engine.startWorkflow({ workflowId: 'nightly-sync', input: {} })
+
+// Throws WorkflowRunInProgressError while `run` is pending or running
+await engine.startWorkflow({ workflowId: 'nightly-sync', input: {} })
+```
+
+Paused, failed, and cancelled runs release the slot. Resuming a paused run while another run is still pending or running throws `WorkflowRunInProgressError`. Non-singleton workflows are unchanged: many runs of the same ID may be active at once.
+
+`WorkflowClient` does not load workflow definitions. Pass the flag on a ref or on start options so the constraint is applied:
+
+```typescript
+const nightlySync = workflow.ref('nightly-sync', { singleton: true })
+await client.startWorkflow(nightlySync, {})
+```
+
 ## Pause and Resume
 
 Manually pause a workflow and resume it later:

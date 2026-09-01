@@ -1,5 +1,6 @@
 import ksuid from 'ksuid';
 import type { Db } from 'pg-boss';
+import { WorkflowRunInProgressError } from '../error';
 import type { WorkflowRun } from './types';
 
 export function generateKSUID(prefix?: string): string {
@@ -31,7 +32,19 @@ type WorkflowRunRow = {
   parent_step_id: string | null;
   parent_resource_id: string | null;
   scheduled_at: string | Date | null;
+  singleton: boolean;
 };
+
+function isUniqueViolation(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  if ('code' in error && error.code === '23505') {
+    return true;
+  }
+  const cause = 'cause' in error ? error.cause : undefined;
+  return Boolean(cause && typeof cause === 'object' && 'code' in cause && cause.code === '23505');
+}
 
 function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
   return {
@@ -64,6 +77,7 @@ function mapRowToWorkflowRun(row: WorkflowRunRow): WorkflowRun {
     parentStepId: row.parent_step_id,
     parentResourceId: row.parent_resource_id,
     scheduledAt: row.scheduled_at ? new Date(row.scheduled_at) : null,
+    singleton: Boolean(row.singleton),
   };
 }
 
@@ -82,6 +96,7 @@ export async function insertWorkflowRun(
     parentStepId,
     parentResourceId,
     scheduledAt,
+    singleton = false,
   }: {
     resourceId?: string;
     workflowId: string;
@@ -96,14 +111,24 @@ export async function insertWorkflowRun(
     parentStepId?: string;
     parentResourceId?: string;
     scheduledAt?: Date;
+    singleton?: boolean;
   },
   db: Db,
 ): Promise<{ run: WorkflowRun; created: boolean }> {
   const runId = generateKSUID('run');
   const now = new Date();
 
-  const result = await db.executeSql(
-    `INSERT INTO workflow_runs (
+  if (singleton) {
+    const active = await getActiveSingletonRun(workflowId, db);
+    if (active) {
+      throw new WorkflowRunInProgressError(workflowId, active.id);
+    }
+  }
+
+  let result: { rows: WorkflowRunRow[] };
+  try {
+    result = (await db.executeSql(
+      `INSERT INTO workflow_runs (
       id,
       resource_id,
       workflow_id,
@@ -121,32 +146,41 @@ export async function insertWorkflowRun(
       parent_run_id,
       parent_step_id,
       parent_resource_id,
-      scheduled_at
+      scheduled_at,
+      singleton
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
     ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
     RETURNING *`,
-    [
-      runId,
-      resourceId ?? null,
-      workflowId,
-      currentStepId,
-      status,
-      JSON.stringify(input),
-      maxRetries,
-      priority,
-      timeoutAt,
-      now,
-      now,
-      '{}',
-      0,
-      idempotencyKey ?? null,
-      parentRunId ?? null,
-      parentStepId ?? null,
-      parentResourceId ?? null,
-      scheduledAt ?? null,
-    ],
-  );
+      [
+        runId,
+        resourceId ?? null,
+        workflowId,
+        currentStepId,
+        status,
+        JSON.stringify(input),
+        maxRetries,
+        priority,
+        timeoutAt,
+        now,
+        now,
+        '{}',
+        0,
+        idempotencyKey ?? null,
+        parentRunId ?? null,
+        parentStepId ?? null,
+        parentResourceId ?? null,
+        scheduledAt ?? null,
+        singleton,
+      ],
+    )) as { rows: WorkflowRunRow[] };
+  } catch (error) {
+    if (singleton && isUniqueViolation(error)) {
+      const active = await getActiveSingletonRun(workflowId, db);
+      throw new WorkflowRunInProgressError(workflowId, active?.id);
+    }
+    throw error;
+  }
 
   if (result.rows[0]) {
     return { run: mapRowToWorkflowRun(result.rows[0]), created: true };
@@ -162,6 +196,32 @@ export async function insertWorkflowRun(
   }
 
   return { run: mapRowToWorkflowRun(existing.rows[0]), created: false };
+}
+
+export async function getActiveSingletonRun(
+  workflowId: string,
+  db: Db,
+): Promise<WorkflowRun | null> {
+  const result = await db.executeSql(
+    `SELECT * FROM workflow_runs
+     WHERE workflow_id = $1
+       AND singleton
+       AND status IN ('pending', 'running')
+     LIMIT 1`,
+    [workflowId],
+  );
+
+  return result.rows[0] ? mapRowToWorkflowRun(result.rows[0] as WorkflowRunRow) : null;
+}
+
+export async function assertSingletonSlotAvailable(
+  { workflowId, exceptRunId }: { workflowId: string; exceptRunId?: string },
+  db: Db,
+): Promise<void> {
+  const active = await getActiveSingletonRun(workflowId, db);
+  if (active && active.id !== exceptRunId) {
+    throw new WorkflowRunInProgressError(workflowId, active.id);
+  }
 }
 
 export async function getWorkflowRun(
@@ -332,7 +392,15 @@ export async function updateWorkflowRun(
     RETURNING *
   `;
 
-  const result = await db.executeSql(query, values);
+  let result: { rows: WorkflowRunRow[] };
+  try {
+    result = (await db.executeSql(query, values)) as { rows: WorkflowRunRow[] };
+  } catch (error) {
+    if (data.status === 'running' && isUniqueViolation(error)) {
+      throw new WorkflowRunInProgressError('unknown', runId);
+    }
+    throw error;
+  }
   const run = result.rows[0];
 
   if (!run) {

@@ -33,6 +33,12 @@ export type StartWorkflowOptions = {
   expireInSeconds?: number;
   idempotencyKey?: string;
   priority?: WorkflowPriority;
+  /**
+   * Client-side counterpart of `workflow(..., { singleton: true })`.
+   * The engine reads this from the registered definition; pass it here when
+   * starting from `WorkflowClient` so the uniqueness constraint applies.
+   */
+  singleton?: boolean;
 };
 
 export type WorkflowOptions<I extends InputParameters> = {
@@ -40,6 +46,12 @@ export type WorkflowOptions<I extends InputParameters> = {
   retries?: number;
   inputSchema?: I;
   priority?: WorkflowPriority;
+  /**
+   * When true, at most one pending or running run of this workflow ID may exist.
+   * A second `startWorkflow` throws `WorkflowRunInProgressError` until the
+   * current run pauses, completes, fails, or is cancelled.
+   */
+  singleton?: boolean;
   /**
    * Recurring schedule. Accepts a cron expression (`'0 9 * * 1-5'`),
    * a duration string (`'5m'`, `'1 hour'`), or a `DurationObject`.
@@ -148,6 +160,7 @@ export type WorkflowDefinition<TInput extends InputParameters = InputParameters>
   timeout?: number; // milliseconds
   retries?: number;
   priority?: WorkflowPriority;
+  singleton?: boolean;
   schedule?: Schedule;
   timezone?: string;
   plugins?: WorkflowPlugin[];
@@ -181,7 +194,7 @@ export interface WorkflowFactory<TStepExt = object> {
   ): WorkflowFactory<TStepExt & TNewExt>;
   ref<TInput extends InputParameters = InputParameters, TOutput = unknown>(
     id: string,
-    options?: { inputSchema?: TInput },
+    options?: { inputSchema?: TInput; singleton?: boolean },
   ): WorkflowRef<TInput, TOutput>;
 }
 
@@ -203,6 +216,7 @@ export interface WorkflowRef<
   ): WorkflowDefinition<TInput>;
   readonly id: string;
   readonly inputSchema?: TInput;
+  readonly singleton?: boolean;
 }
 
 export type WorkflowRunProgress = WorkflowRun & {

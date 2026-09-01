@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { z } from 'zod';
 import { WorkflowClient } from './client';
 import { createWorkflowRef } from './definition';
+import { WorkflowRunInProgressError } from './error';
 import { closeTestDatabase, createTestDatabase } from './tests/test-db';
 import { WorkflowStatus } from './types';
 
@@ -108,6 +109,37 @@ describe('WorkflowClient', () => {
       expect(run1.id).not.toBe(run2.id);
       expect(run1.idempotencyKey).toBe('client-key-a');
       expect(run2.idempotencyKey).toBe('client-key-b');
+    });
+  });
+
+  describe('startWorkflow singleton', () => {
+    it('rejects a second start while a singleton run is still in progress', async () => {
+      const ref = createWorkflowRef('client-singleton-wf', { singleton: true });
+
+      const run1 = await client.startWorkflow(ref, {}, { resourceId });
+      expect(run1.singleton).toBe(true);
+
+      await expect(client.startWorkflow(ref, {}, { resourceId })).rejects.toBeInstanceOf(
+        WorkflowRunInProgressError,
+      );
+      await expect(
+        client.startWorkflow({
+          resourceId,
+          workflowId: 'client-singleton-wf',
+          input: {},
+          options: { singleton: true },
+        }),
+      ).rejects.toBeInstanceOf(WorkflowRunInProgressError);
+    });
+
+    it('allows a new run after the previous singleton run is cancelled', async () => {
+      const ref = createWorkflowRef('client-singleton-cancel-wf', { singleton: true });
+
+      const run1 = await client.startWorkflow(ref, {}, { resourceId });
+      await client.cancelWorkflow({ runId: run1.id, resourceId });
+
+      const run2 = await client.startWorkflow(ref, {}, { resourceId });
+      expect(run2.id).not.toBe(run1.id);
     });
   });
 

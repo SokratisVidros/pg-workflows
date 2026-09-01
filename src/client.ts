@@ -11,6 +11,7 @@ import {
 } from './constants';
 import { runMigrations } from './db/migration';
 import {
+  assertSingletonSlotAvailable,
   getWorkflowRun,
   getWorkflowRuns,
   insertWorkflowRun,
@@ -160,6 +161,7 @@ export class WorkflowClient {
     let resourceId: string | undefined;
     let idempotencyKey: string | undefined;
     let options: StartWorkflowOptions | undefined;
+    let singleton = false;
 
     if (typeof refOrParams === 'function' && 'id' in refOrParams) {
       const ref = refOrParams as WorkflowRef<TInput>;
@@ -168,6 +170,7 @@ export class WorkflowClient {
       options = optionsArg;
       resourceId = optionsArg?.resourceId;
       idempotencyKey = optionsArg?.idempotencyKey;
+      singleton = optionsArg?.singleton ?? ref.singleton === true;
 
       if (ref.inputSchema) {
         const result = await ref.inputSchema['~standard'].validate(input);
@@ -194,6 +197,7 @@ export class WorkflowClient {
       resourceId = params.resourceId;
       idempotencyKey = params.idempotencyKey;
       options = params.options;
+      singleton = params.options?.singleton === true;
     }
 
     validateWorkflowId(workflowId);
@@ -215,6 +219,7 @@ export class WorkflowClient {
             priority: resolvePriority(options?.priority),
             timeoutAt,
             idempotencyKey,
+            singleton,
           },
           _db,
         );
@@ -265,6 +270,13 @@ export class WorkflowClient {
     await this.ensureStarted();
 
     const run = await this.getRun({ runId, resourceId });
+
+    if (run.singleton) {
+      await assertSingletonSlotAvailable(
+        { workflowId: run.workflowId, exceptRunId: run.id },
+        this.db,
+      );
+    }
 
     const job: WorkflowRunJobParameters = {
       runId: run.id,
