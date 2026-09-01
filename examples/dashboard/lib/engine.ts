@@ -32,7 +32,7 @@ export function getEngine(): WorkflowEngine {
 
 /**
  * Runs migrations and brings up the workers. Lifecycle actions can't enqueue
- * until this resolves, so every route handler awaits it — see `runs-api.ts`.
+ * until this resolves, so the catch-all route awaits it — see `runs-api.ts`.
  * Cached, so only the first caller pays for startup.
  */
 export function engineReady(): Promise<void> {

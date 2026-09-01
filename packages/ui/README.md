@@ -38,7 +38,7 @@ The package is split so client code never pulls in server/engine code:
 | `@pg-workflows/ui` | Dashboard component, all components, hooks, provider, client re-export | client |
 | `@pg-workflows/ui/client` | `createFetchClient` + types (no React) | client or server |
 | `@pg-workflows/ui/server` | `createWorkflowRunsApi`, `toNodeHandler` — the HTTP adapter over your engine | server only |
-| `@pg-workflows/ui/next` | `createRouteHandlers` (App Router), `createPagesApiHandler` (Pages Router) | server only |
+| `@pg-workflows/ui/next` | `createAppRouterHandler` (App Router catch-all), `createPagesApiHandler` (Pages Router), `createRouteHandlers` (optional per-file App Router) | server only |
 | `@pg-workflows/ui/tailwind` | Tailwind preset exposing the `pgw-*` color tokens | build |
 | `@pg-workflows/ui/styles.css` | CSS variables (light/dark) + base styles | client |
 | `pg-workflows-ui` (bin) | Standalone localhost dashboard — see Variant 3 | CLI |
@@ -118,17 +118,21 @@ export const runsApi = createWorkflowRunsApi({
 
 ### Next.js — App Router
 
-`createRouteHandlers(api)` returns one handler per route:
+One optional catch-all. `api.fetch` already dispatches on method + path, so you do not need a `route.ts` per endpoint:
 
 ```ts
-// app/workflow-runs/[id]/cancel/route.ts
+// app/workflow-runs/[[...path]]/route.ts
+import { createAppRouterHandler } from '@pg-workflows/ui/next'
 import { runsApi } from '@/lib/runs-api'
-import { createRouteHandlers } from '@pg-workflows/ui/next'
-const h = createRouteHandlers(runsApi)
-export const POST = h.cancel
+
+export const { GET, POST } = createAppRouterHandler(runsApi)
 ```
 
-Full route tree (`h` = `createRouteHandlers(runsApi)`):
+Use `[[...path]]` (optional) so both `GET /workflow-runs` (list) and `POST /workflow-runs/:id/cancel` match. Point the dashboard at the same prefix: `<WorkflowRunsDashboard baseUrl="/workflow-runs" />`. If you mount under `/api/workflow-runs`, create the api with `basePath: '/api/workflow-runs'` and pass that as `baseUrl`.
+
+> A complete working version of this setup — catch-all route, engine singleton, and a seed script covering every run state — lives in [`examples/dashboard`](../../examples/dashboard).
+
+If you need a file per endpoint (for example to wrap mutations in extra auth), `createRouteHandlers(api)` still returns one handler per route (`const h = createRouteHandlers(runsApi)`). Handlers support both Next 14 sync and Next 15 async `params`:
 
 | File | Export |
 |------|--------|
@@ -139,10 +143,6 @@ Full route tree (`h` = `createRouteHandlers(runsApi)`):
 | `app/workflow-runs/[id]/resume/route.ts` | `export const POST = h.resume` |
 | `app/workflow-runs/[id]/fast-forward/route.ts` | `export const POST = h.fastForward` |
 | `app/workflow-runs/[id]/trigger/route.ts` | `export const POST = h.trigger` |
-
-Then point the dashboard at it: `<WorkflowRunsDashboard baseUrl="/workflow-runs" />`. (Handlers support both Next 14 sync and Next 15 async `params`.)
-
-> A complete working version of this setup — route tree, engine singleton, and a seed script covering every run state — lives in [`examples/dashboard`](../../examples/dashboard).
 
 ### Next.js — Pages Router
 
