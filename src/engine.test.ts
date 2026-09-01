@@ -3657,11 +3657,9 @@ describe('WorkflowEngine', () => {
     beforeEach(async () => {
       engine = new WorkflowEngine({
         workflows: [
-          workflow(
-            workflowId,
-            async ({ step }) => step.run('s1', async () => 'ok'),
-            { singleton: true },
-          ),
+          workflow(workflowId, async ({ step }) => step.run('s1', async () => 'ok'), {
+            singleton: true,
+          }),
         ],
         pool: testPool,
         boss: testBoss,
