@@ -39,7 +39,7 @@ export type AppRouterHandlerSource = Pick<WorkflowRunsApi, 'fetch'> | AppRouterH
  *
  *   export const { GET, POST } = createAppRouterHandler(api)
  *
- * Prefers this over {@link createRouteHandlers} — `api.fetch` already
+ * Prefer this over {@link createRouteHandlers} — `api.fetch` already
  * dispatches on method + path, so one file covers list, detail, and actions.
  * Pass either the api or a `(request) => api.fetch(request)` wrapper (e.g. to
  * await engine startup before the first request).

@@ -12,7 +12,7 @@ function mockApi() {
     resumeRun: vi.fn().mockResolvedValue(new Response('resume')),
     fastForwardRun: vi.fn().mockResolvedValue(new Response('ff')),
     triggerEvent: vi.fn().mockResolvedValue(new Response('trigger')),
-    fetch: vi.fn().mockResolvedValue(new Response('fetch')),
+    fetch: vi.fn().mockImplementation(() => Promise.resolve(new Response('fetch'))),
   };
 }
 
@@ -47,7 +47,7 @@ describe('createAppRouterHandler (App Router catch-all)', () => {
   });
 
   it('accepts a raw fetch function (for wrapping engine startup)', async () => {
-    const fetch = vi.fn().mockResolvedValue(new Response('wrapped'));
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('wrapped')));
     const { GET, POST } = createAppRouterHandler(fetch);
     const req = new Request('http://x/workflow-runs');
     expect(await (await GET(req)).text()).toBe('wrapped');
