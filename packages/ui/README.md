@@ -2,6 +2,8 @@
 
 React dashboard and HTTP adapters for [pg-workflows](https://github.com/SokratisVidros/pg-workflows) — browse, monitor, and manage workflow runs, or build your own UI on the headless hooks. It talks to your `WorkflowEngine` through a small, framework-agnostic HTTP layer, so the browser never touches your database.
 
+This is a **separate package** from `pg-workflows`. Install it only in apps that render UI. Workers and API services that just run the engine do not need it.
+
 This guide is for developers integrating the UI into an app. It covers installation and every entry-point variant.
 
 ---
@@ -37,7 +39,7 @@ The package is split so client code never pulls in server/engine code:
 |--------|----------|------|
 | `@pg-workflows/ui` | Dashboard component, all components, hooks, provider, client re-export | client |
 | `@pg-workflows/ui/client` | `createFetchClient` + types (no React) | client or server |
-| `@pg-workflows/ui/server` | `createWorkflowRunsApi`, `toNodeHandler` — the HTTP adapter over your engine | server only |
+| `@pg-workflows/ui/server` | `createWorkflowRunsApi`, `toFetchHandler`, `toNodeHandler` — Fetch handler + Node `(req, res)` converter | server only |
 | `@pg-workflows/ui/next` | `createAppRouterHandler` (App Router catch-all), `createPagesApiHandler` (Pages Router), `createRouteHandlers` (optional per-file App Router) | server only |
 | `@pg-workflows/ui/tailwind` | Tailwind preset exposing the `pgw-*` color tokens | build |
 | `@pg-workflows/ui/styles.css` | CSS variables (light/dark) + base styles | client |
@@ -132,7 +134,7 @@ Use `[[...path]]` (optional) so both `GET /workflow-runs` (list) and `POST /work
 
 > A complete working version of this setup — catch-all route, engine singleton, and a seed script covering every run state — lives in [`examples/dashboard`](../../examples/dashboard).
 
-If you need a file per endpoint (for example to wrap mutations in extra auth), `createRouteHandlers(api)` still returns one handler per route (`const h = createRouteHandlers(runsApi)`). Handlers support both Next 14 sync and Next 15 async `params`:
+If you need a file per endpoint (for example to wrap mutations in extra auth), `createRouteHandlers(api)` still returns one named export per route (`const h = createRouteHandlers(runsApi)`). Every export is `api.fetch` — Next provides the full URL, so routing is not reimplemented:
 
 | File | Export |
 |------|--------|
@@ -162,7 +164,7 @@ Use `<WorkflowRunsDashboard baseUrl="/api/workflow-runs" />`.
 
 ### TanStack Start / Hono / Bun / Deno / Cloudflare Workers
 
-Any Web-standard server can call `api.fetch(request)` directly:
+Any Web-standard server can call `api.fetch(request)` directly (or `toFetchHandler(runsApi)` if you already have a wrapper):
 
 ```ts
 // e.g. a TanStack Start server route or a Hono handler
@@ -172,7 +174,7 @@ export const handler = (request: Request) => runsApi.fetch(request)
 
 ### Express / Node
 
-Bridge the Web handler to Node with `toNodeHandler`:
+Bridge the Web handler to Node with `toNodeHandler` (Express, Fastify `req.raw`/`reply.raw`, Nest, raw `node:http`). Pass the api or `api.fetch`:
 
 ```ts
 import express from 'express'
@@ -180,7 +182,8 @@ import { toNodeHandler } from '@pg-workflows/ui/server'
 import { runsApi } from './runs-api'
 
 const app = express()
-app.use('/workflow-runs', toNodeHandler(runsApi.fetch)) // create the api with basePath: '/workflow-runs'
+// create the api with basePath: '/workflow-runs' — originalUrl keeps the mount prefix
+app.use('/workflow-runs', toNodeHandler(runsApi))
 ```
 
 ### Vite / SPA (no server of your own)
@@ -247,7 +250,7 @@ function MyRunsView() {
 
 **Query hooks:** `useWorkflowRuns(params)`, `useWorkflowRun(id)`, `useRunFilters(initial?)`, `useWorkflowRunsClient()`.
 **Mutation hooks:** `useCancelRun`, `usePauseRun`, `useResumeRun`, `useFastForwardRun`, `useTriggerEvent` — each `.mutate({ id, ... })` and invalidates the relevant queries on success.
-**Building blocks (all exported):** `RunsTable`, `Pagination`, `RunDetail`, `StatusBadge`, `StatusSummary`, `RunProgress`, `StepTimeline`, `FilterBar`, `LiveIndicator`, `JsonViewer`, `RunDetailHeader`.
+**Building blocks (all exported):** `RunsTable`, `Pagination`, `RunDetail`, `StatusBadge`, `StatusSummary`, `RunProgress`, `StepTimeline`, `FilterBar`, `LiveToggle`, `JsonViewer`, `RunDetailHeader`. Individual filters (`StatusFilter`, `WorkflowIdFilter`, `DateRangeFilter`, `DurationFilter`, `SearchFilter`) and helpers (`formatDuration`, `timeAgo`, `applyClientFilters`, `sortRuns`, …) are also on the main entry.
 
 You can also skip React entirely and call `createFetchClient({ baseUrl })` from `@pg-workflows/ui/client` (`listRuns`, `getRun`, `cancelRun`, `pauseRun`, `resumeRun`, `fastForwardRun`, `triggerEvent`).
 
@@ -324,6 +327,12 @@ it needs code:
 
 Also out of scope by design: starting workflows from the UI, metrics, alerting,
 and realtime streaming.
+
+---
+
+## Why a separate package
+
+`pg-workflows` is a Node/Postgres engine. Its peers are `pg`, not React. Putting the dashboard on `pg-workflows/ui` would make every worker install Radix and see a React peer. Keep the engine in workers; add `@pg-workflows/ui` only where you render a UI.
 
 ---
 

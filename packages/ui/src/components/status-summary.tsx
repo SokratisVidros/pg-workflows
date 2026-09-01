@@ -1,7 +1,8 @@
 'use client';
 
+import { clsx } from 'clsx';
+import { forwardRef } from 'react';
 import type { WorkflowRun, WorkflowRunStatus } from '../client';
-import { cn } from '../lib/cn';
 import { STATUS_TEXT_CLASS } from '../lib/status-classes';
 
 const STATUS_ORDER: WorkflowRunStatus[] = [
@@ -19,7 +20,10 @@ export type StatusSummaryProps = {
   className?: string;
 };
 
-export function StatusSummary({ runs, onSelectStatus, className }: StatusSummaryProps) {
+export const StatusSummary = forwardRef<HTMLDivElement, StatusSummaryProps>(function StatusSummary(
+  { runs, onSelectStatus, className },
+  ref,
+) {
   const counts = runs.reduce(
     (acc, run) => {
       acc[run.status] = (acc[run.status] ?? 0) + 1;
@@ -34,7 +38,8 @@ export function StatusSummary({ runs, onSelectStatus, className }: StatusSummary
 
   return (
     <div
-      className={cn(
+      ref={ref}
+      className={clsx(
         'inline-flex items-stretch overflow-hidden rounded-md border border-pgw-border',
         className,
       )}
@@ -45,12 +50,12 @@ export function StatusSummary({ runs, onSelectStatus, className }: StatusSummary
             key={status}
             type="button"
             onClick={() => onSelectStatus?.(status)}
-            className={cn(
+            className={clsx(
               'flex w-24 flex-col items-center gap-0.5 px-3 py-2 text-center hover:bg-pgw-muted',
               index > 0 && 'border-l border-pgw-border',
             )}
           >
-            <span className={cn('text-lg font-semibold', STATUS_TEXT_CLASS[status])}>
+            <span className={clsx('text-lg font-semibold', STATUS_TEXT_CLASS[status])}>
               {counts[status]}
             </span>
             <span className="text-xs text-pgw-muted-fg">{status}</span>
@@ -59,4 +64,4 @@ export function StatusSummary({ runs, onSelectStatus, className }: StatusSummary
       })}
     </div>
   );
-}
+});

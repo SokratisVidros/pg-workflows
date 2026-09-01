@@ -102,43 +102,49 @@ describe('createAppRouterHandler (App Router catch-all)', () => {
 });
 
 describe('createRouteHandlers (App Router per-file)', () => {
-  it('list delegates to api.listRuns', async () => {
-    const api = mockApi();
-    const req = new Request('http://x/workflow-runs');
-    await createRouteHandlers(api as never).list(req);
-    expect(api.listRuns).toHaveBeenCalledWith(req);
-  });
-
-  it('detail resolves a SYNC params object (Next 14) and calls getRun with the id', async () => {
-    const api = mockApi();
-    const req = new Request('http://x/workflow-runs/run_1');
-    await createRouteHandlers(api as never).detail(req, { params: { id: 'run_1' } });
-    expect(api.getRun).toHaveBeenCalledWith(req, 'run_1');
-  });
-
-  it('detail resolves an ASYNC params promise (Next 15) and calls getRun with the id', async () => {
-    const api = mockApi();
-    const req = new Request('http://x/workflow-runs/run_2');
-    await createRouteHandlers(api as never).detail(req, {
-      params: Promise.resolve({ id: 'run_2' }),
-    });
-    expect(api.getRun).toHaveBeenCalledWith(req, 'run_2');
-  });
-
-  it('each action handler maps to the matching api op with the resolved id', async () => {
+  it('every per-file export is the same fetch handler, ignoring Next params', async () => {
     const api = mockApi();
     const handlers = createRouteHandlers(api as never);
-    const req = new Request('http://x', { method: 'POST' });
-    await handlers.cancel(req, { params: { id: 'r' } });
-    await handlers.pause(req, { params: { id: 'r' } });
-    await handlers.resume(req, { params: { id: 'r' } });
-    await handlers.fastForward(req, { params: { id: 'r' } });
-    await handlers.trigger(req, { params: { id: 'r' } });
-    expect(api.cancelRun).toHaveBeenCalledWith(req, 'r');
-    expect(api.pauseRun).toHaveBeenCalledWith(req, 'r');
-    expect(api.resumeRun).toHaveBeenCalledWith(req, 'r');
-    expect(api.fastForwardRun).toHaveBeenCalledWith(req, 'r');
-    expect(api.triggerEvent).toHaveBeenCalledWith(req, 'r');
+    expect(handlers.list).toBe(handlers.detail);
+    expect(handlers.detail).toBe(handlers.cancel);
+    expect(handlers.cancel).toBe(handlers.pause);
+    expect(handlers.pause).toBe(handlers.resume);
+    expect(handlers.resume).toBe(handlers.fastForward);
+    expect(handlers.fastForward).toBe(handlers.trigger);
+  });
+
+  it('list, detail, and actions dispatch through api.fetch using the request URL', async () => {
+    const engine = mockEngine();
+    const api = createWorkflowRunsApi({ engine: engine as never });
+    const handlers = createRouteHandlers(api);
+    const ctx = { params: { id: 'ignored' } };
+
+    const list = await handlers.list(new Request('http://x/workflow-runs?limit=5'));
+    expect(list.status).toBe(200);
+    expect(engine.getRuns).toHaveBeenCalled();
+
+    await handlers.detail(new Request('http://x/workflow-runs/run_1'), ctx);
+    expect(engine.getRun).toHaveBeenCalledWith({ runId: 'run_1', resourceId: undefined });
+
+    await handlers.cancel(
+      new Request('http://x/workflow-runs/run_1/cancel', { method: 'POST' }),
+      ctx,
+    );
+    expect(engine.cancelWorkflow).toHaveBeenCalledWith({ runId: 'run_1', resourceId: undefined });
+
+    await handlers.trigger(
+      new Request('http://x/workflow-runs/run_1/trigger', {
+        method: 'POST',
+        body: JSON.stringify({ eventName: 'go' }),
+      }),
+      ctx,
+    );
+    expect(engine.triggerEvent).toHaveBeenCalledWith({
+      runId: 'run_1',
+      resourceId: undefined,
+      eventName: 'go',
+      data: undefined,
+    });
   });
 });
 
@@ -177,5 +183,14 @@ describe('createPagesApiHandler (Pages Router)', () => {
     await handler(fakeReq('GET', '/api/workflow-runs?limit=5') as never, res as never);
     expect(res.statusCode).toBe(200);
     expect(engine.getRuns).toHaveBeenCalled();
+  });
+
+  it('accepts a raw fetch function the same way createAppRouterHandler does', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response('wrapped')));
+    const handler = createPagesApiHandler(fetch);
+    const res = fakeRes();
+    await handler(fakeReq('GET', '/workflow-runs') as never, res as never);
+    expect(res.body).toBe('wrapped');
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });

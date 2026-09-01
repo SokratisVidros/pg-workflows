@@ -1,4 +1,5 @@
-export { type RunFilters, useRunFilters } from './use-run-filters';
+export type { WorkflowRunsContextValue } from '../context';
+export { type RunFilters, type UseRunFiltersResult, useRunFilters } from './use-run-filters';
 export {
   useCancelRun,
   useFastForwardRun,

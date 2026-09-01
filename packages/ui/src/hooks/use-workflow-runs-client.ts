@@ -1,9 +1,9 @@
 'use client';
 
 import { useContext } from 'react';
-import { WorkflowRunsContext } from '../context';
+import { WorkflowRunsContext, type WorkflowRunsContextValue } from '../context';
 
-export function useWorkflowRunsClient() {
+export function useWorkflowRunsClient(): WorkflowRunsContextValue {
   const ctx = useContext(WorkflowRunsContext);
   if (!ctx) {
     throw new Error('useWorkflowRunsClient must be used inside <WorkflowRunsProvider>');

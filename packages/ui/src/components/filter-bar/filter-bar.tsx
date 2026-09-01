@@ -1,5 +1,7 @@
 'use client';
 
+import { clsx } from 'clsx';
+import { forwardRef } from 'react';
 import type { RunFilters } from '../../hooks/use-run-filters';
 import { DateRangeFilter } from './date-range-filter';
 import { DurationFilter } from './duration-filter';
@@ -13,17 +15,15 @@ export type FilterBarProps = {
   workflowIds: string[];
   onFiltersChange: (partial: Partial<RunFilters>) => void;
   onClear: () => void;
+  className?: string;
 };
 
-export function FilterBar({
-  filters,
-  hasActiveFilters,
-  workflowIds,
-  onFiltersChange,
-  onClear,
-}: FilterBarProps) {
+export const FilterBar = forwardRef<HTMLDivElement, FilterBarProps>(function FilterBar(
+  { filters, hasActiveFilters, workflowIds, onFiltersChange, onClear, className },
+  ref,
+) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div ref={ref} className={clsx('flex flex-wrap items-center gap-2', className)}>
       <SearchFilter value={filters.search} onChange={(search) => onFiltersChange({ search })} />
       <StatusFilter
         value={filters.statuses ?? []}
@@ -57,4 +57,4 @@ export function FilterBar({
       )}
     </div>
   );
-}
+});

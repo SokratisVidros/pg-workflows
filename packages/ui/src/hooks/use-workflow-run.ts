@@ -1,11 +1,11 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { type UseQueryResult, useQuery } from '@tanstack/react-query';
 import type { WorkflowRun } from '../client';
 import { isTerminalStatus } from '../lib/duration';
 import { useWorkflowRunsClient } from './use-workflow-runs-client';
 
-export function useWorkflowRun(id: string) {
+export function useWorkflowRun(id: string): UseQueryResult<WorkflowRun> {
   const { client, pollIntervalMs } = useWorkflowRunsClient();
   return useQuery<WorkflowRun>({
     queryKey: ['pgw', 'run', id],

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import type { WorkflowRunStatus } from '../client';
+import type { ListRunsParams, WorkflowRunStatus } from '../client';
 import type { SortDir, SortKey } from '../lib/filters';
 
 export type RunFilters = {
@@ -25,7 +25,17 @@ const DEFAULTS: RunFilters = {
   dir: 'desc',
 };
 
-export function useRunFilters(initial?: Partial<RunFilters>) {
+export type UseRunFiltersResult = {
+  filters: RunFilters;
+  setFilters: (partial: Partial<RunFilters>) => void;
+  replaceFilters: (next: RunFilters) => void;
+  clearFilters: () => void;
+  toggleSort: (key: SortKey) => void;
+  hasActiveFilters: boolean;
+  serverParams: ListRunsParams;
+};
+
+export function useRunFilters(initial?: Partial<RunFilters>): UseRunFiltersResult {
   const [filters, setFiltersState] = useState<RunFilters>({
     ...DEFAULTS,
     ...initial,

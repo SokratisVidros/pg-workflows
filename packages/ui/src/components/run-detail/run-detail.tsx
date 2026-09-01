@@ -1,7 +1,8 @@
 'use client';
 
+import { clsx } from 'clsx';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { forwardRef, useState } from 'react';
 import {
   useCancelRun,
   useFastForwardRun,
@@ -10,7 +11,6 @@ import {
   useTriggerEvent,
 } from '../../hooks/use-run-mutations';
 import { useWorkflowRun } from '../../hooks/use-workflow-run';
-import { cn } from '../../lib/cn';
 import { isTerminalStatus } from '../../lib/duration';
 import { RunProgress } from '../run-progress';
 import { JsonViewer } from './json-viewer';
@@ -28,7 +28,10 @@ const actionBtn =
 
 type ActionFeedback = { kind: 'success' | 'error'; message: string };
 
-export function RunDetail({ runId, onBack, className }: RunDetailProps) {
+export const RunDetail = forwardRef<HTMLDivElement, RunDetailProps>(function RunDetail(
+  { runId, onBack, className },
+  ref,
+) {
   const { data: run, isLoading, error } = useWorkflowRun(runId);
   const cancel = useCancelRun();
   const pause = usePauseRun();
@@ -44,10 +47,16 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
     };
   }
 
-  if (isLoading) return <div className={cn('p-6 text-pgw-muted-fg', className)}>Loading…</div>;
+  if (isLoading) {
+    return (
+      <div ref={ref} className={clsx('p-6 text-pgw-muted-fg', className)}>
+        Loading…
+      </div>
+    );
+  }
   if (error || !run) {
     return (
-      <div className={cn('p-6 text-pgw-status-failed', className)}>
+      <div ref={ref} className={clsx('p-6 text-pgw-status-failed', className)}>
         Failed to load run.{' '}
         {onBack && (
           <button type="button" className="underline" onClick={onBack}>
@@ -61,7 +70,7 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
   const terminal = isTerminalStatus(run.status);
 
   return (
-    <div className={cn('flex flex-col gap-4', className)}>
+    <div ref={ref} className={clsx('flex flex-col gap-4', className)}>
       <div className="flex flex-wrap items-center justify-end gap-3">
         <button
           type="button"
@@ -136,7 +145,7 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
       </div>
       {feedback && (
         <div
-          className={cn(
+          className={clsx(
             'rounded-md border px-3 py-2 text-sm',
             feedback.kind === 'error'
               ? 'border-pgw-status-failed text-pgw-status-failed'
@@ -167,4 +176,4 @@ export function RunDetail({ runId, onBack, className }: RunDetailProps) {
       </section>
     </div>
   );
-}
+});
