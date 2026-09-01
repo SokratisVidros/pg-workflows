@@ -41,3 +41,14 @@ export class WorkflowRunNotFoundError extends WorkflowEngineError {
     this.name = 'WorkflowRunNotFoundError';
   }
 }
+
+export class WorkflowRunInProgressError extends WorkflowEngineError {
+  constructor(workflowId: string, runId?: string) {
+    super(
+      `Workflow "${workflowId}" already has a running run; wait for it to pause, complete, fail, or be cancelled`,
+      workflowId,
+      runId,
+    );
+    this.name = 'WorkflowRunInProgressError';
+  }
+}

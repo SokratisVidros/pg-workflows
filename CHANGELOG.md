@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- Added `singleton: true` on `workflow()` so at most one pending or running run of a given workflow ID may exist. A second `startWorkflow` throws `WorkflowRunInProgressError` until the current run pauses, completes, fails, or is cancelled. Enforced by a unique partial index on `workflow_runs` (schema v7). Scheduled fires of a singleton workflow skip when a run is already pending or running.
+
 ## v0.14.0 - 2026-06-23
 
 ### Added

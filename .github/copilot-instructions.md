@@ -80,6 +80,7 @@ enum StepType { PAUSE, RUN, WAIT_FOR, WAIT_UNTIL }
 
 - `WorkflowEngineError` - Base error class with optional `workflowId`, `runId`, `cause`.
 - `WorkflowRunNotFoundError` - Thrown when a run ID doesn't exist.
+- `WorkflowRunInProgressError` - Thrown when starting a singleton workflow that already has a pending or running run.
 
 ## AI & Agent Workflows
 

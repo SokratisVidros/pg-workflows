@@ -36,7 +36,7 @@ When `boss` is omitted, pg-boss is created automatically with an isolated schema
 | `stop()` | Stop the engine gracefully |
 | `registerWorkflow(definition)` | Register a workflow definition |
 | `startWorkflow(ref, input, options?)` | Start a top-level workflow run using a typed ref (see [WorkflowRef](#workflowref)) |
-| `startWorkflow({ workflowId, resourceId?, input, idempotencyKey?, options? })` | Start a top-level workflow run by ID. `resourceId` optionally ties the run to an external entity (see [Resource ID](core-concepts.md#resource-id)). `idempotencyKey` optionally deduplicates starts (see [Idempotency Key](core-concepts.md#idempotency-key)). |
+| `startWorkflow({ workflowId, resourceId?, input, idempotencyKey?, options? })` | Start a top-level workflow run by ID. `resourceId` optionally ties the run to an external entity (see [Resource ID](core-concepts.md#resource-id)). `idempotencyKey` optionally deduplicates starts (see [Idempotency Key](core-concepts.md#idempotency-key)). A singleton workflow rejects a second start while a run is still in progress (see [Singleton Workflows](core-concepts.md#singleton-workflows)). |
 | `pauseWorkflow({ runId, resourceId? })` | Pause a running workflow |
 | `resumeWorkflow({ runId, resourceId?, options? })` | Resume a paused workflow. No-ops for `step.invokeChildWorkflow()` waits. |
 | `cancelWorkflow({ runId, resourceId? })` | Cancel a workflow |
@@ -122,6 +122,10 @@ workflow<I extends Parameters>(
     inputSchema?: I,
     timeout?: number,
     retries?: number,
+    priority?: WorkflowPriority,
+    singleton?: boolean,
+    schedule?: Schedule,
+    timezone?: string,
   }
 ): WorkflowDefinition<I>
 ```

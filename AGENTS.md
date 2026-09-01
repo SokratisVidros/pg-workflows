@@ -76,6 +76,7 @@ const myWorkflow = workflow(
     timeout: 60000,                            // optional, milliseconds
     retries: 3,                                // optional, max retry count
     priority: 'high',                          // optional default priority for every run
+    singleton: true,                           // optional, one pending/running run per workflow ID
     schedule: '*/5 * * * *',                   // optional, recurring schedule (cron or duration)
     timezone: 'America/New_York',              // optional, only meaningful for cron (default: UTC)
   }
@@ -144,9 +145,25 @@ async ({ step, schedule, workflowId }) => {
 }
 ```
 
-**Overlap policy.** Scheduled runs are singletons via pg-boss — if a fire is
-queued while the previous run is still executing, pg-boss handles it
-(configurable overlap policies may be added later).
+**Overlap policy.** Scheduled fires skip when the workflow is `singleton: true`
+and a previous run is still pending or running. Paused runs release the slot.
+Without `singleton`, overlapping scheduled runs can execute concurrently.
+
+### Singleton workflows
+
+Set `singleton: true` on a workflow definition to allow at most one pending or
+running run of that workflow ID at a time. A second `startWorkflow` throws
+`WorkflowRunInProgressError` until the current run pauses, completes, fails, or
+is cancelled. Resuming a paused run while another run occupies the slot also
+throws.
+
+```typescript
+workflow('nightly-sync', handler, { singleton: true });
+```
+
+`WorkflowClient` does not load definitions; pass `{ singleton: true }` on the
+ref (`workflow.ref('nightly-sync', { singleton: true })`) or on start options
+so the uniqueness constraint is applied.
 
 ### `WorkflowEngine` - Main orchestrator
 
@@ -327,6 +344,12 @@ type WorkflowRun = {
   maxRetries: number;
   priority: number;
   jobId: string | null;
+  idempotencyKey: string | null;
+  parentRunId: string | null;
+  parentStepId: string | null;
+  parentResourceId: string | null;
+  scheduledAt: Date | null;
+  singleton: boolean;
 };
 
 type WorkflowRunProgress = WorkflowRun & {
@@ -342,6 +365,7 @@ class WorkflowEngineError extends Error {
   cause?: Error;
 }
 class WorkflowRunNotFoundError extends WorkflowEngineError {}
+class WorkflowRunInProgressError extends WorkflowEngineError {}
 ```
 
 ## Environment Variables
@@ -443,3 +467,4 @@ const rag = workflow('rag-agent', async ({ step, input }) => {
 5. **Migrations run automatically** on `engine.start()` - no manual schema setup needed.
 6. **pg-boss is an internal dependency** — users don't need to install or configure it. The engine creates pg-boss with an isolated schema (`pgboss_v12_pgworkflow`) to avoid conflicts. Advanced users can pass their own `boss` instance.
 7. **The engine manages its own retry logic** with exponential backoff (`2^retryCount * 1000ms`), independent of pg-boss's retry settings.
+8. **`singleton: true` allows only one pending or running run per workflow ID.** Paused, completed, failed, and cancelled runs release the slot.

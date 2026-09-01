@@ -6,7 +6,7 @@ export type { WorkflowRun } from './db/types';
 export { createWorkflowRef, workflow } from './definition';
 export type { Duration } from './duration';
 export { WorkflowEngine, type WorkflowEngineOptions } from './engine';
-export { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
+export { WorkflowEngineError, WorkflowRunInProgressError, WorkflowRunNotFoundError } from './error';
 export { type OtelPluginOptions, otelPlugin } from './plugins/otel';
 export type { WorkflowPriority } from './priority';
 export type { Schedule } from './schedule';

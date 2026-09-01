@@ -18,6 +18,13 @@ export type WorkflowRun = {
   maxRetries: number;
   /** Resolved scheduling priority (pg-boss integer; higher runs first). */
   priority: number;
+  /**
+   * When true, this run participates in the per-workflow-ID uniqueness
+   * constraint: no other pending or running singleton run of the same
+   * workflow ID may exist at the same time. Paused, completed, failed, and
+   * cancelled runs release the slot.
+   */
+  singleton: boolean;
   jobId: string | null;
   idempotencyKey: string | null;
   parentRunId: string | null;

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { closeTestDatabase, createTestDatabase } from '../tests/test-db';
 import { runMigrations } from './migration';
 
-const CURRENT_SCHEMA_VERSION = 6;
+const CURRENT_SCHEMA_VERSION = 7;
 
 describe('runMigrations', () => {
   let pool: pg.Pool;
@@ -62,6 +62,26 @@ describe('runMigrations', () => {
     expect(col.data_type).toBe('integer');
     expect(col.is_nullable).toBe('NO');
     expect(col.column_default).toBe('0');
+  });
+
+  it('adds a non-null singleton column defaulting to false', async () => {
+    await runMigrations(db);
+
+    const result = await db.executeSql(
+      `SELECT data_type, is_nullable, column_default FROM information_schema.columns
+       WHERE table_schema = current_schema() AND table_name = 'workflow_runs' AND column_name = 'singleton'`,
+      [],
+    );
+
+    expect(result.rows).toHaveLength(1);
+    const col = result.rows[0] as {
+      data_type: string;
+      is_nullable: string;
+      column_default: string;
+    };
+    expect(col.data_type).toBe('boolean');
+    expect(col.is_nullable).toBe('NO');
+    expect(col.column_default).toContain('false');
   });
 
   it('is idempotent when run repeatedly', async () => {

@@ -14,6 +14,7 @@ import {
 } from './constants';
 import { runMigrations } from './db/migration';
 import {
+  assertSingletonSlotAvailable,
   getWorkflowLastRun,
   getWorkflowRun,
   getWorkflowRuns,
@@ -28,6 +29,7 @@ import {
   validateResourceId,
   validateWorkflowId,
   WorkflowEngineError,
+  WorkflowRunInProgressError,
   WorkflowRunNotFoundError,
 } from './error';
 import { resolvePriority } from './priority';
@@ -294,6 +296,13 @@ export class WorkflowEngine {
         try {
           await this.createWorkflowRun({ workflowId, input: {}, scheduledAt });
         } catch (error) {
+          if (error instanceof WorkflowRunInProgressError) {
+            this.logger.log(
+              `Skipping schedule fire for "${workflowId}": a run is already in progress`,
+              { workflowId, runId: error.runId },
+            );
+            return;
+          }
           this.logger.error(
             `Schedule fire failed to start a run for workflow "${workflowId}"`,
             error instanceof Error ? error : new Error(String(error)),
@@ -584,6 +593,7 @@ export class WorkflowEngine {
           parentStepId,
           parentResourceId,
           scheduledAt,
+          singleton: workflow.singleton === true || options?.singleton === true,
         },
         targetDb,
       );
@@ -837,6 +847,13 @@ export class WorkflowEngine {
     await this.checkIfHasStarted();
 
     const run = await this.getRun({ runId, resourceId });
+
+    if (run.singleton) {
+      await assertSingletonSlotAvailable(
+        { workflowId: run.workflowId, exceptRunId: run.id },
+        this.db,
+      );
+    }
 
     const jobResourceId = resourceId ?? run.resourceId ?? undefined;
 

@@ -5,7 +5,7 @@ export type { WorkflowClientOptions } from './client';
 export { WorkflowClient } from './client';
 export type { WorkflowRun } from './db/types';
 export { createWorkflowRef } from './definition';
-export { WorkflowEngineError, WorkflowRunNotFoundError } from './error';
+export { WorkflowEngineError, WorkflowRunInProgressError, WorkflowRunNotFoundError } from './error';
 export type {
   InferInputParameters,
   InputParameters,

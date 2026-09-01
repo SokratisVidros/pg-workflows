@@ -12,7 +12,7 @@
 
 The engine automatically runs migrations on startup to create the required tables:
 
-- `workflow_runs` — stores workflow execution state, step results, and timeline in the `public` schema. The optional `resource_id` column (indexed) associates each run with an external entity in your application (see [Resource ID](core-concepts.md#resource-id)). The optional `idempotency_key` column has a unique partial index for [idempotent starts](core-concepts.md#idempotency-key).
+- `workflow_runs` — stores workflow execution state, step results, and timeline in the `public` schema. The optional `resource_id` column (indexed) associates each run with an external entity in your application (see [Resource ID](core-concepts.md#resource-id)). The optional `idempotency_key` column has a unique partial index for [idempotent starts](core-concepts.md#idempotency-key). Singleton workflows add a unique partial index on `workflow_id` for pending and running runs (see [Singleton Workflows](core-concepts.md#singleton-workflows)).
 - `pgboss_v12_pgworkflow.*` — pg-boss job queue tables for reliable task scheduling (isolated schema to avoid conflicts).
 
 ## Dependencies
