@@ -2,11 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v0.15.0 - 2026-09-01
 
 ### Added
 
-- Added `singleton: true` on `workflow()` so at most one pending or running run of a given workflow ID may exist. A second `startWorkflow` throws `WorkflowRunInProgressError` until the current run pauses, completes, fails, or is cancelled. Enforced by a unique partial index on `workflow_runs` (schema v7). Scheduled fires of a singleton workflow skip when a run is already pending or running.
+- Added `singleton: true` on `workflow()` so at most one pending or running run of a given workflow ID may exist. A second `startWorkflow` throws `WorkflowRunInProgressError` until the current run pauses, completes, fails, or is cancelled. Enforced by a unique partial index on `workflow_runs` (schema v7). Scheduled fires of a singleton workflow skip when a run is already pending or running ([#48](https://github.com/SokratisVidros/pg-workflows/pull/48)).
+- Added `@pg-workflows/ui`, a separate React package for browsing and managing workflow runs ([#45](https://github.com/SokratisVidros/pg-workflows/pull/45), [#44](https://github.com/SokratisVidros/pg-workflows/pull/44), [#46](https://github.com/SokratisVidros/pg-workflows/pull/46), [#49](https://github.com/SokratisVidros/pg-workflows/pull/49)). Includes a drop-in dashboard, headless hooks and client, HTTP adapters for Node and Next.js (App Router catch-all or per-route handlers), and `npx @pg-workflows/ui` for a localhost dashboard. Install it only in apps that render UI — engine workers do not need it.
+
+### Changed
+
+- Upgraded pg-boss to 12.29.0 ([#47](https://github.com/SokratisVidros/pg-workflows/pull/47)). pg-boss can now install its own schema on PGlite, so the handwritten DDL copy is gone. The engine listens for the `error` event that 12.26+ emits from fetch/work so those failures no longer crash Node.
+
+[v0.15.0]: https://github.com/SokratisVidros/pg-workflows/compare/v0.14.0...v0.15.0
 
 ## v0.14.0 - 2026-06-23
 
