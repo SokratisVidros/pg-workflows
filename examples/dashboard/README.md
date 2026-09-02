@@ -4,19 +4,20 @@ A Next.js App Router app that embeds `<WorkflowRunsDashboard/>` from
 [`@pg-workflows/ui`](../../packages/ui) and serves it from a real
 `WorkflowEngine`. Used for end-to-end verification of the package.
 
-This is a standalone install, not a workspace member — it depends on the engine
-and the UI package by path, so it always exercises your local build.
+This is a workspace member (`examples/dashboard`). From the repo root, `bun install`
+links the local `pg-workflows` and `@pg-workflows/ui` packages.
 
 ## Run it
 
 ```bash
+bun install                   # from the repo root
+cd examples/dashboard
 cp .env.example .env          # point DATABASE_URL at a scratch database
-npm install
-npm run seed                  # creates runs in every state
-npm run dev                   # http://localhost:3000
+bun run seed                  # creates runs in every state
+bun run dev                   # http://localhost:3000
 ```
 
-`npm run seed` and `npm run dev` both build the engine and the UI package first
+`bun run seed` and `bun run dev` both build the engine and the UI package first
 if their `dist/` is missing, so a fresh clone works without extra steps.
 
 > The engine creates its own tables plus an isolated `pg-boss` schema. Point

@@ -1,118 +1,47 @@
 {
-  "name": "pg-workflows",
-  "description": "The simplest Postgres workflow engine for TypeScript - durable execution, event-driven orchestration, and automatic retries powered entirely by PostgreSQL",
-  "version": "0.15.0",
-  "type": "module",
-  "workspaces": [
-    "packages/*"
-  ],
-  "files": [
-    "dist"
-  ],
-  "module": "./dist/index.js",
-  "main": "./dist/index.cjs",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "import": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
-      },
-      "require": {
-        "types": "./dist/index.d.cts",
-        "default": "./dist/index.cjs"
-      }
-    },
-    "./client": {
-      "import": {
-        "types": "./dist/client.entry.d.ts",
-        "default": "./dist/client.entry.js"
-      },
-      "require": {
-        "types": "./dist/client.entry.d.cts",
-        "default": "./dist/client.entry.cjs"
-      }
-    },
-    "./package.json": "./package.json"
+  "name": "pg-workflows-monorepo",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "packages/*",
+      "examples/*"
+    ],
+    "catalog": {
+      "typescript": "^5.9.3",
+      "vitest": "^4.1.11",
+      "zod": "^4.5.4",
+      "pg": "^8.23.0",
+      "pg-boss": "^12.29.0",
+      "@types/pg": "^8.23.1",
+      "@types/node": "^22.10.2",
+      "react": "^19.2.8",
+      "react-dom": "^19.2.8",
+      "@types/react": "^19.2.18",
+      "@types/react-dom": "^19.2.5",
+      "@tanstack/react-query": "^5.102.8",
+      "tailwindcss": "^4.3.3",
+      "@dotenvx/dotenvx": "^2.23.0"
+    }
   },
   "scripts": {
-    "build": "bunup",
+    "build": "bun run --filter pg-workflows build && bun run --filter '@pg-workflows/ui' build",
     "build:ui": "bun run --filter '@pg-workflows/ui' build",
-    "dev": "bunup --watch",
+    "dev": "bun run --filter pg-workflows dev",
     "test": "bun run test:unit && bun run test:ui && bun run test:integration",
-    "test:unit": "vitest --typecheck run --config src/vitest.unit.config.ts ",
+    "test:unit": "bun run --filter pg-workflows test:unit",
     "test:ui": "bun run --filter '@pg-workflows/ui' test",
+    "test:integration": "bun run --filter pg-workflows test:integration",
+    "test:watch": "bun run --filter pg-workflows test:watch",
+    "check-types": "bun run --filter './packages/*' check-types",
     "check-types:ui": "bun run --filter '@pg-workflows/ui' check-types",
-    "test:integration": "vitest run --config src/vitest.integration.config.ts",
-    "test:watch": "vitest watch --config src/vitest.unit.config.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build"
-  },
-  "keywords": [
-    "postgres-workflow",
-    "postgresql-workflow-engine",
-    "workflow",
-    "workflow-engine",
-    "durable-execution",
-    "postgresql",
-    "postgres",
-    "pg-boss",
-    "orchestration",
-    "event-driven",
-    "background-jobs",
-    "job-queue",
-    "typescript-workflow",
-    "workflow-orchestration",
-    "step-functions"
-  ],
-  "author": "sokratisvidros<sokratis.vidros@gmail.com>",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/SokratisVidros/pg-workflows.git"
-  },
-  "bugs": {
-    "url": "https://github.com/SokratisVidros/pg-workflows/issues"
-  },
-  "homepage": "https://github.com/SokratisVidros/pg-workflows#readme",
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
-  },
-  "dependencies": {
-    "@standard-schema/spec": "^1.1.0",
-    "cron-parser": "^5.5.0",
-    "es-toolkit": "^1.44.0",
-    "ksuid": "^3.0.0",
-    "parse-duration": "^2.1.5",
-    "pg-boss": "^12.29.0",
-    "typescript": "^5.9.3"
-  },
-  "peerDependencies": {
-    "@opentelemetry/api": "^1.9.0",
-    "pg": "^8.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@opentelemetry/api": {
-      "optional": true
-    }
+    "clean": "bun run --filter '*' clean"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.10",
-    "@electric-sql/pglite": "^0.3.14",
-    "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/context-async-hooks": "^1.27.0",
-    "@opentelemetry/sdk-trace-base": "^1.27.0",
-    "@types/node": "^22.10.2",
-    "@types/pg": "^8.11.10",
-    "bunup": "^0.16.11",
-    "pg": "^8.20.0",
-    "valibot": "^1.3.1",
-    "vitest": "^4.0.14",
-    "zod": "^3.24.0"
+    "typescript": "catalog:"
   },
   "engines": {
     "node": ">=18.0.0"

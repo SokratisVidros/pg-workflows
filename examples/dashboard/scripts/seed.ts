@@ -93,7 +93,7 @@ try {
   );
 
   process.stdout.write(`Seeded ${summary.length} runs:\n${summary.join('\n')}\n`);
-  process.stdout.write('\nStart the app with `npm run dev` and open http://localhost:3000\n');
+  process.stdout.write('\nStart the app with `bun run dev` and open http://localhost:3000\n');
 } finally {
   await engine.stop();
 }

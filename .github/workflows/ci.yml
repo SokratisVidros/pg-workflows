@@ -31,14 +31,11 @@ jobs:
       - name: Run linting
         run: bun run lint
 
+      - name: Build packages
+        run: bun run build
+
       - name: Type check
-        run: bun run tsc --noEmit
-
-      - name: Type check UI package
-        run: bun run check-types:ui
-
-      - name: Build UI package
-        run: bun run build:ui
+        run: bun run check-types
 
   unit-test:
     name: Unit Tests
@@ -55,6 +52,9 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Build engine
+        run: bun run --filter pg-workflows build
 
       - name: Run unit tests
         run: bun run test:unit
