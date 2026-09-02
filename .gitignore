@@ -68,3 +68,6 @@ Thumbs.db
 # Bun
 .bun/
 
+# npm lockfile — this repo uses bun
+package-lock.json
+

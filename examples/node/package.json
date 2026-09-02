@@ -4,25 +4,24 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:lib": "test -d ../dist || (cd .. && bun run build)",
-    "start": "npm run build:lib && dotenvx run -- tsx basic.ts",
-    "example:basic": "npm run build:lib && dotenvx run -- tsx basic.ts",
-    "example:approval-flow": "npm run build:lib && dotenvx run -- tsx approval-flow.ts",
-    "example:timeout": "npm run build:lib && dotenvx run -- tsx timeout.ts",
-    "example:polling": "npm run build:lib && dotenvx run -- tsx polling.ts",
-    "example:microservices:worker": "npm run build:lib && dotenvx run -- tsx microservices/worker-service.ts",
-    "example:microservices:api": "npm run build:lib && dotenvx run -- tsx microservices/api-service.ts",
-    "example:cron": "npm run build:lib && dotenvx run -- tsx cron.ts"
+    "build:lib": "test -d ../../packages/pg-workflows/dist || bun run --filter pg-workflows build",
+    "start": "bun run build:lib && dotenvx run -- bun basic.ts",
+    "example:basic": "bun run build:lib && dotenvx run -- bun basic.ts",
+    "example:approval-flow": "bun run build:lib && dotenvx run -- bun approval-flow.ts",
+    "example:timeout": "bun run build:lib && dotenvx run -- bun timeout.ts",
+    "example:polling": "bun run build:lib && dotenvx run -- bun polling.ts",
+    "example:microservices:worker": "bun run build:lib && dotenvx run -- bun microservices/worker-service.ts",
+    "example:microservices:api": "bun run build:lib && dotenvx run -- bun microservices/api-service.ts",
+    "example:cron": "bun run build:lib && dotenvx run -- bun cron.ts"
   },
   "dependencies": {
-    "pg": "^8.13.1",
-    "pg-boss": ">=12.0.0",
-    "pg-workflows": "file:..",
-    "zod": "^4.3.6"
+    "pg": "catalog:",
+    "pg-boss": "catalog:",
+    "pg-workflows": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@dotenvx/dotenvx": "^1.52.0",
-    "@types/pg": "^8.11.10",
-    "tsx": "^4.19.0"
+    "@dotenvx/dotenvx": "catalog:",
+    "@types/pg": "catalog:"
   }
 }

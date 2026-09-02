@@ -6,8 +6,8 @@ This is the single source of truth for deterministic releases in this repository
 
 - Release type: **patch** by default
 - Release artifacts:
-  - `package.json` version
-  - `package-lock.json` version
+  - `packages/pg-workflows/package.json` version
+  - `bun.lock` (refreshed after the version bump)
   - `CHANGELOG.md` release entry
   - one release commit
   - one annotated git tag
@@ -24,8 +24,8 @@ This is the single source of truth for deterministic releases in this repository
 
 ## Required Files
 
-- `package.json`
-- `package-lock.json`
+- `packages/pg-workflows/package.json`
+- `bun.lock`
 - `CHANGELOG.md` (create if missing)
 
 ## Workflow
@@ -64,13 +64,14 @@ Rules:
 
 Use latest semver tag as `PREV_TAG` (for example `v0.8.0`).
 
-Compute next minor version from `package.json`:
+Compute next minor version from the engine package:
 
 ```bash
-npm version minor --no-git-tag-version
+npm version minor --no-git-tag-version --prefix packages/pg-workflows
+bun install
 ```
 
-Capture `NEW_VERSION` from `package.json` and `NEW_TAG="v$NEW_VERSION"`.
+Capture `NEW_VERSION` from `packages/pg-workflows/package.json` and `NEW_TAG="v$NEW_VERSION"`.
 
 ### 3) Collect key changes
 
@@ -91,10 +92,10 @@ Skip noise-only items unless they matter to users.
 
 ### 4) Bump version files
 
-After `npm version minor --no-git-tag-version`, ensure:
+After `npm version minor --no-git-tag-version --prefix packages/pg-workflows` and `bun install`, ensure:
 
-- `package.json` has `NEW_VERSION`
-- `package-lock.json` has `NEW_VERSION`
+- `packages/pg-workflows/package.json` has `NEW_VERSION`
+- `bun.lock` is up to date
 
 ### 5) Update `CHANGELOG.md`
 
@@ -138,7 +139,7 @@ Changelog rules:
 Stage only:
 
 ```bash
-git add package.json package-lock.json CHANGELOG.md
+git add packages/pg-workflows/package.json bun.lock CHANGELOG.md
 ```
 
 Commit format (use HEREDOC):
@@ -198,5 +199,5 @@ Always end with:
 Use exact guidance:
 
 ```text
-Release prepared. Final step for you: npm publish
+Release prepared. Final step for you: npm publish --prefix packages/pg-workflows
 ```

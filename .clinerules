@@ -16,14 +16,16 @@ pg-workflows is a TypeScript workflow engine using PostgreSQL for durable execut
 
 ## Project Structure
 
-- `src/index.ts` - Public API re-exports
-- `src/definition.ts` - `workflow()` factory function
-- `src/engine.ts` - `WorkflowEngine` class (core orchestrator)
-- `src/types.ts` - All public types, enums, interfaces
-- `src/error.ts` - Error classes (`WorkflowEngineError`, `WorkflowRunNotFoundError`)
-- `src/ast-parser.ts` - Static analysis of workflow handlers
-- `src/db/` - Database queries, migrations, types
-- `examples/` - Usage examples
+- `packages/pg-workflows/src/index.ts` - Public API re-exports
+- `packages/pg-workflows/src/definition.ts` - `workflow()` factory function
+- `packages/pg-workflows/src/engine.ts` - `WorkflowEngine` class (core orchestrator)
+- `packages/pg-workflows/src/types.ts` - All public types, enums, interfaces
+- `packages/pg-workflows/src/error.ts` - Error classes (`WorkflowEngineError`, `WorkflowRunNotFoundError`)
+- `packages/pg-workflows/src/ast-parser.ts` - Static analysis of workflow handlers
+- `packages/pg-workflows/src/db/` - Database queries, migrations, types
+- `packages/ui/` - React dashboard package (`@pg-workflows/ui`)
+- `examples/node/` - CLI examples
+- `examples/dashboard/` - Next.js dashboard example
 
 ## Core API
 
@@ -135,8 +137,8 @@ const agent = workflow('ai-agent', async ({ step, input }) => {
 
 ## Commands
 
-- `npm run build` - Build with bunup
-- `npm test` - Run tests with vitest
-- `npm run lint` - Lint with Biome
-- `npm run lint:fix` - Auto-fix lint issues
-- `npm run format` - Format with Biome
+- `bun run build` - Build engine then UI
+- `bun run test` - Run tests with vitest
+- `bun run lint` - Lint with Biome
+- `bun run lint:fix` - Auto-fix lint issues
+- `bun run format` - Format with Biome

@@ -1,0 +1,112 @@
+{
+  "name": "pg-workflows",
+  "description": "The simplest Postgres workflow engine for TypeScript - durable execution, event-driven orchestration, and automatic retries powered entirely by PostgreSQL",
+  "version": "0.15.0",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "module": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./client": {
+      "import": {
+        "types": "./dist/client.entry.d.ts",
+        "default": "./dist/client.entry.js"
+      },
+      "require": {
+        "types": "./dist/client.entry.d.cts",
+        "default": "./dist/client.entry.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "bunup",
+    "dev": "bunup --watch",
+    "test": "bun run test:unit",
+    "test:unit": "vitest --typecheck run --config vitest.unit.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:watch": "vitest watch --config vitest.unit.config.ts",
+    "check-types": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "bun run clean && bun run build"
+  },
+  "keywords": [
+    "postgres-workflow",
+    "postgresql-workflow-engine",
+    "workflow",
+    "workflow-engine",
+    "durable-execution",
+    "postgresql",
+    "postgres",
+    "pg-boss",
+    "orchestration",
+    "event-driven",
+    "background-jobs",
+    "job-queue",
+    "typescript-workflow",
+    "workflow-orchestration",
+    "step-functions"
+  ],
+  "author": "sokratisvidros<sokratis.vidros@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SokratisVidros/pg-workflows.git",
+    "directory": "packages/pg-workflows"
+  },
+  "bugs": {
+    "url": "https://github.com/SokratisVidros/pg-workflows/issues"
+  },
+  "homepage": "https://github.com/SokratisVidros/pg-workflows#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "dependencies": {
+    "@standard-schema/spec": "^1.1.0",
+    "cron-parser": "^5.5.0",
+    "es-toolkit": "^1.44.0",
+    "ksuid": "^3.0.0",
+    "parse-duration": "^2.1.5",
+    "pg-boss": "catalog:"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "pg": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.14",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/context-async-hooks": "^1.27.0",
+    "@opentelemetry/sdk-trace-base": "^1.27.0",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "bunup": "^0.16.11",
+    "pg": "catalog:",
+    "typescript": "catalog:",
+    "valibot": "^1.3.1",
+    "vitest": "catalog:",
+    "zod": "catalog:"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

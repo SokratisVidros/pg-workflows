@@ -6,42 +6,45 @@ This file is the single source of truth for AI coding agents (Claude Code, Codex
 
 pg-workflows is a TypeScript workflow engine that uses PostgreSQL for durable execution, event-driven orchestration, and automatic retries. It requires no extra infrastructure beyond PostgreSQL. Built on top of pg-boss for reliable job scheduling.
 
-- **Package:** `pg-workflows` (npm)
+- **Packages:** `pg-workflows` (engine) and `@pg-workflows/ui` (React dashboard)
 - **Language:** TypeScript (ESM + CJS dual output)
 - **Runtime:** Node.js >= 18
 - **Database:** PostgreSQL >= 10
 - **License:** MIT
+- **Workspace:** Bun workspaces under `packages/*` and `examples/*`
 
 ## Project Structure
 
 ```
-src/
-├── index.ts          # Public API re-exports
-├── definition.ts     # workflow() factory function
-├── engine.ts         # WorkflowEngine class (core orchestrator)
-├── types.ts          # All public types, enums, interfaces
-├── error.ts          # Error classes
-├── ast-parser.ts     # Static analysis of workflow handlers
-├── db/
-│   ├── index.ts      # DB module exports
-│   ├── types.ts      # WorkflowRun type
-│   ├── queries.ts    # Database query functions
-│   └── migration.ts  # Schema migrations
-└── tests/            # Test utilities
+packages/
+├── pg-workflows/           # npm: pg-workflows
+│   ├── src/
+│   │   ├── index.ts        # Public API re-exports
+│   │   ├── definition.ts   # workflow() factory function
+│   │   ├── engine.ts       # WorkflowEngine class (core orchestrator)
+│   │   ├── types.ts        # All public types, enums, interfaces
+│   │   ├── error.ts        # Error classes
+│   │   ├── ast-parser.ts   # Static analysis of workflow handlers
+│   │   ├── db/             # Database queries, migrations, types
+│   │   └── tests/          # Test utilities
+│   └── bunup.config.ts
+└── ui/                     # npm: @pg-workflows/ui
 examples/
-└── basic.ts          # Example usage
+├── node/                   # CLI examples
+└── dashboard/              # Next.js dashboard example
 ```
 
 ## Commands
 
-- `npm run build` - Build with bunup
-- `npm run dev` - Watch mode build
-- `npm test` - Run all tests (unit + integration)
-- `npm run test:unit` - Run unit tests only (PGlite, no PostgreSQL needed)
-- `npm run test:integration` - Run integration tests (requires real PostgreSQL)
-- `npm run lint` - Lint with Biome
-- `npm run lint:fix` - Auto-fix lint issues
-- `npm run format` - Format with Biome
+- `bun run build` - Build engine then UI
+- `bun run dev` - Watch-mode engine build
+- `bun run test` - Run unit, UI, and integration tests
+- `bun run test:unit` - Engine unit tests (PGlite, no PostgreSQL needed)
+- `bun run test:ui` - UI package tests
+- `bun run test:integration` - Engine integration tests (requires real PostgreSQL)
+- `bun run lint` - Lint with Biome
+- `bun run lint:fix` - Auto-fix lint issues
+- `bun run format` - Format with Biome
 
 ## Dependencies (npm)
 
