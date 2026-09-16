@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:lib": "test -d ../../packages/pg-workflows/dist || bun run --filter pg-workflows build; test -d ../../packages/ui/dist || bun run --filter @pg-workflows/ui build",
-    "dev": "bun run build:lib && dotenvx run -- next dev",
-    "build": "bun run build:lib && next build",
+    "build:engine": "test -d ../../packages/pg-workflows/dist || bun run --filter pg-workflows build",
+    "dev": "bun run build:engine && dotenvx run -- next dev",
+    "build": "bun run build:engine && next build",
     "start": "dotenvx run -- next start",
-    "seed": "bun run build:lib && dotenvx run -- bun scripts/seed.ts",
+    "seed": "bun run build:engine && dotenvx run -- bun scripts/seed.ts",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {

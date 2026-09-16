@@ -17,8 +17,11 @@ bun run seed                  # creates runs in every state
 bun run dev                   # http://localhost:3000
 ```
 
-`bun run seed` and `bun run dev` both build the engine and the UI package first
-if their `dist/` is missing, so a fresh clone works without extra steps.
+From the repo root, `bun run dev:ui` is the same dev server.
+
+`next dev` compiles `@pg-workflows/ui` from `packages/ui/src`, so component
+edits Fast Refresh without rebuilding the UI package. Seed and dev still build
+the engine if `packages/pg-workflows/dist` is missing.
 
 > The engine creates its own tables plus an isolated `pg-boss` schema. Point
 > `DATABASE_URL` at a database you don't mind it owning — not your app's.

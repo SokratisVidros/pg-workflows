@@ -27,6 +27,7 @@
     "build": "bun run --filter pg-workflows build && bun run --filter '@pg-workflows/ui' build",
     "build:ui": "bun run --filter '@pg-workflows/ui' build",
     "dev": "bun run --filter pg-workflows dev",
+    "dev:ui": "bun run --filter pg-workflows-dashboard-example dev",
     "test": "bun run test:unit && bun run test:ui && bun run test:integration",
     "test:unit": "bun run --filter pg-workflows test:unit",
     "test:ui": "bun run --filter '@pg-workflows/ui' test",

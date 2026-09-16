@@ -19,7 +19,11 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@pg-workflows/ui": ["../../packages/ui/src/index.ts"],
+      "@pg-workflows/ui/client": ["../../packages/ui/src/client.ts"],
+      "@pg-workflows/ui/server": ["../../packages/ui/src/server/index.ts"],
+      "@pg-workflows/ui/next": ["../../packages/ui/src/next/index.ts"]
     }
   },
   "include": [

@@ -4,7 +4,7 @@
 @import "@pg-workflows/ui/styles.css";
 
 /*
- * Tailwind only generates utilities it can see used. The dashboard's classes
- * live in the installed package, so point the scanner at its compiled output.
+ * Scan UI source so new utility classes in components appear during `next dev`
+ * without a package rebuild. The Next config aliases the package at this tree.
  */
-@source "../node_modules/@pg-workflows/ui/dist";
+@source "../../../packages/ui/src";
