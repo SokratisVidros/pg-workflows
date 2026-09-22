@@ -51,8 +51,13 @@ describe('RunDetail', () => {
   it('disables Resume for a running run and enables Pause', async () => {
     const client = makeClient({ status: 'running' });
     render(<RunDetail runId="run_1" />, { wrapper: wrap(client) });
-    await waitFor(() => expect(screen.getByRole('button', { name: /pause/i })).toBeEnabled());
-    expect(screen.getByRole('button', { name: /resume/i })).toBeDisabled();
+    const pause = await screen.findByRole('button', { name: /^pause$/i });
+    const cancel = screen.getByRole('button', { name: /^cancel$/i });
+    expect(pause).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^resume$/i })).toBeDisabled();
+    expect(pause.parentElement).toBe(cancel.parentElement);
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Run details' })).not.toBeInTheDocument();
   });
 
   it('disables all actions for a terminal (completed) run', async () => {
