@@ -47,30 +47,32 @@ export const StatusSummary = forwardRef<HTMLElement, StatusSummaryProps>(functio
       className={className}
       style={style}
       render={render}
-      baseClassName="flex w-full flex-row items-stretch justify-between gap-2 overflow-x-auto"
+      baseClassName="@container w-full"
     >
-      {present.map((status) => {
-        const Icon = STATUS_ICON[status];
-        const count = counts[status] ?? 0;
-        return (
-          <Button
-            key={status}
-            type="button"
-            aria-label={`${count} ${status}`}
-            onClick={() => onSelectStatus?.(status)}
-            className={chainClassName('pgw-stat text-left', stat?.className)}
-            style={stat?.style}
-            render={stat?.render}
-          >
-            <span className="flex items-center gap-2 text-sm">
-              <Icon aria-hidden className="size-4 shrink-0" />
-              <span className="capitalize">{status}</span>
-            </span>
-            <span className="text-2xl font-bold tabular-nums">{count}</span>
-          </Button>
-        );
-      })}
-      {trailing}
+      <div className="grid w-full grid-cols-2 items-stretch gap-2 @min-[40rem]:flex @min-[40rem]:flex-row @min-[40rem]:justify-between @min-[40rem]:overflow-x-auto">
+        {present.map((status) => {
+          const Icon = STATUS_ICON[status];
+          const count = counts[status] ?? 0;
+          return (
+            <Button
+              key={status}
+              type="button"
+              aria-label={`${count} ${status}`}
+              onClick={() => onSelectStatus?.(status)}
+              className={chainClassName('pgw-stat text-left', stat?.className)}
+              style={stat?.style}
+              render={stat?.render}
+            >
+              <span className="flex items-center gap-2 text-sm">
+                <Icon aria-hidden className="size-4 shrink-0" />
+                <span className="capitalize">{status}</span>
+              </span>
+              <span className="text-2xl font-bold tabular-nums">{count}</span>
+            </Button>
+          );
+        })}
+        {trailing}
+      </div>
     </StyledElement>
   );
 });

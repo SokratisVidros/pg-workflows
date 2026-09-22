@@ -55,11 +55,13 @@ describe('StatusSummary', () => {
     expect(counter.className).toMatch(/text-left/);
   });
 
-  it('lays out every counter in a single row', () => {
+  it('uses a two-column grid on narrow containers and a single row when wider', () => {
     const { container } = render(
-      <StatusSummary counts={{ running: 1, failed: 1, completed: 1 }} />,
+      <StatusSummary counts={{ running: 1, paused: 1, failed: 1, completed: 1 }} />,
     );
-    expect(container.firstChild).toHaveClass('flex-row');
-    expect(screen.getAllByRole('button')).toHaveLength(3);
+    const layout = container.querySelector('.grid');
+    expect(layout).toHaveClass('grid-cols-2');
+    expect(layout).toHaveClass('@min-[40rem]:flex-row');
+    expect(screen.getAllByRole('button')).toHaveLength(4);
   });
 });
