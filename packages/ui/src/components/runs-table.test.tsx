@@ -154,6 +154,7 @@ describe('RunsTable', () => {
       expect(bar.querySelector('.bg-pgw-fg')).toHaveStyle({ width: '50%' });
     }
     expect(screen.getAllByText('1 of 2')).toHaveLength(3);
+    expect(bars[0]?.parentElement).toHaveClass('order-last', '@min-[40rem]:order-0');
 
     const defined = run({
       id: 'run_defined',
@@ -199,6 +200,19 @@ describe('RunsTable', () => {
     expect(new Set(marks).size).toBe(WORKFLOW_RUN_STATUSES.length);
     expect(container.querySelector('[data-status-mark="running"]')).toHaveClass('animate-spin');
     expect(container.innerHTML).not.toMatch(/size-1\.5/);
+
+    for (const status of WORKFLOW_RUN_STATUSES) {
+      const workflowId = screen.getByTitle(status);
+      expect(workflowId).toHaveClass('truncate');
+      const cell = workflowId.closest('td');
+      const icon = cell?.querySelector(`[data-status-mark="${status}"]`);
+      expect(cell).toContainElement(icon as HTMLElement);
+      expect(workflowId.parentElement).toBe(icon?.parentElement);
+      const statusLabel = screen
+        .getAllByText(status)
+        .find((element) => element.getAttribute('title') !== status);
+      expect(statusLabel?.closest('td')?.querySelector('[data-status-mark]')).toBeNull();
+    }
   });
 
   it('renders a row per run with workflow id and status', () => {

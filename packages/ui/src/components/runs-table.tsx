@@ -47,7 +47,10 @@ const COL_WIDTH: Record<Column['kind'], string> = {
 
 function columnBox(column: Column) {
   if (column.copy) return;
-  return clsx('overflow-hidden', COL_WIDTH[column.kind], column.sticky && 'min-w-[9.5rem]');
+  if (column.sticky) {
+    return 'min-w-[9.5rem] max-w-[12rem] overflow-hidden @min-[40rem]:max-w-[24rem]';
+  }
+  return clsx('overflow-hidden', COL_WIDTH[column.kind]);
 }
 
 const COLUMNS: Column[] = [
@@ -144,12 +147,7 @@ function Cell({ column, run }: { column: Column; run: WorkflowRun }) {
   if (column.kind === 'status') {
     const label = String(value ?? '');
     if (!label) return <Empty />;
-    return (
-      <span className="inline-flex items-center gap-2">
-        <StatusIcon status={run.status} />
-        <span className="font-medium capitalize text-pgw-fg">{label}</span>
-      </span>
-    );
+    return <span className="font-medium capitalize text-pgw-fg">{label}</span>;
   }
 
   if (isAbsent(value)) return <Empty />;
@@ -158,11 +156,14 @@ function Cell({ column, run }: { column: Column; run: WorkflowRun }) {
 
   if (column.key === 'workflowId') {
     return (
-      <span className="flex w-full min-w-0 flex-col gap-1">
-        <span className={clsx(base, 'font-semibold')} title={text}>
+      <span className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="min-w-0 flex-1 truncate font-semibold" title={text}>
           {text}
         </span>
-        <WorkflowStepProgress run={run} />
+        <span className="order-last w-full min-w-0 empty:hidden @min-[40rem]:order-0 @min-[40rem]:w-28 @min-[40rem]:shrink-0">
+          <WorkflowStepProgress run={run} />
+        </span>
+        <StatusIcon status={run.status} />
       </span>
     );
   }
