@@ -1,9 +1,16 @@
 'use client';
 
-import { clsx } from 'clsx';
+import { Button } from '@base-ui/react/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { forwardRef } from 'react';
-import { PGW_PILL_OUTLINE } from '../lib/button-classes';
+import { PGW_BUTTON } from '../lib/button-classes';
+import { type ElementStyleProps, StyledElement } from '../lib/style-hooks';
+
+export type PaginationState = {
+  hasPrev: boolean;
+  hasNext: boolean;
+  fetching: boolean;
+};
 
 export type PaginationProps = {
   hasPrev: boolean;
@@ -11,33 +18,39 @@ export type PaginationProps = {
   onPrev: () => void;
   onNext: () => void;
   isFetching?: boolean;
-  className?: string;
-};
+} & ElementStyleProps<PaginationState>;
 
-export const Pagination = forwardRef<HTMLDivElement, PaginationProps>(function Pagination(
-  { hasPrev, hasNext, onPrev, onNext, isFetching, className },
+export const Pagination = forwardRef<HTMLElement, PaginationProps>(function Pagination(
+  { hasPrev, hasNext, onPrev, onNext, isFetching, className, style, render },
   ref,
 ) {
   return (
-    <div ref={ref} className={clsx('flex items-center justify-center gap-2', className)}>
-      <button
+    <StyledElement
+      ref={ref}
+      state={{ hasPrev, hasNext, fetching: Boolean(isFetching) }}
+      className={className}
+      style={style}
+      render={render}
+      baseClassName="flex items-center justify-center gap-2"
+    >
+      <Button
         type="button"
-        className={PGW_PILL_OUTLINE}
+        className={PGW_BUTTON}
         onClick={onPrev}
         disabled={!hasPrev || isFetching}
       >
         <ChevronLeft className="size-3.5" aria-hidden />
         Prev
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
-        className={PGW_PILL_OUTLINE}
+        className={PGW_BUTTON}
         onClick={onNext}
         disabled={!hasNext || isFetching}
       >
         Next
         <ChevronRight className="size-3.5" aria-hidden />
-      </button>
-    </div>
+      </Button>
+    </StyledElement>
   );
 });

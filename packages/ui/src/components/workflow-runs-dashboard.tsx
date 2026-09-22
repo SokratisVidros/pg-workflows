@@ -1,13 +1,13 @@
 'use client';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { clsx } from 'clsx';
 import { forwardRef, useMemo, useState } from 'react';
 import { createFetchClient, type WorkflowRunsClient } from '../client';
 import { useRunFilters } from '../hooks/use-run-filters';
 import { useWorkflowRunStats } from '../hooks/use-workflow-run-stats';
 import { useWorkflowRuns } from '../hooks/use-workflow-runs';
 import { applyClientFilters, sortRuns } from '../lib/filters';
+import { type ElementStyleProps, StyledElement } from '../lib/style-hooks';
 import { WorkflowRunsProvider } from '../provider';
 import { FilterBar } from './filter-bar/filter-bar';
 import { LiveToggle } from './live-toggle';
@@ -16,11 +16,14 @@ import { RunDetail } from './run-detail/run-detail';
 import { RunsTable } from './runs-table';
 import { StatusSummary } from './status-summary';
 
+type DashboardState = {
+  selected: boolean;
+};
+
 type SelectionProps = {
   selectedRunId?: string | null;
   onSelectRun?: (id: string | null) => void;
-  className?: string;
-};
+} & ElementStyleProps<DashboardState>;
 
 export type WorkflowRunsDashboardProps = (
   | { client: WorkflowRunsClient; baseUrl?: never }
@@ -48,6 +51,8 @@ export const WorkflowRunsDashboard = forwardRef<HTMLDivElement, WorkflowRunsDash
             selectedRunId={props.selectedRunId}
             onSelectRun={props.onSelectRun}
             className={props.className}
+            style={props.style}
+            render={props.render}
             live={live}
             onToggleLive={() => setLive((v) => !v)}
             ref={ref}
@@ -61,7 +66,10 @@ export const WorkflowRunsDashboard = forwardRef<HTMLDivElement, WorkflowRunsDash
 const DashboardInner = forwardRef<
   HTMLDivElement,
   SelectionProps & { live: boolean; onToggleLive: () => void }
->(function DashboardInner({ selectedRunId, onSelectRun, className, live, onToggleLive }, ref) {
+>(function DashboardInner(
+  { selectedRunId, onSelectRun, className, style, render, live, onToggleLive },
+  ref,
+) {
   const { filters, setFilters, clearFilters, hasActiveFilters, serverParams } = useRunFilters();
   const runsQuery = useWorkflowRuns(serverParams);
   const statsQuery = useWorkflowRunStats({ workflowId: filters.workflowId });
@@ -92,7 +100,7 @@ const DashboardInner = forwardRef<
   const list = (
     <>
       {runsQuery.isError ? (
-        <div className="rounded-pgw-sm bg-pgw-status-failed/10 px-4 py-3 text-sm font-medium text-pgw-status-failed">
+        <div className="border border-pgw-status-failed px-4 py-3 text-sm text-pgw-status-failed">
           Failed to load runs.
         </div>
       ) : (
@@ -150,7 +158,14 @@ const DashboardInner = forwardRef<
   );
 
   return (
-    <div ref={ref} className={clsx('pgw-root @container flex flex-col gap-5', className)}>
+    <StyledElement
+      ref={ref}
+      state={{ selected: Boolean(selected) }}
+      className={className}
+      style={style}
+      render={render}
+      baseClassName="pgw-root @container flex flex-col gap-5"
+    >
       {selected ? (
         <RunDetail
           key={selected}
@@ -164,6 +179,6 @@ const DashboardInner = forwardRef<
           {list}
         </>
       )}
-    </div>
+    </StyledElement>
   );
 });

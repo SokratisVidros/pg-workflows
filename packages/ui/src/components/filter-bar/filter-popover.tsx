@@ -1,9 +1,19 @@
 'use client';
 
-import * as Popover from '@radix-ui/react-popover';
-import { clsx } from 'clsx';
+import { Popover } from '@base-ui/react/popover';
 import { forwardRef, type ReactNode } from 'react';
-import { PGW_TEXT } from '../../lib/button-classes';
+import { PGW_BUTTON } from '../../lib/button-classes';
+import { chainClassName, type PartProps } from '../../lib/style-hooks';
+
+export type FilterPopoverParts = {
+  positioner?: PartProps<Popover.Positioner.Props>;
+  popup?: PartProps<Popover.Popup.Props>;
+};
+
+export type FilterPopoverStyleProps = PartProps<Popover.Trigger.Props> & {
+  nativeButton?: boolean;
+  parts?: FilterPopoverParts;
+};
 
 type FilterPopoverProps = {
   label: string;
@@ -11,27 +21,46 @@ type FilterPopoverProps = {
   suffix?: string;
   active?: boolean;
   children: ReactNode;
-  className?: string;
-};
+} & FilterPopoverStyleProps;
 
 export const FilterPopover = forwardRef<HTMLButtonElement, FilterPopoverProps>(
-  function FilterPopover({ label, suffix, active, children, className }, ref) {
+  function FilterPopover(
+    { label, suffix, active, children, className, style, render, nativeButton, parts },
+    ref,
+  ) {
     return (
       <Popover.Root>
-        <Popover.Trigger asChild>
-          <button
-            type="button"
-            ref={ref}
-            data-active={active ? 'true' : undefined}
-            className={clsx(PGW_TEXT, className)}
-          >
-            {label}
-            {suffix}
-          </button>
+        <Popover.Trigger
+          ref={ref}
+          data-active={active ? 'true' : undefined}
+          nativeButton={nativeButton}
+          className={chainClassName(PGW_BUTTON, className)}
+          style={style}
+          render={render}
+        >
+          {label}
+          {suffix}
         </Popover.Trigger>
-        <Popover.Content align="start" sideOffset={8} className="pgw-root pgw-menu">
-          {children}
-        </Popover.Content>
+        <Popover.Portal>
+          <Popover.Positioner
+            className={chainClassName('pgw-positioner', parts?.positioner?.className)}
+            style={parts?.positioner?.style}
+            render={parts?.positioner?.render}
+            sideOffset={8}
+            align="start"
+          >
+            <Popover.Popup
+              className={chainClassName(
+                'pgw-root pgw-popup pgw-popup-pad',
+                parts?.popup?.className,
+              )}
+              style={parts?.popup?.style}
+              render={parts?.popup?.render}
+            >
+              {children}
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
       </Popover.Root>
     );
   },

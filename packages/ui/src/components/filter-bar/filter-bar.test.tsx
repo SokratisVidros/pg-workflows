@@ -7,7 +7,7 @@ import { FilterBar } from './filter-bar';
 const baseFilters: RunFilters = { limit: 20, sort: 'createdAt', dir: 'desc' };
 
 describe('FilterBar', () => {
-  it('renders Clear below the filter buttons, not in their row', () => {
+  it('keeps Clear in the filter row', () => {
     render(
       <FilterBar
         filters={{ ...baseFilters, workflowId: 'demo' }}
@@ -18,12 +18,11 @@ describe('FilterBar', () => {
       />,
     );
     const clear = screen.getByRole('button', { name: /clear/i });
-    expect(clear.parentElement).toHaveClass('pgw-filter-pills');
-    expect(clear.previousElementSibling).toHaveClass('pgw-filter-pills-row');
+    expect(clear.parentElement).toHaveClass('pgw-filter-pills-row');
   });
 
-  it('omits Clear button when no active filters', () => {
-    render(
+  it('reserves Clear when inactive so showing it does not change layout', () => {
+    const { container } = render(
       <FilterBar
         filters={baseFilters}
         hasActiveFilters={false}
@@ -32,6 +31,9 @@ describe('FilterBar', () => {
         onClear={vi.fn()}
       />,
     );
+    const clear = container.querySelector('.pgw-clear');
+    expect(clear).toHaveAttribute('data-inactive');
+    expect(clear?.parentElement).toHaveClass('pgw-filter-pills-row');
     expect(screen.queryByRole('button', { name: /clear/i })).toBeNull();
   });
 

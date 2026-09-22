@@ -1,6 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkflowRun } from '../client';
+import { formatDuration, timeAgo } from '../lib/duration';
+import { WORKFLOW_RUN_STATUSES } from '../lib/statuses';
+import { formatUtcTimestamp } from '../lib/timestamp';
 import { RunsTable } from './runs-table';
 
 const run = (over: Partial<WorkflowRun> = {}): WorkflowRun =>
@@ -36,22 +40,23 @@ const run = (over: Partial<WorkflowRun> = {}): WorkflowRun =>
 describe('RunsTable', () => {
   it('renders headers for the visible run attributes', () => {
     render(<RunsTable runs={[run()]} onSelectRun={() => {}} />);
-    for (const label of [
+    const headers = screen.getAllByRole('columnheader').map((header) => header.textContent);
+    expect(headers).toEqual([
       'Workflow',
+      'Run ID',
+      'Resource ID',
       'Status',
-      'Run',
-      'Resource',
+      'Started',
+      'Completed',
+      'Duration',
+    ]);
+    for (const label of [
       'Step',
       'Created',
-      'Completed',
       'Error',
       'Retries',
       'Priority',
       'Job',
-    ]) {
-      expect(screen.getByRole('columnheader', { name: label })).toBeInTheDocument();
-    }
-    for (const label of [
       'Updated',
       'Input',
       'Output',
@@ -69,6 +74,131 @@ describe('RunsTable', () => {
     ]) {
       expect(screen.queryByRole('columnheader', { name: label })).not.toBeInTheDocument();
     }
+  });
+
+  it('shows the full run id as the second column, with a copy button', () => {
+    const onSelectRun = vi.fn();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(<RunsTable runs={[run()]} onSelectRun={onSelectRun} />);
+
+    const headers = screen.getAllByRole('columnheader');
+    expect(headers[0]).toHaveTextContent('Workflow');
+    expect(headers[1]).toHaveTextContent('Run ID');
+    expect(headers[0].className).toContain('left-0');
+    expect(headers[1].className).not.toContain('left-0');
+
+    const runId = screen.getByText('run_12345678abc');
+    expect(runId.closest('button')).toBeNull();
+    expect(runId.closest('td')).not.toHaveClass('overflow-hidden');
+    expect(runId.closest('td')).not.toHaveClass('max-w-[10rem]');
+
+    const copy = screen.getByRole('button', { name: 'Copy run id' });
+    expect(copy.className).toContain('opacity-0');
+    expect(copy.className).toContain('group-hover:opacity-100');
+
+    fireEvent.click(copy);
+    expect(writeText).toHaveBeenCalledWith('run_12345678abc');
+    expect(onSelectRun).not.toHaveBeenCalled();
+  });
+
+  it('shows step progress under the workflow id while a run is running, paused, or failed', () => {
+    const timeline = {
+      'step-a': { output: { x: 1 }, timestamp: '2026-06-17T12:00:01Z' },
+    };
+    render(
+      <RunsTable
+        runs={[
+          run({ id: 'run_running', status: 'running', currentStepId: 'step-b', timeline }),
+          run({
+            id: 'run_paused',
+            workflowId: 'email',
+            status: 'paused',
+            currentStepId: 'step-b',
+            timeline,
+          }),
+          run({
+            id: 'run_failed',
+            workflowId: 'import',
+            status: 'failed',
+            currentStepId: 'step-b',
+            timeline,
+          }),
+          run({
+            id: 'run_done',
+            workflowId: 'report',
+            status: 'completed',
+            currentStepId: 'step-a',
+            timeline,
+          }),
+          run({
+            id: 'run_cancelled',
+            workflowId: 'sync',
+            status: 'cancelled',
+            currentStepId: 'step-b',
+            timeline,
+          }),
+        ]}
+        onSelectRun={() => {}}
+      />,
+    );
+
+    const bars = screen.getAllByRole('progressbar');
+    expect(bars).toHaveLength(3);
+    for (const bar of bars) {
+      expect(bar).toHaveAccessibleName('1 of 2 steps');
+      expect(bar.querySelector('.bg-pgw-fg')).toHaveStyle({ width: '50%' });
+    }
+    expect(screen.getAllByText('1 of 2')).toHaveLength(3);
+
+    const defined = run({
+      id: 'run_defined',
+      workflowId: 'catalog-reindex',
+      status: 'failed',
+      currentStepId: 'plan-shards',
+      totalSteps: 3,
+      timeline: {
+        'plan-shards': { output: { shards: 8 }, timestamp: '2026-06-17T12:00:01Z' },
+      },
+    });
+    render(<RunsTable runs={[defined]} onSelectRun={() => {}} />);
+    const definedBar = screen.getByRole('progressbar', { name: '1 of 3 steps' });
+    expect(definedBar).toHaveAttribute('aria-valuenow', '1');
+    expect(definedBar).toHaveAttribute('aria-valuemax', '3');
+    expect(definedBar.querySelector('.bg-pgw-fg')?.getAttribute('style')).toMatch(
+      /width:\s*33\.333/,
+    );
+    expect(
+      screen.getByText('report').closest('td')?.querySelector('[role="progressbar"]'),
+    ).toBeNull();
+    expect(
+      screen.getByText('sync').closest('td')?.querySelector('[role="progressbar"]'),
+    ).toBeNull();
+  });
+
+  it('gives each status a distinct colored mark', () => {
+    const { container } = render(
+      <RunsTable
+        runs={WORKFLOW_RUN_STATUSES.map((status) =>
+          run({ id: `run_${status}`, workflowId: status, status }),
+        )}
+        onSelectRun={() => {}}
+      />,
+    );
+
+    const marks = WORKFLOW_RUN_STATUSES.map((status) => {
+      const icon = container.querySelector(`[data-status-mark="${status}"]`);
+      expect(icon).toHaveClass(`text-pgw-status-${status}`);
+      expect(icon?.tagName).toBe('svg');
+      return icon?.innerHTML;
+    });
+    expect(new Set(marks).size).toBe(WORKFLOW_RUN_STATUSES.length);
+    expect(container.querySelector('[data-status-mark="running"]')).toHaveClass('animate-spin');
+    expect(container.innerHTML).not.toMatch(/size-1\.5/);
   });
 
   it('renders a row per run with workflow id and status', () => {
@@ -121,20 +251,40 @@ describe('RunsTable', () => {
     );
   });
 
-  it('shows the absolute UTC timestamp as a title on the created cell', () => {
+  it('shows a relative time and the local and UTC timestamps on hover', async () => {
     const createdAt = '2024-03-15T12:34:56.000Z';
+    const user = userEvent.setup();
     render(<RunsTable runs={[run({ createdAt })]} onSelectRun={() => {}} />);
-    expect(screen.getByTitle(new Date(createdAt).toISOString())).toBeInTheDocument();
-    expect(screen.getByText('2024-03-15 12:34')).toBeInTheDocument();
+    const trigger = screen.getByText(timeAgo(createdAt));
+    await user.hover(trigger);
+    expect(await screen.findByText(formatUtcTimestamp(new Date(createdAt)))).toBeInTheDocument();
+    expect(screen.getByText('Local')).toBeInTheDocument();
+    expect(screen.getByText('UTC')).toBeInTheDocument();
   });
 
   it('renders absent values as an em dash', () => {
     render(
       <RunsTable
-        runs={[run({ completedAt: null, error: null, jobId: null })]}
+        runs={[run({ status: 'pending', completedAt: null, resourceId: null })]}
         onSelectRun={() => {}}
       />,
     );
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('formats duration as a short human duration', () => {
+    render(
+      <RunsTable
+        runs={[
+          run({
+            status: 'completed',
+            createdAt: '2026-06-17T12:00:00Z',
+            completedAt: '2026-06-17T12:01:05Z',
+          }),
+        ]}
+        onSelectRun={() => {}}
+      />,
+    );
+    expect(screen.getByText(formatDuration(65_000))).toBeInTheDocument();
   });
 });

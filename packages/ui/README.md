@@ -97,7 +97,7 @@ Props (`WorkflowRunsDashboardProps`):
 - `baseUrl: string` **or** `client: WorkflowRunsClient` — where/how to reach the API (exactly one).
 - `pollIntervalMs?: number` — live-refresh interval (default 5000; `0` disables).
 - `selectedRunId?: string | null` + `onSelectRun?: (id: string | null) => void` — optional controlled selection (wire to your router for deep-linkable runs).
-- `className?: string`.
+- `className`, `style`, and `render` — Base UI style hooks. `className` and `style` may be a value or a function of the dashboard state (`{ selected }`). `render` replaces the root element.
 
 You still need the server routes from Variant 2 for it to have data.
 
@@ -258,23 +258,34 @@ You can also skip React entirely and call `createFetchClient({ baseUrl })` from 
 
 ## Theming
 
-Three layers, in order of how you'll reach for them:
+The components are styled the way Base UI components are styled: unstyled behavior, your classes on top, state available to both CSS and render props. Four layers, in the order you'll reach for them:
 
-1. **CSS variables (primary).** After importing `@pg-workflows/ui/styles.css`, override any token in your own `:root`/scope:
+1. **CSS variables.** After importing `@pg-workflows/ui/styles.css`, override any token in your own `:root` or a closer scope. Chrome (borders, radius, type, focus) follows the same tokens as the status hues:
 
    ```css
    :root {
      --pgw-accent: #6d28d9;
-     --pgw-status-running: #2563eb;
-     /* --pgw-bg, --pgw-fg, --pgw-muted, --pgw-muted-fg, --pgw-border,
+     --pgw-border: #e5e5e5;
+     --pgw-radius: 0.5rem;
+     --pgw-font: "IBM Plex Sans", sans-serif;
+     --pgw-focus: #6d28d9;
+     /* --pgw-bg, --pgw-fg, --pgw-card, --pgw-muted, --pgw-muted-fg,
+        --pgw-hover, --pgw-active, --pgw-disabled, --pgw-shadow, --pgw-on-status,
         --pgw-status-{completed,failed,running,paused,cancelled,pending} */
    }
    ```
    A `prefers-color-scheme: dark` block ships defaults, so **dark mode is automatic**.
 
-2. **Tailwind preset** (`@pg-workflows/ui/tailwind`) exposes the tokens as utilities (`bg-pgw-bg`, `text-pgw-status-running`, `border-pgw-border`) for your own markup.
+2. **Tailwind, CSS modules, or CSS-in-JS on the component.** Every exported component accepts Base UI's style hooks:
+   - `className` — a string, or `(state) => string`. The state is also written to `data-*` attributes (`data-status`, `data-pressed`, `data-open`, …), so plain CSS can target it.
+   - `style` — a style object, or `(state) => style object`.
+   - `render` — a React element or `(props, state) => element` that replaces the root tag. On buttons, set `nativeButton={false}` when `render` is not a `<button>`.
 
-3. **`className` + `.pgw-root`.** Every component accepts a `className`; the `.pgw-root` class sets base background/foreground/font (the dashboard applies it for you).
+   Composite controls also take part hooks so you can restyle the Base UI pieces they hide: selects (`parts.popup`, `parts.item`, `parts.positioner`, …), the status popover (`parts.popup`, `checkbox`, `indicator`), search (`input`), progress (`parts.track`, `parts.indicator`), the status summary (`stat`), and the step timeline (`parts.trigger`, `parts.panel`). Each part's `className` / `style` receives that part's Base UI state.
+
+3. **Tailwind preset** (`@pg-workflows/ui/tailwind`) exposes the tokens as utilities (`bg-pgw-bg`, `text-pgw-status-running`, `border-pgw-border`) for your own markup.
+
+4. **`.pgw-root`.** Sets base background, foreground, and font. The dashboard applies it for you; add it to your own page when you compose the pieces yourself. Stable classes (`.pgw-button`, `.pgw-popup`, `.pgw-badge`, …) live in `@layer components`, so your utilities and unlayered CSS override them.
 
 ---
 

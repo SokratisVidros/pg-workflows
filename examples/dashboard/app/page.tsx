@@ -11,7 +11,7 @@ export default function Page() {
       <header className="mb-6 flex items-end justify-between gap-3 sm:mb-8">
         <div>
           <p className="text-xs font-medium text-pgw-muted-fg">pg-workflows</p>
-          <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">Workflows</h1>
+          <h1 className="text-2xl font-bold sm:text-3xl">Workflows</h1>
         </div>
       </header>
       <WorkflowRunsDashboard baseUrl="/workflow-runs" />

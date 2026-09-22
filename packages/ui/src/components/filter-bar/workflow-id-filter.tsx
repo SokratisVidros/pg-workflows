@@ -1,32 +1,33 @@
 'use client';
 
-import { forwardRef } from 'react';
-import { FilterSelect, FilterSelectItem } from './filter-select';
+import { forwardRef, useMemo } from 'react';
+import { type FilterSelectStyleProps, OptionalFilterSelect } from './filter-select';
 
 export type WorkflowIdFilterProps = {
   value?: string;
   options: string[];
   onChange: (next: string | undefined) => void;
-  className?: string;
-};
+} & FilterSelectStyleProps;
 
 export const WorkflowIdFilter = forwardRef<HTMLButtonElement, WorkflowIdFilterProps>(
-  function WorkflowIdFilter({ value, options, onChange, className }, ref) {
+  function WorkflowIdFilter({ value, options, onChange, ...styleProps }, ref) {
+    const items = useMemo(
+      () => [
+        { value: '__all__', label: 'All workflows' },
+        ...options.map((id) => ({ value: id, label: id })),
+      ],
+      [options],
+    );
+
     return (
-      <FilterSelect
+      <OptionalFilterSelect
         ref={ref}
-        value={value ?? '__all__'}
-        active={value != null}
-        onValueChange={(v) => onChange(v === '__all__' ? undefined : v)}
-        className={className}
-      >
-        <FilterSelectItem value="__all__">All workflows</FilterSelectItem>
-        {options.map((id) => (
-          <FilterSelectItem key={id} value={id}>
-            {id}
-          </FilterSelectItem>
-        ))}
-      </FilterSelect>
+        value={value}
+        empty="__all__"
+        items={items}
+        onChange={onChange}
+        {...styleProps}
+      />
     );
   },
 );

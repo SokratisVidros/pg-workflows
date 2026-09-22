@@ -73,6 +73,8 @@ describe('formatDuration', () => {
     [65_000, '1m 5s'],
     [3_600_000, '1h'],
     [3_660_000, '1h 1m'],
+    [86_400_000, '1d'],
+    [90_000_000, '1d 1h'],
   ])('formats %i ms as %s', (ms, expected) => {
     expect(formatDuration(ms)).toBe(expected);
   });
@@ -87,5 +89,10 @@ describe('timeAgo', () => {
   it('formats minutes', () => {
     const t = new Date(Date.now() - 5 * 60_000);
     expect(timeAgo(t)).toBe('5m ago');
+  });
+
+  it('formats a future time as in Xm', () => {
+    const t = new Date(Date.now() + 5 * 60_000);
+    expect(timeAgo(t)).toBe('in 5m');
   });
 });

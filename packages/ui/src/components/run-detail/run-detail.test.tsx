@@ -82,6 +82,50 @@ describe('RunDetail', () => {
     expect(screen.getByText(/"greeting": "hi"/)).toBeInTheDocument();
   });
 
+  it('shows retries, priority, job, and error in the run details', async () => {
+    const client = makeClient({
+      status: 'failed',
+      resourceId: 'tenant-emea',
+      createdAt: '2026-06-17T12:00:00.000Z',
+      completedAt: '2026-06-17T12:01:05.000Z',
+      retryCount: 2,
+      maxRetries: 5,
+      priority: 100,
+      jobId: 'job_1',
+      error: 'boom',
+    });
+    render(<RunDetail runId="run_1" />, { wrapper: wrap(client) });
+    await waitFor(() => expect(screen.getByText('Resource ID')).toBeInTheDocument());
+    expect(screen.getByText('tenant-emea')).toBeInTheDocument();
+    expect(screen.getByText('Retries')).toBeInTheDocument();
+    expect(screen.getByText('2 / 5')).toBeInTheDocument();
+    expect(screen.getByText('Priority')).toBeInTheDocument();
+    expect(screen.getByText('high')).toBeInTheDocument();
+    expect(screen.getByText('Job')).toBeInTheDocument();
+    expect(screen.getByText('job_1')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Error' })).toBeInTheDocument();
+    expect(screen.getByText(/boom/)).toBeInTheDocument();
+    expect(screen.getAllByText('1m 5s').length).toBeGreaterThan(0);
+  });
+
+  it('shows an em dash for error, retries, priority, and job when they are absent', async () => {
+    const client = makeClient({
+      status: 'pending',
+      retryCount: undefined,
+      maxRetries: undefined,
+      priority: undefined,
+      jobId: null,
+      error: null,
+    });
+    render(<RunDetail runId="run_1" />, { wrapper: wrap(client) });
+    await waitFor(() => expect(screen.getByText('Retries')).toBeInTheDocument());
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+    expect(screen.getByText('Priority')).toBeInTheDocument();
+    expect(screen.getByText('Job')).toBeInTheDocument();
+    expect(screen.getByText('Error')).toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(4);
+  });
+
   it('always renders Input and Output sections, even when output is null', async () => {
     const client = makeClient({ status: 'running', input: { a: 1 }, output: null });
     render(<RunDetail runId="run_1" />, { wrapper: wrap(client) });

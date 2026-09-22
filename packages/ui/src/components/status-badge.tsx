@@ -1,26 +1,33 @@
-import { clsx } from 'clsx';
+'use client';
+
 import { forwardRef } from 'react';
 import type { WorkflowRunStatus } from '../client';
+import { type ElementStyleProps, StyledElement } from '../lib/style-hooks';
+
+export type StatusBadgeState = {
+  status: WorkflowRunStatus;
+};
 
 export type StatusBadgeProps = {
   status: WorkflowRunStatus;
-  className?: string;
-};
+} & ElementStyleProps<StatusBadgeState>;
 
-export const StatusBadge = forwardRef<HTMLSpanElement, StatusBadgeProps>(function StatusBadge(
-  { status, className },
+export const StatusBadge = forwardRef<HTMLElement, StatusBadgeProps>(function StatusBadge(
+  { status, className, style, render },
   ref,
 ) {
   return (
-    <span
+    <StyledElement
       ref={ref}
-      className={clsx(
-        'inline-flex items-center gap-1.5 rounded-pgw-pill border border-pgw-fg bg-pgw-card px-3 py-1 text-xs font-semibold capitalize text-pgw-fg',
-        className,
-      )}
+      tag="span"
+      state={{ status }}
+      className={className}
+      style={style}
+      render={render}
+      baseClassName="pgw-badge"
     >
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-pgw-fg" />
+      <span aria-hidden className="size-1.5 bg-pgw-fg" />
       {status}
-    </span>
+    </StyledElement>
   );
 });

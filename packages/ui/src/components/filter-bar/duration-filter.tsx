@@ -2,32 +2,26 @@
 
 import { forwardRef } from 'react';
 import { DURATION_PRESETS, type DurationPreset } from '../../lib/filter-presets';
-import { FilterSelect, FilterSelectItem } from './filter-select';
+import { type FilterSelectStyleProps, OptionalFilterSelect } from './filter-select';
 
 export type { DurationPreset };
 
 export type DurationFilterProps = {
   value?: DurationPreset;
   onChange: (next: DurationPreset | undefined) => void;
-  className?: string;
-};
+} & FilterSelectStyleProps;
 
 export const DurationFilter = forwardRef<HTMLButtonElement, DurationFilterProps>(
-  function DurationFilter({ value, onChange, className }, ref) {
+  function DurationFilter({ value, onChange, ...styleProps }, ref) {
     return (
-      <FilterSelect
+      <OptionalFilterSelect
         ref={ref}
-        value={value ?? 'any'}
-        active={value != null}
-        onValueChange={(v) => onChange(v === 'any' ? undefined : (v as DurationPreset))}
-        className={className}
-      >
-        {DURATION_PRESETS.map((preset) => (
-          <FilterSelectItem key={preset.value} value={preset.value}>
-            {preset.label}
-          </FilterSelectItem>
-        ))}
-      </FilterSelect>
+        value={value}
+        empty="any"
+        items={DURATION_PRESETS}
+        onChange={(next) => onChange(next as DurationPreset | undefined)}
+        {...styleProps}
+      />
     );
   },
 );

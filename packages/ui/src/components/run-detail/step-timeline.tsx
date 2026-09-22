@@ -1,8 +1,9 @@
 'use client';
 
+import { Collapsible } from '@base-ui/react/collapsible';
 import { clsx } from 'clsx';
 import { Check, ChevronRight, Circle, Loader2, Pause, X } from 'lucide-react';
-import { forwardRef, useState } from 'react';
+import { type CSSProperties, forwardRef } from 'react';
 import type { WorkflowRun } from '../../client';
 import { computeDurationMs, formatDuration } from '../../lib/duration';
 import {
@@ -11,6 +12,13 @@ import {
   getCompletedStepCount,
   type StepInfo,
 } from '../../lib/steps';
+import {
+  chainClassName,
+  type ElementStyleProps,
+  type PartProps,
+  StyledElement,
+} from '../../lib/style-hooks';
+import { Timestamp } from '../timestamp';
 import { JsonViewer } from './json-viewer';
 
 const STATUS_BAR: Record<string, string> = {
@@ -21,13 +29,13 @@ const STATUS_BAR: Record<string, string> = {
   pending: 'bg-pgw-muted-fg',
 };
 
-const WAIT_HATCH_STYLE: React.CSSProperties = {
+const WAIT_HATCH_STYLE: CSSProperties = {
   backgroundImage:
     'repeating-linear-gradient(45deg, color-mix(in oklab, var(--pgw-status-paused) 85%, transparent) 0 6px, color-mix(in oklab, var(--pgw-status-paused) 35%, transparent) 6px 12px)',
 };
 
 function StepDot({ status }: { status: StepInfo['status'] }) {
-  const common = 'flex size-5 items-center justify-center rounded-full';
+  const common = 'flex size-5 items-center justify-center';
   switch (status) {
     case 'completed':
       return (
@@ -44,13 +52,13 @@ function StepDot({ status }: { status: StepInfo['status'] }) {
     case 'waiting':
       return (
         <div className={clsx(common, 'bg-pgw-status-paused')}>
-          <Pause className="size-3 fill-white text-white" />
+          <Pause className="size-3 fill-pgw-on-status text-pgw-on-status" />
         </div>
       );
     case 'failed':
       return (
         <div className={clsx(common, 'bg-pgw-status-failed')}>
-          <X className="size-3 text-white" />
+          <X className="size-3 text-pgw-on-status" />
         </div>
       );
     default:
@@ -73,12 +81,9 @@ function WaterfallBar({ step, totalDurationMs }: { step: StepInfo; totalDuration
         : 0;
   const useHatch = step.isWaitStep;
   return (
-    <div className="relative h-2 w-full rounded-pgw-pill bg-pgw-muted">
+    <div className="relative h-1 w-full bg-pgw-muted">
       <div
-        className={clsx(
-          'absolute inset-y-0 rounded-pgw-pill',
-          useHatch ? undefined : STATUS_BAR[step.status],
-        )}
+        className={clsx('absolute inset-y-0', useHatch ? undefined : STATUS_BAR[step.status])}
         style={{
           left: `${leftPct}%`,
           width: `${widthPct}%`,
@@ -89,34 +94,37 @@ function WaterfallBar({ step, totalDurationMs }: { step: StepInfo; totalDuration
   );
 }
 
-function StepRow({ step, totalDurationMs }: { step: StepInfo; totalDurationMs: number }) {
-  const [open, setOpen] = useState(false);
-  const timeLabel = step.timestamp
-    ? step.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : null;
+type StepParts = {
+  trigger?: PartProps<Collapsible.Trigger.Props>;
+  panel?: PartProps<Collapsible.Panel.Props>;
+};
+
+function StepRow({
+  step,
+  totalDurationMs,
+  parts,
+}: {
+  step: StepInfo;
+  totalDurationMs: number;
+  parts?: StepParts;
+}) {
   return (
-    <div className="flex flex-col gap-1 py-2">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex min-w-0 items-start gap-3 rounded-pgw-sm py-1 text-left hover:bg-pgw-muted/40"
+    <Collapsible.Root className="flex flex-col gap-1 py-2">
+      <Collapsible.Trigger
+        className={chainClassName('pgw-step-trigger', parts?.trigger?.className)}
+        style={parts?.trigger?.style}
+        render={parts?.trigger?.render}
       >
-        <div className="flex w-14 shrink-0 flex-col pt-0.5 text-right">
-          {timeLabel && <span className="text-xs font-semibold tabular-nums">{timeLabel}</span>}
+        <div className="flex w-[4.5rem] shrink-0 justify-end pt-0.5">
+          {step.timestamp && <Timestamp value={step.timestamp} className="text-xs font-bold" />}
         </div>
         <div className="relative mt-0.5 shrink-0">
           <StepDot status={step.status} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-1.5">
-            <span className="truncate text-sm font-medium">{step.id}</span>
-            <ChevronRight
-              aria-hidden
-              className={clsx(
-                'size-3.5 shrink-0 text-pgw-muted-fg transition-transform duration-200',
-                open && 'rotate-90',
-              )}
-            />
+            <span className="truncate text-sm">{step.id}</span>
+            <ChevronRight aria-hidden className="pgw-caret size-3.5 shrink-0 text-pgw-muted-fg" />
             {step.durationMs != null && (
               <span
                 className={clsx(
@@ -133,26 +141,35 @@ function StepRow({ step, totalDurationMs }: { step: StepInfo; totalDurationMs: n
             <WaterfallBar step={step} totalDurationMs={totalDurationMs} />
           </div>
         </div>
-      </button>
-      {open && (
-        <div className="space-y-2 pb-1 pl-[calc(3.5rem+1.25rem+0.75rem)] pt-0.5">
+      </Collapsible.Trigger>
+      <Collapsible.Panel
+        className={chainClassName('pgw-step-panel', parts?.panel?.className)}
+        style={parts?.panel?.style}
+        render={parts?.panel?.render}
+      >
+        <div className="space-y-2 pb-1 pl-[calc(4.5rem+1.25rem+0.75rem)] pt-0.5">
           <div className="text-[10px] uppercase tracking-wide text-pgw-muted-fg">Input</div>
           <JsonViewer value={step.stepInput} />
           <div className="text-[10px] uppercase tracking-wide text-pgw-muted-fg">Output</div>
           <JsonViewer value={step.stepOutput} />
         </div>
-      )}
-    </div>
+      </Collapsible.Panel>
+    </Collapsible.Root>
   );
 }
 
-export type StepTimelineProps = {
-  run: WorkflowRun;
-  className?: string;
+export type StepTimelineState = {
+  status: WorkflowRun['status'];
+  empty: boolean;
 };
 
-export const StepTimeline = forwardRef<HTMLDivElement, StepTimelineProps>(function StepTimeline(
-  { run, className },
+export type StepTimelineProps = {
+  run: WorkflowRun;
+  parts?: StepParts;
+} & ElementStyleProps<StepTimelineState>;
+
+export const StepTimeline = forwardRef<HTMLElement, StepTimelineProps>(function StepTimeline(
+  { run, className, style, render, parts },
   ref,
 ) {
   const steps = extractSteps(run);
@@ -165,7 +182,14 @@ export const StepTimeline = forwardRef<HTMLDivElement, StepTimelineProps>(functi
   const waitPct = showSplit ? (waitMs / splitSumMs) * 100 : 0;
 
   return (
-    <div ref={ref} className={clsx('space-y-0', className)}>
+    <StyledElement
+      ref={ref}
+      state={{ status: run.status, empty: steps.length === 0 }}
+      className={className}
+      style={style}
+      render={render}
+      baseClassName="space-y-0"
+    >
       <div className="mb-4 flex items-center justify-between text-sm">
         <span className="font-semibold">
           {completedCount}/{steps.length} steps
@@ -200,7 +224,7 @@ export const StepTimeline = forwardRef<HTMLDivElement, StepTimelineProps>(functi
             </span>
           )}
         </div>
-        <div className="relative h-2 flex-1 overflow-hidden rounded-pgw-pill bg-pgw-muted">
+        <div className="relative h-1 flex-1 overflow-hidden bg-pgw-muted">
           {showSplit ? (
             <>
               <div
@@ -215,7 +239,7 @@ export const StepTimeline = forwardRef<HTMLDivElement, StepTimelineProps>(functi
           ) : (
             <div
               className={clsx(
-                'absolute inset-y-0 left-0 rounded-pgw-pill',
+                'absolute inset-y-0 left-0',
                 STATUS_BAR[run.status] ?? 'bg-pgw-muted-fg',
               )}
               style={{ width: totalDurationMs > 0 ? '100%' : '0%' }}
@@ -225,10 +249,12 @@ export const StepTimeline = forwardRef<HTMLDivElement, StepTimelineProps>(functi
       </div>
 
       {steps.length > 0 ? (
-        steps.map((step) => <StepRow key={step.id} step={step} totalDurationMs={totalDurationMs} />)
+        steps.map((step) => (
+          <StepRow key={step.id} step={step} totalDurationMs={totalDurationMs} parts={parts} />
+        ))
       ) : (
         <p className="py-2 text-xs text-pgw-muted-fg">No steps recorded yet.</p>
       )}
-    </div>
+    </StyledElement>
   );
 });

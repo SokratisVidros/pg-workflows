@@ -8,7 +8,7 @@ describe('LiveToggle', () => {
     render(<LiveToggle isLive isFetching={false} onToggle={() => {}} />);
     const button = screen.getByRole('button');
     expect(button).toHaveTextContent(/live/i);
-    expect(button).toHaveClass('pgw-pill', 'pgw-live');
+    expect(button).toHaveClass('pgw-button', 'pgw-live');
     expect(button).toHaveAttribute('aria-pressed', 'true');
   });
 

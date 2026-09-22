@@ -1,12 +1,11 @@
 /**
- * Class names for the pill chrome in styles.css. Keep the strings identical
- * to the CSS selectors.
+ * Class names for the Base UI chrome in styles.css. Keep the strings
+ * identical to the CSS selectors.
  */
-export const PGW_PILL = 'pgw-pill';
+export const PGW_BUTTON = 'pgw-button';
 
-export const PGW_PILL_OUTLINE = 'pgw-pill-outline';
+/** Square icon control — same border and height as `PGW_BUTTON`. */
+export const PGW_BUTTON_ICON = 'pgw-button pgw-button-icon';
 
-export const PGW_PILL_ICON = 'pgw-pill-icon';
-
-/** Borderless text trigger for filter menus. */
-export const PGW_TEXT = 'pgw-text';
+/** Select trigger. Includes the button chrome plus select padding. */
+export const PGW_SELECT = 'pgw-button pgw-select';

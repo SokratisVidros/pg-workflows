@@ -1,28 +1,25 @@
 'use client';
 
-import { forwardRef } from 'react';
+import { Checkbox } from '@base-ui/react/checkbox';
+import { Check } from 'lucide-react';
+import { forwardRef, useId } from 'react';
 import type { WorkflowRunStatus } from '../../client';
-import { FilterPopover } from './filter-popover';
-
-const STATUSES: WorkflowRunStatus[] = [
-  'pending',
-  'running',
-  'paused',
-  'completed',
-  'failed',
-  'cancelled',
-];
+import { WORKFLOW_RUN_STATUSES } from '../../lib/statuses';
+import { chainClassName, type PartProps } from '../../lib/style-hooks';
+import { FilterPopover, type FilterPopoverStyleProps } from './filter-popover';
 
 export type StatusFilterProps = {
   value: WorkflowRunStatus[];
   onChange: (next: WorkflowRunStatus[]) => void;
-  className?: string;
-};
+  checkbox?: PartProps<Checkbox.Root.Props>;
+  indicator?: PartProps<Checkbox.Indicator.Props>;
+} & FilterPopoverStyleProps;
 
 export const StatusFilter = forwardRef<HTMLButtonElement, StatusFilterProps>(function StatusFilter(
-  { value, onChange, className },
+  { value, onChange, className, style, render, nativeButton, parts, checkbox, indicator },
   ref,
 ) {
+  const id = useId();
   return (
     <FilterPopover
       ref={ref}
@@ -30,19 +27,34 @@ export const StatusFilter = forwardRef<HTMLButtonElement, StatusFilterProps>(fun
       suffix={value.length > 0 ? ` (${value.length})` : undefined}
       active={value.length > 0}
       className={className}
+      style={style}
+      render={render}
+      nativeButton={nativeButton}
+      parts={parts}
     >
-      {STATUSES.map((s) => {
+      {WORKFLOW_RUN_STATUSES.map((s) => {
         const checked = value.includes(s);
         return (
-          <label key={s} className="flex items-center gap-2 px-1 py-0.5 text-xs">
-            <input
-              type="checkbox"
+          <label key={s} htmlFor={`${id}-${s}`} className="pgw-check-label">
+            <Checkbox.Root
+              id={`${id}-${s}`}
               checked={checked}
-              onChange={() => {
+              onCheckedChange={() => {
                 const next = checked ? value.filter((v) => v !== s) : [...value, s];
                 onChange(next);
               }}
-            />
+              className={chainClassName('pgw-checkbox', checkbox?.className)}
+              style={checkbox?.style}
+              render={checkbox?.render}
+            >
+              <Checkbox.Indicator
+                className={chainClassName('pgw-checkbox-indicator', indicator?.className)}
+                style={indicator?.style}
+                render={indicator?.render}
+              >
+                <Check aria-hidden />
+              </Checkbox.Indicator>
+            </Checkbox.Root>
             {s}
           </label>
         );

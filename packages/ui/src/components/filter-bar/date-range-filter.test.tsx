@@ -8,7 +8,7 @@ describe('DateRangeFilter', () => {
     render(<DateRangeFilter onChange={() => {}} />);
     const trigger = screen.getByRole('combobox');
     expect(trigger).toHaveTextContent('All time');
-    expect(trigger).toHaveClass('pgw-text');
+    expect(trigger).toHaveClass('pgw-select');
     expect(trigger).not.toHaveAttribute('data-active');
   });
 

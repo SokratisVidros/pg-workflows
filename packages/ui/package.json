@@ -56,11 +56,8 @@
     "pg-workflows": ">=0.13.0"
   },
   "dependencies": {
-    "@radix-ui/react-dialog": "^1.1.0",
-    "@radix-ui/react-popover": "^1.1.0",
-    "@radix-ui/react-select": "^2.1.0",
+    "@base-ui/react": "^1.8.0",
     "clsx": "^2.1.1",
-    "date-fns": "^4.1.0",
     "lucide-react": "^0.453.0",
     "zod": "catalog:"
   },

@@ -1,17 +1,22 @@
 'use client';
 
+import { Progress } from '@base-ui/react/progress';
 import { clsx } from 'clsx';
 import { forwardRef } from 'react';
 import type { WorkflowRun } from '../client';
 import { extractSteps, getCompletedStepCount } from '../lib/steps';
+import { chainClassName, type PartProps } from '../lib/style-hooks';
 
 export type RunProgressProps = {
   run: WorkflowRun;
-  className?: string;
-};
+  parts?: {
+    track?: PartProps<Progress.Track.Props>;
+    indicator?: PartProps<Progress.Indicator.Props>;
+  };
+} & PartProps<Progress.Root.Props>;
 
 export const RunProgress = forwardRef<HTMLDivElement, RunProgressProps>(function RunProgress(
-  { run, className },
+  { run, className, style, render, parts },
   ref,
 ) {
   const steps = extractSteps(run);
@@ -22,11 +27,28 @@ export const RunProgress = forwardRef<HTMLDivElement, RunProgressProps>(function
   const pct = (completed / total) * 100;
 
   return (
-    <div ref={ref} className={clsx('flex items-center gap-3', className)}>
+    <Progress.Root
+      ref={ref}
+      value={pct}
+      className={chainClassName('flex items-center gap-3', className)}
+      style={style}
+      render={render}
+    >
       <div className="relative isolate flex min-w-12 flex-1 items-center">
-        <div className="absolute inset-x-2 top-1/2 h-1 -translate-y-1/2 rounded-pgw-pill bg-pgw-muted">
-          <div className="h-full rounded-pgw-pill bg-pgw-accent" style={{ width: `${pct}%` }} />
-        </div>
+        <Progress.Track
+          className={chainClassName(
+            'pgw-track absolute inset-x-2 top-1/2 h-1 -translate-y-1/2',
+            parts?.track?.className,
+          )}
+          style={parts?.track?.style}
+          render={parts?.track?.render}
+        >
+          <Progress.Indicator
+            className={chainClassName('bg-pgw-accent', parts?.indicator?.className)}
+            style={parts?.indicator?.style}
+            render={parts?.indicator?.render}
+          />
+        </Progress.Track>
         <div className="relative z-10 flex w-full items-center justify-between">
           {steps.map((step, i) => {
             const done = i < completed;
@@ -35,18 +57,15 @@ export const RunProgress = forwardRef<HTMLDivElement, RunProgressProps>(function
               <span
                 key={step.id}
                 aria-hidden
-                className={clsx(
-                  'block size-3.5 rounded-full border-2 border-pgw-card',
-                  done || current ? 'bg-pgw-accent' : 'bg-pgw-muted',
-                )}
+                className={clsx('pgw-step-dot', done || current ? 'is-on' : undefined)}
               />
             );
           })}
         </div>
       </div>
-      <span className="shrink-0 text-xs font-medium tabular-nums text-pgw-muted-fg">
+      <span className="shrink-0 text-xs tabular-nums text-pgw-muted-fg">
         {completed}/{total}
       </span>
-    </div>
+    </Progress.Root>
   );
 });

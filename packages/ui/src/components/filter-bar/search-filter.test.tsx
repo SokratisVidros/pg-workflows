@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { SearchFilter } from './search-filter';
 
 describe('SearchFilter', () => {
-  it('renders as a pill-shaped field', () => {
+  it('renders a bordered search field', () => {
     const { container } = render(<SearchFilter onChange={() => {}} />);
-    expect(container.firstChild).toHaveClass('pgw-pill-outline', 'pgw-search');
+    expect(container.firstChild).toHaveClass('pgw-search');
     expect(screen.getByRole('textbox', { name: /search runs/i })).toBeInTheDocument();
   });
 

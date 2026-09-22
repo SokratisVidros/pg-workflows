@@ -8,7 +8,7 @@ describe('StatusFilter', () => {
     const onChange = vi.fn();
     render(<StatusFilter value={[]} onChange={onChange} />);
     await userEvent.click(screen.getByRole('button', { name: /status/i }));
-    await userEvent.click(screen.getByLabelText(/running/i));
+    await userEvent.click(screen.getByRole('checkbox', { name: /running/i }));
     expect(onChange).toHaveBeenCalledWith(['running']);
   });
 
@@ -20,7 +20,7 @@ describe('StatusFilter', () => {
   it('uses a text button trigger', () => {
     render(<StatusFilter value={[]} onChange={() => {}} />);
     const button = screen.getByRole('button', { name: /status/i });
-    expect(button).toHaveClass('pgw-text');
+    expect(button).toHaveClass('pgw-button');
     expect(button).not.toHaveAttribute('data-active');
   });
 

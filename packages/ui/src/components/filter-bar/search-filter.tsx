@@ -1,30 +1,53 @@
 'use client';
 
-import { clsx } from 'clsx';
+import { Input } from '@base-ui/react/input';
 import { Search } from 'lucide-react';
-import { forwardRef } from 'react';
-import { PGW_PILL_OUTLINE } from '../../lib/button-classes';
+import { forwardRef, useId } from 'react';
+import {
+  chainClassName,
+  type ElementStyleProps,
+  type PartProps,
+  StyledElement,
+} from '../../lib/style-hooks';
+
+export type SearchFilterState = {
+  filled: boolean;
+};
 
 export type SearchFilterProps = {
   value?: string;
   onChange: (next: string | undefined) => void;
-  className?: string;
-};
+  input?: PartProps<Input.Props>;
+} & ElementStyleProps<SearchFilterState>;
 
-export const SearchFilter = forwardRef<HTMLLabelElement, SearchFilterProps>(function SearchFilter(
-  { value, onChange, className },
+export const SearchFilter = forwardRef<HTMLElement, SearchFilterProps>(function SearchFilter(
+  { value, onChange, className, style, render, input },
   ref,
 ) {
+  const id = useId();
   return (
-    <label ref={ref} className={clsx(PGW_PILL_OUTLINE, 'pgw-search', className)}>
+    <StyledElement
+      ref={ref}
+      tag="label"
+      state={{ filled: Boolean(value) }}
+      className={className}
+      style={style}
+      render={render}
+      baseClassName="pgw-search"
+      props={{ htmlFor: id }}
+    >
       <Search aria-hidden />
-      <input
+      <Input
+        id={id}
         type="text"
         placeholder="Search runs..."
         aria-label="Search runs"
         value={value ?? ''}
-        onChange={(e) => onChange(e.target.value || undefined)}
+        onValueChange={(next) => onChange(next || undefined)}
+        className={chainClassName('pgw-input', input?.className)}
+        style={input?.style}
+        render={input?.render}
       />
-    </label>
+    </StyledElement>
   );
 });

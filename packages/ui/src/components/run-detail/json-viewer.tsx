@@ -1,50 +1,60 @@
 'use client';
 
+import { Button } from '@base-ui/react/button';
 import { clsx } from 'clsx';
 import { Check, Copy } from 'lucide-react';
-import { forwardRef, useState } from 'react';
-import { PGW_PILL_OUTLINE } from '../../lib/button-classes';
+import { forwardRef } from 'react';
+import { PGW_BUTTON } from '../../lib/button-classes';
+import { type ElementStyleProps, StyledElement } from '../../lib/style-hooks';
+import { useCopyText } from '../../lib/use-copy';
+
+export type JsonViewerState = {
+  empty: boolean;
+  copied: boolean;
+};
 
 export type JsonViewerProps = {
   value: unknown;
-  className?: string;
-};
+} & ElementStyleProps<JsonViewerState>;
 
-export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function JsonViewer(
-  { value, className },
+export const JsonViewer = forwardRef<HTMLElement, JsonViewerProps>(function JsonViewer(
+  { value, className, style, render },
   ref,
 ) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyText();
+  const styleProps = {
+    className,
+    style,
+    render,
+    state: { empty: value === undefined, copied },
+  };
 
   if (value === undefined) {
     return (
-      <div ref={ref} className={clsx('text-xs text-pgw-muted-fg italic', className)}>
+      <StyledElement ref={ref} {...styleProps} baseClassName="text-xs text-pgw-muted-fg italic">
         No data
-      </div>
+      </StyledElement>
     );
   }
 
   const pretty = JSON.stringify(value, null, 2);
 
   return (
-    <div
+    <StyledElement
       ref={ref}
-      className={clsx('relative overflow-hidden rounded-pgw-sm bg-pgw-muted', className)}
+      {...styleProps}
+      baseClassName="relative overflow-hidden border border-pgw-border bg-pgw-muted"
     >
-      <button
+      <Button
         type="button"
         aria-label="Copy"
-        className={clsx(PGW_PILL_OUTLINE, 'absolute right-2 top-2 min-h-8 px-3')}
-        onClick={() => {
-          void navigator.clipboard.writeText(pretty);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        }}
+        className={clsx(PGW_BUTTON, 'absolute right-2 top-2')}
+        onClick={() => copy(pretty)}
       >
         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
         {copied ? 'Copied' : 'Copy'}
-      </button>
+      </Button>
       <pre className="overflow-x-auto p-4 text-xs leading-relaxed">{pretty}</pre>
-    </div>
+    </StyledElement>
   );
 });

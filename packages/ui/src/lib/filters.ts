@@ -43,9 +43,8 @@ export function applyClientFilters(runs: WorkflowRun[], filters: ClientFilters):
       const query = filters.search.toLowerCase();
       const matchesRunId = run.id.toLowerCase().includes(query);
       const matchesWorkflowId = run.workflowId.toLowerCase().includes(query);
-      const resourceId = (run as unknown as { resourceId?: string }).resourceId;
       const matchesResourceId =
-        typeof resourceId === 'string' && resourceId.toLowerCase().includes(query);
+        typeof run.resourceId === 'string' && run.resourceId.toLowerCase().includes(query);
       if (!matchesRunId && !matchesWorkflowId && !matchesResourceId) return false;
     }
     return true;

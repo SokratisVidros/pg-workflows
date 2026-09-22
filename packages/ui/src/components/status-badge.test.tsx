@@ -15,11 +15,11 @@ describe('StatusBadge', () => {
     expect(screen.getByText(pattern)).toBeInTheDocument();
   });
 
-  it('uses mono pill chrome instead of status-tint classes', () => {
+  it('uses square border chrome instead of status-tint classes', () => {
     render(<StatusBadge status="failed" />);
     const el = screen.getByText(/failed/i);
-    expect(el.className).toMatch(/rounded-pgw-pill/);
-    expect(el.className).toMatch(/border-pgw-fg/);
+    expect(el.className).toMatch(/pgw-badge/);
     expect(el.className).not.toMatch(/pgw-status-failed/);
+    expect(el.className).not.toMatch(/rounded-full|rounded-pgw-pill/);
   });
 });
