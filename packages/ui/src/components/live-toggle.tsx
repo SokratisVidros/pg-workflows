@@ -2,14 +2,7 @@
 
 import { clsx } from 'clsx';
 import { forwardRef } from 'react';
-import { STATUS_DOT_CLASS, STATUS_TEXT_CLASS } from '../lib/status-classes';
-
-/**
- * Deliberately not the shared filter-trigger chrome: this is a live/paused
- * toggle, not a filter, so it is borderless and colours itself by state.
- */
-const TOGGLE_CLASS =
-  'inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-pgw-muted';
+import { PGW_PILL } from '../lib/button-classes';
 
 export type LiveToggleProps = {
   isLive: boolean;
@@ -28,20 +21,10 @@ export const LiveToggle = forwardRef<HTMLButtonElement, LiveToggleProps>(functio
       type="button"
       onClick={onToggle}
       aria-pressed={isLive}
-      className={clsx(TOGGLE_CLASS, className)}
+      data-fetching={isFetching || undefined}
+      className={clsx(PGW_PILL, 'pgw-live', className)}
     >
-      <span
-        aria-hidden
-        className={clsx(
-          'h-1.5 w-1.5 rounded-full',
-          isLive
-            ? clsx(STATUS_DOT_CLASS.completed, isFetching && 'animate-pulse')
-            : 'bg-pgw-muted-fg',
-        )}
-      />
-      <span className={isLive ? STATUS_TEXT_CLASS.completed : 'text-pgw-muted-fg'}>
-        {isLive ? 'Live' : 'Paused'}
-      </span>
+      {isLive ? 'Live' : 'Paused'}
     </button>
   );
 });

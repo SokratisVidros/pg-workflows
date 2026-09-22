@@ -5,7 +5,7 @@
  * Safe to run more than once — each invocation adds a fresh batch.
  */
 import { WorkflowEngine } from 'pg-workflows';
-import { workflows } from '../lib/workflows';
+import { CATALOG_REINDEX_DURATION_MS, workflows } from '../lib/workflows';
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -13,14 +13,33 @@ if (!connectionString) {
   throw new Error('DATABASE_URL is not set — copy .env.example to .env and point it at Postgres.');
 }
 
+const logger = { log: () => {}, error: console.error };
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const stamp = Date.now().toString(36);
+
 const engine = new WorkflowEngine({
   connectionString,
   workflows,
-  logger: { log: () => {}, error: console.error },
+  logger,
 });
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const stamp = Date.now().toString(36);
+const lines: string[] = [];
+
+const snapshot = async (
+  target: WorkflowEngine,
+  runs: { workflowId: string; id: string; resourceId: string | null }[],
+) => {
+  const rows = await Promise.all(
+    runs.map(async (run) => {
+      const current = await target.getRun({
+        runId: run.id,
+        resourceId: run.resourceId ?? undefined,
+      });
+      return `  ${run.workflowId.padEnd(18)} ${run.id}  ${current?.status ?? 'unknown'}`;
+    }),
+  );
+  lines.push(...rows);
+};
 
 await engine.start();
 
@@ -82,18 +101,40 @@ try {
 
   await sleep(2000);
 
-  const summary = await Promise.all(
-    [...completed, failed, ...awaitingEvent].map(async (run) => {
-      const current = await engine.getRun({
-        runId: run.id,
-        resourceId: run.resourceId ?? undefined,
-      });
-      return `  ${run.workflowId.padEnd(18)} ${run.id}  ${current?.status ?? 'unknown'}`;
-    }),
-  );
-
-  process.stdout.write(`Seeded ${summary.length} runs:\n${summary.join('\n')}\n`);
-  process.stdout.write('\nStart the app with `bun run dev` and open http://localhost:3000\n');
+  await snapshot(engine, [...completed, failed, ...awaitingEvent]);
 } finally {
   await engine.stop();
 }
+
+/**
+ * Enqueue in-progress runs with no workers so this process can exit immediately
+ * instead of waiting out a graceful shutdown of an 8-hour `step.run`. The
+ * dashboard process picks them up; they stay `running` until reindex finishes.
+ */
+const publisher = new WorkflowEngine({
+  connectionString,
+  workflows,
+  logger,
+});
+await publisher.start(false);
+
+try {
+  const running = await Promise.all(
+    ['emea', 'nam'].map((region) =>
+      publisher.startWorkflow({
+        workflowId: 'catalog-reindex',
+        resourceId: `tenant-${region}`,
+        input: { region, documents: 50_000 },
+        options: {
+          expireInSeconds: Math.ceil(CATALOG_REINDEX_DURATION_MS / 1000) + 5 * 60,
+        },
+      }),
+    ),
+  );
+  await snapshot(publisher, running);
+} finally {
+  await publisher.stop();
+}
+
+process.stdout.write(`Seeded ${lines.length} runs:\n${lines.join('\n')}\n`);
+process.stdout.write('\nStart the app with `bun run dev` and open http://localhost:3000\n');

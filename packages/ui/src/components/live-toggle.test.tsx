@@ -6,7 +6,10 @@ import { LiveToggle } from './live-toggle';
 describe('LiveToggle', () => {
   it('shows Live when isLive=true', () => {
     render(<LiveToggle isLive isFetching={false} onToggle={() => {}} />);
-    expect(screen.getByRole('button')).toHaveTextContent(/live/i);
+    const button = screen.getByRole('button');
+    expect(button).toHaveTextContent(/live/i);
+    expect(button).toHaveClass('pgw-pill', 'pgw-live');
+    expect(button).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shows Paused when isLive=false', () => {

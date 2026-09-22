@@ -32,7 +32,7 @@ the engine if `packages/pg-workflows/dist` is missing.
 |------|--------------|
 | `app/page.tsx` | Server component rendering `<WorkflowRunsDashboard baseUrl="/workflow-runs" />` |
 | `app/workflow-runs/[[...path]]/route.ts` | Optional catch-all adapter, from `createAppRouterHandler` |
-| `lib/workflows.ts` | Three workflows covering the completed / failed / waiting states |
+| `lib/workflows.ts` | Four workflows covering the completed / failed / waiting / running states |
 | `lib/engine.ts` | Lazily-constructed engine singleton |
 | `lib/runs-api.ts` | `createWorkflowRunsApi` + startup gating |
 | `scripts/seed.ts` | Seeds runs across every status |
@@ -47,6 +47,9 @@ in each state:
   `payment-confirmed` event arrives. The seed script drives one of these to
   completion (giving a run with a satisfied `waitFor` in its timeline), leaves
   one waiting, and cancels a third
+- **`catalog-reindex`** — a long `step.run` so two seeded runs stay in
+  `running` while you browse the dashboard. `waitFor`/`delay` pause; only an
+  in-flight `step.run` reports `running`
 
 Note that a run blocked on `step.waitFor` reports status **`paused`** — there is
 no separate "waiting" status, so those runs *are* the paused ones and calling

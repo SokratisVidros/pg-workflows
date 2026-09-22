@@ -1,8 +1,10 @@
 export {
+  type DatePreset,
   DateRangeFilter,
   type DateRangeFilterProps,
   DurationFilter,
   type DurationFilterProps,
+  type DurationPreset,
   FilterBar,
   type FilterBarProps,
   SearchFilter,

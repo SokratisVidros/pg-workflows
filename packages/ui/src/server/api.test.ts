@@ -14,6 +14,14 @@ function mockEngine(overrides: Record<string, unknown> = {}) {
       hasPrev: false,
     }),
     getRun: vi.fn().mockResolvedValue(RUN),
+    getStats: vi.fn().mockResolvedValue({
+      pending: 0,
+      running: 1,
+      paused: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+    }),
     pauseWorkflow: vi.fn().mockResolvedValue(RUN),
     resumeWorkflow: vi.fn().mockResolvedValue(RUN),
     cancelWorkflow: vi.fn().mockResolvedValue(RUN),
@@ -44,6 +52,28 @@ describe('createWorkflowRunsApi — reads', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ id: 'run_1' });
     expect(engine.getRun).toHaveBeenCalledWith({ runId: 'run_1', resourceId: undefined });
+  });
+
+  it('getStats forwards workflowId + scoped resourceId to engine.getStats', async () => {
+    const engine = mockEngine();
+    const api = createWorkflowRunsApi({
+      engine,
+      resolveContext: () => ({ resourceId: 'tenant_a' }),
+    });
+    const res = await api.getStats(new Request('http://x/workflow-runs/stats?workflow_id=ingest'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      pending: 0,
+      running: 1,
+      paused: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+    });
+    expect(engine.getStats).toHaveBeenCalledWith({
+      resourceId: 'tenant_a',
+      workflowId: 'ingest',
+    });
   });
 
   it('returns 404 when the engine throws WorkflowRunNotFoundError', async () => {
@@ -145,6 +175,18 @@ describe('createWorkflowRunsApi — fetch dispatcher', () => {
     const api = createWorkflowRunsApi({ engine });
     await api.fetch(new Request('http://x/workflow-runs/run_1'));
     expect(engine.getRun).toHaveBeenCalledWith({ runId: 'run_1', resourceId: undefined });
+  });
+
+  it('routes GET /workflow-runs/stats to getStats', async () => {
+    const engine = mockEngine();
+    const api = createWorkflowRunsApi({ engine });
+    const res = await api.fetch(new Request('http://x/workflow-runs/stats?workflow_id=k'));
+    expect(res.status).toBe(200);
+    expect(engine.getStats).toHaveBeenCalledWith({
+      resourceId: undefined,
+      workflowId: 'k',
+    });
+    expect(engine.getRun).not.toHaveBeenCalled();
   });
 
   it('routes POST /workflow-runs/:id/cancel to cancelWorkflow', async () => {

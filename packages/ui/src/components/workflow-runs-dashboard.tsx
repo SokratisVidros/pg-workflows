@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import { forwardRef, useMemo, useState } from 'react';
 import { createFetchClient, type WorkflowRunsClient } from '../client';
 import { useRunFilters } from '../hooks/use-run-filters';
+import { useWorkflowRunStats } from '../hooks/use-workflow-run-stats';
 import { useWorkflowRuns } from '../hooks/use-workflow-runs';
 import { applyClientFilters, sortRuns } from '../lib/filters';
 import { WorkflowRunsProvider } from '../provider';
@@ -63,7 +64,7 @@ const DashboardInner = forwardRef<
 >(function DashboardInner({ selectedRunId, onSelectRun, className, live, onToggleLive }, ref) {
   const { filters, setFilters, clearFilters, hasActiveFilters, serverParams } = useRunFilters();
   const runsQuery = useWorkflowRuns(serverParams);
-  const workflowsQuery = useWorkflowRuns({ limit: 100 });
+  const statsQuery = useWorkflowRunStats({ workflowId: filters.workflowId });
 
   const [internalSelected, setInternalSelected] = useState<string | null>(null);
   const selected = selectedRunId !== undefined ? selectedRunId : internalSelected;
@@ -72,59 +73,35 @@ const DashboardInner = forwardRef<
     onSelectRun?.(id);
   };
 
-  const unfilteredItems = workflowsQuery.data?.items ?? [];
+  const items = runsQuery.data?.items ?? [];
 
   const workflowIds = useMemo(() => {
-    const ids = new Set(unfilteredItems.map((r) => r.workflowId));
+    const ids = new Set(items.map((r) => r.workflowId));
     return [...ids].sort();
-  }, [unfilteredItems]);
+  }, [items]);
 
   const rows = useMemo(() => {
-    const items = runsQuery.data?.items ?? [];
     const clientFiltered = applyClientFilters(items, {
-      from: filters.from,
-      to: filters.to,
-      minDurationMs: filters.minDurationMs,
-      maxDurationMs: filters.maxDurationMs,
+      datePreset: filters.datePreset,
+      durationPreset: filters.durationPreset,
       search: filters.search,
     });
     return sortRuns(clientFiltered, filters.sort, filters.dir);
-  }, [runsQuery.data, filters]);
+  }, [items, filters]);
 
-  if (selected) {
-    return (
-      <div ref={ref} className={clsx('pgw-root p-4', className)}>
-        <RunDetail key={selected} runId={selected} onBack={() => select(null)} />
-      </div>
-    );
-  }
-
-  return (
-    <div ref={ref} className={clsx('pgw-root flex flex-col gap-3 p-4', className)}>
-      <StatusSummary
-        runs={unfilteredItems}
-        onSelectStatus={(s) =>
-          setFilters({ statuses: [s], startingAfter: undefined, endingBefore: undefined })
-        }
-      />
-      <div className="flex items-center justify-between gap-2">
-        <FilterBar
-          filters={filters}
-          hasActiveFilters={hasActiveFilters}
-          workflowIds={workflowIds}
-          onFiltersChange={(p) =>
-            setFilters({ ...p, startingAfter: undefined, endingBefore: undefined })
-          }
-          onClear={clearFilters}
-        />
-        <LiveToggle isLive={live} isFetching={runsQuery.isFetching} onToggle={onToggleLive} />
-      </div>
+  const list = (
+    <>
       {runsQuery.isError ? (
-        <div className="rounded-md border border-pgw-status-failed bg-pgw-muted px-3 py-2 text-sm text-pgw-status-failed">
+        <div className="rounded-pgw-sm bg-pgw-status-failed/10 px-4 py-3 text-sm font-medium text-pgw-status-failed">
           Failed to load runs.
         </div>
       ) : (
-        <RunsTable runs={rows} onSelectRun={select} isLoading={runsQuery.isLoading} />
+        <RunsTable
+          runs={rows}
+          onSelectRun={select}
+          selectedRunId={selected}
+          isLoading={runsQuery.isLoading}
+        />
       )}
       <Pagination
         hasPrev={!!runsQuery.data?.hasPrev}
@@ -143,6 +120,50 @@ const DashboardInner = forwardRef<
           })
         }
       />
+    </>
+  );
+
+  const toolbar = (
+    <div className="flex flex-col gap-5">
+      <LiveToggle
+        isLive={live}
+        isFetching={runsQuery.isFetching}
+        onToggle={onToggleLive}
+        className="self-start"
+      />
+      <StatusSummary
+        counts={statsQuery.data ?? {}}
+        onSelectStatus={(s) =>
+          setFilters({ statuses: [s], startingAfter: undefined, endingBefore: undefined })
+        }
+      />
+      <FilterBar
+        filters={filters}
+        hasActiveFilters={hasActiveFilters}
+        workflowIds={workflowIds}
+        onFiltersChange={(p) =>
+          setFilters({ ...p, startingAfter: undefined, endingBefore: undefined })
+        }
+        onClear={clearFilters}
+      />
+    </div>
+  );
+
+  return (
+    <div ref={ref} className={clsx('pgw-root @container flex flex-col gap-5', className)}>
+      {selected ? (
+        <RunDetail
+          key={selected}
+          runId={selected}
+          onBack={() => select(null)}
+          className="min-w-0"
+        />
+      ) : (
+        <>
+          {toolbar}
+          {list}
+        </>
+      )}
     </div>
   );
 });

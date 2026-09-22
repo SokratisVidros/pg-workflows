@@ -17,6 +17,7 @@ import {
   assertSingletonSlotAvailable,
   getWorkflowLastRun,
   getWorkflowRun,
+  getWorkflowRunStats,
   getWorkflowRuns,
   insertWorkflowRun,
   updateWorkflowRun,
@@ -48,6 +49,7 @@ import {
   type WorkflowLogger,
   type WorkflowRef,
   type WorkflowRunProgress,
+  type WorkflowRunStats,
   WorkflowStatus,
 } from './types';
 
@@ -2135,5 +2137,18 @@ export class WorkflowEngine {
       },
       this.db,
     );
+  }
+
+  async getStats({
+    resourceId,
+    workflowId,
+  }: {
+    resourceId?: string;
+    workflowId?: string;
+  } = {}): Promise<WorkflowRunStats> {
+    if (workflowId) validateWorkflowId(workflowId);
+    validateResourceId(resourceId);
+
+    return getWorkflowRunStats({ resourceId, workflowId }, this.db);
   }
 }

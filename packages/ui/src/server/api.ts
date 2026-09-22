@@ -8,6 +8,7 @@ export type EngineLike = Pick<
   WorkflowEngine,
   | 'getRuns'
   | 'getRun'
+  | 'getStats'
   | 'pauseWorkflow'
   | 'resumeWorkflow'
   | 'cancelWorkflow'
@@ -24,6 +25,7 @@ export type WorkflowRunsApiOptions = {
 export type WorkflowRunsApi = {
   listRuns: (req: Request) => Promise<Response>;
   getRun: (req: Request, id: string) => Promise<Response>;
+  getStats: (req: Request) => Promise<Response>;
   cancelRun: (req: Request, id: string) => Promise<Response>;
   pauseRun: (req: Request, id: string) => Promise<Response>;
   resumeRun: (req: Request, id: string) => Promise<Response>;
@@ -63,6 +65,21 @@ export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRun
       try {
         const run = await engine.getRun({ runId: id, resourceId: ctx.resourceId });
         return json(run, 200);
+      } catch (err) {
+        return toErrorResponse(err);
+      }
+    },
+
+    async getStats(req: Request) {
+      const ctx = await context(req);
+      if (ctx instanceof Response) return ctx;
+      try {
+        const params = parseListParams(new URL(req.url));
+        const result = await engine.getStats({
+          resourceId: ctx.resourceId,
+          workflowId: params.workflowId,
+        });
+        return json(result, 200);
       } catch (err) {
         return toErrorResponse(err);
       }
@@ -150,6 +167,10 @@ export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRun
       return api.listRuns(req);
     }
     const [id, action] = segments;
+    if (segments.length === 1 && id === 'stats') {
+      if (req.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
+      return api.getStats(req);
+    }
     if (segments.length === 1 && id !== undefined) {
       if (req.method !== 'GET') return json({ error: 'method_not_allowed' }, 405);
       return api.getRun(req, id);

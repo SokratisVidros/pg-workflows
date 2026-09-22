@@ -25,9 +25,16 @@ export type ListRunsResult = {
   hasPrev: boolean;
 };
 
+export type GetStatsParams = {
+  workflowId?: string;
+};
+
+export type WorkflowRunStats = Record<WorkflowRunStatus, number>;
+
 export interface WorkflowRunsClient {
   listRuns(params: ListRunsParams): Promise<ListRunsResult>;
   getRun(id: string): Promise<WorkflowRun>;
+  getStats(params?: GetStatsParams): Promise<WorkflowRunStats>;
   cancelRun(id: string): Promise<WorkflowRun>;
   pauseRun(id: string): Promise<WorkflowRun>;
   resumeRun(id: string): Promise<WorkflowRun>;
@@ -73,6 +80,14 @@ export function createFetchClient(opts: CreateFetchClientOptions): WorkflowRunsC
       const res = await fetchImpl(target, { method: 'GET' });
       if (!res.ok) throw new Error(`getRun failed: ${res.status}`);
       return (await res.json()) as WorkflowRun;
+    },
+    async getStats(params = {}) {
+      const url = new URL(`${trimmed}/stats`, 'http://internal');
+      if (params.workflowId) url.searchParams.set('workflow_id', params.workflowId);
+      const target = `${trimmed}/stats${url.search}`;
+      const res = await fetchImpl(target, { method: 'GET' });
+      if (!res.ok) throw new Error(`getStats failed: ${res.status}`);
+      return (await res.json()) as WorkflowRunStats;
     },
     async cancelRun(id) {
       return postAction(`${trimmed}/${encodeURIComponent(id)}/cancel`);

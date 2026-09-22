@@ -15,15 +15,11 @@ describe('StatusBadge', () => {
     expect(screen.getByText(pattern)).toBeInTheDocument();
   });
 
-  it('applies the matching status token class', () => {
+  it('uses mono pill chrome instead of status-tint classes', () => {
     render(<StatusBadge status="failed" />);
     const el = screen.getByText(/failed/i);
-    expect(el.className).toMatch(/pgw-status-failed/);
-  });
-
-  it('applies the full literal text class so Tailwind can statically discover it', () => {
-    render(<StatusBadge status="running" />);
-    const el = screen.getByText(/running/i);
-    expect(el.className).toContain('text-pgw-status-running');
+    expect(el.className).toMatch(/rounded-pgw-pill/);
+    expect(el.className).toMatch(/border-pgw-fg/);
+    expect(el.className).not.toMatch(/pgw-status-failed/);
   });
 });

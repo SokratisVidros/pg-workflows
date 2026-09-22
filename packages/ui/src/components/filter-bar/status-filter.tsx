@@ -28,6 +28,7 @@ export const StatusFilter = forwardRef<HTMLButtonElement, StatusFilterProps>(fun
       ref={ref}
       label="Status"
       suffix={value.length > 0 ? ` (${value.length})` : undefined}
+      active={value.length > 0}
       className={className}
     >
       {STATUSES.map((s) => {

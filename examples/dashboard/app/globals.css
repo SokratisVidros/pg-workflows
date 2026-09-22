@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* --pgw-* design tokens (light + dark) and the .pgw-root base styles. */
-@import "@pg-workflows/ui/styles.css";
+/* --pgw-* tokens and .pgw-root styles, from source so edits apply without a rebuild. */
+@import "../../../packages/ui/src/styles.css";
 
 /*
  * Scan UI source so new utility classes in components appear during `next dev`

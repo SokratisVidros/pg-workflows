@@ -24,6 +24,29 @@ describe('createFetchClient', () => {
     expect(url.searchParams.getAll('statuses')).toEqual(['running']);
   });
 
+  it('loads stats from GET {baseUrl}/stats', async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          pending: 0,
+          running: 3,
+          paused: 0,
+          completed: 1,
+          failed: 0,
+          cancelled: 0,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+    const client = createFetchClient({ baseUrl: '/api/wfr', fetch });
+    const stats = await client.getStats({ workflowId: 'ingest' });
+    expect(stats.running).toBe(3);
+    expect(fetch).toHaveBeenCalledOnce();
+    const url = new URL(fetch.mock.calls[0][0] as string, 'http://localhost');
+    expect(url.pathname).toBe('/api/wfr/stats');
+    expect(url.searchParams.get('workflow_id')).toBe('ingest');
+  });
+
   it('gets a run by id', async () => {
     const fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ id: 'run_x', workflowId: 'k', status: 'completed' }), {

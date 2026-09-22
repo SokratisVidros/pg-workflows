@@ -1,9 +1,9 @@
 'use client';
 
 import { clsx } from 'clsx';
-import { forwardRef } from 'react';
-import type { WorkflowRun, WorkflowRunStatus } from '../client';
-import { STATUS_TEXT_CLASS } from '../lib/status-classes';
+import { AlertCircle, Ban, CheckCircle, Clock, Loader2, Pause } from 'lucide-react';
+import { forwardRef, type ReactNode } from 'react';
+import type { WorkflowRunStatus } from '../client';
 
 const STATUS_ORDER: WorkflowRunStatus[] = [
   'pending',
@@ -14,24 +14,26 @@ const STATUS_ORDER: WorkflowRunStatus[] = [
   'cancelled',
 ];
 
+const STATUS_ICON: Record<WorkflowRunStatus, typeof Clock> = {
+  pending: Clock,
+  running: Loader2,
+  paused: Pause,
+  completed: CheckCircle,
+  failed: AlertCircle,
+  cancelled: Ban,
+};
+
 export type StatusSummaryProps = {
-  runs: WorkflowRun[];
+  counts: Partial<Record<WorkflowRunStatus, number>>;
   onSelectStatus?: (status: WorkflowRunStatus) => void;
+  trailing?: ReactNode;
   className?: string;
 };
 
 export const StatusSummary = forwardRef<HTMLDivElement, StatusSummaryProps>(function StatusSummary(
-  { runs, onSelectStatus, className },
+  { counts = {}, onSelectStatus, trailing, className },
   ref,
 ) {
-  const counts = runs.reduce(
-    (acc, run) => {
-      acc[run.status] = (acc[run.status] ?? 0) + 1;
-      return acc;
-    },
-    {} as Partial<Record<WorkflowRunStatus, number>>,
-  );
-
   const present = STATUS_ORDER.filter((status) => (counts[status] ?? 0) > 0);
 
   if (present.length === 0) return null;
@@ -40,28 +42,32 @@ export const StatusSummary = forwardRef<HTMLDivElement, StatusSummaryProps>(func
     <div
       ref={ref}
       className={clsx(
-        'inline-flex items-stretch overflow-hidden rounded-md border border-pgw-border',
+        'flex w-full flex-row items-start justify-between gap-6 overflow-x-auto',
         className,
       )}
     >
-      {present.map((status, index) => {
+      {present.map((status) => {
+        const Icon = STATUS_ICON[status];
+        const count = counts[status] ?? 0;
         return (
           <button
             key={status}
             type="button"
+            aria-label={`${count} ${status}`}
             onClick={() => onSelectStatus?.(status)}
-            className={clsx(
-              'flex w-24 flex-col items-center gap-0.5 px-3 py-2 text-center hover:bg-pgw-muted',
-              index > 0 && 'border-l border-pgw-border',
-            )}
+            className="flex min-w-[8rem] flex-1 flex-col items-start gap-2 text-left"
           >
-            <span className={clsx('text-lg font-semibold', STATUS_TEXT_CLASS[status])}>
-              {counts[status]}
+            <span className="flex items-center gap-2 text-sm font-medium text-pgw-fg">
+              <Icon aria-hidden className="size-4 shrink-0" />
+              <span className="capitalize">{status}</span>
             </span>
-            <span className="text-xs text-pgw-muted-fg">{status}</span>
+            <span className="text-3xl font-extrabold tracking-tight tabular-nums text-pgw-fg @min-[48rem]:text-4xl">
+              {count}
+            </span>
           </button>
         );
       })}
+      {trailing}
     </div>
   );
 });

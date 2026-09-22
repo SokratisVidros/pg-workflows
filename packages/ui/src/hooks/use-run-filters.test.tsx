@@ -29,4 +29,13 @@ describe('useRunFilters', () => {
     act(() => result.current.clearFilters());
     expect(result.current.hasActiveFilters).toBe(false);
   });
+
+  it('treats date and duration presets as active filters', () => {
+    const { result } = renderHook(() => useRunFilters());
+    act(() => result.current.setFilters({ datePreset: '24h' }));
+    expect(result.current.hasActiveFilters).toBe(true);
+    act(() => result.current.clearFilters());
+    act(() => result.current.setFilters({ durationPreset: 'lt-10s' }));
+    expect(result.current.hasActiveFilters).toBe(true);
+  });
 });

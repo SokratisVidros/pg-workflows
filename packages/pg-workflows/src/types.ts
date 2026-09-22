@@ -13,6 +13,8 @@ export enum WorkflowStatus {
   CANCELLED = 'cancelled',
 }
 
+export type WorkflowRunStats = Record<WorkflowStatus, number>;
+
 export enum StepType {
   PAUSE = 'pause',
   RUN = 'run',

@@ -3,6 +3,7 @@
 import { clsx } from 'clsx';
 import { Search } from 'lucide-react';
 import { forwardRef } from 'react';
+import { PGW_PILL_OUTLINE } from '../../lib/button-classes';
 
 export type SearchFilterProps = {
   value?: string;
@@ -10,26 +11,20 @@ export type SearchFilterProps = {
   className?: string;
 };
 
-export const SearchFilter = forwardRef<HTMLDivElement, SearchFilterProps>(function SearchFilter(
+export const SearchFilter = forwardRef<HTMLLabelElement, SearchFilterProps>(function SearchFilter(
   { value, onChange, className },
   ref,
 ) {
   return (
-    <div
-      ref={ref}
-      className={clsx(
-        'inline-flex items-center gap-1 rounded-md border border-pgw-border px-2 py-1 text-xs',
-        className,
-      )}
-    >
-      <Search className="h-3 w-3 text-pgw-muted-fg" />
+    <label ref={ref} className={clsx(PGW_PILL_OUTLINE, 'pgw-search', className)}>
+      <Search aria-hidden />
       <input
         type="text"
         placeholder="Search runs..."
+        aria-label="Search runs"
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value || undefined)}
-        className="bg-transparent outline-none placeholder:text-pgw-muted-fg"
       />
-    </div>
+    </label>
   );
 });

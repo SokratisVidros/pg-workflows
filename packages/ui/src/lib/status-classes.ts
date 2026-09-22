@@ -1,12 +1,8 @@
 import type { WorkflowRunStatus } from '../client';
 
 /**
- * Single source of truth for status colouring, shared by `StatusBadge`
- * and `StepTimeline`.
- *
- * Class names are written out in full rather than interpolated from a design
- * token, because Tailwind's scanner only sees literal class strings — a
- * `text-${token}` template never gets generated into the stylesheet.
+ * Status colour tokens kept for timeline bars and other non-badge chrome.
+ * Class names are full literals so Tailwind's scanner can discover them.
  */
 export const STATUS_TEXT_CLASS: Record<WorkflowRunStatus, string> = {
   completed: 'text-pgw-status-completed',

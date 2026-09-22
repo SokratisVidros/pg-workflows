@@ -7,12 +7,12 @@ import { WorkflowRunsDashboard } from '@pg-workflows/ui';
  */
 export default function Page() {
   return (
-    <main className="mx-auto max-w-7xl p-6">
-      <header className="mb-6">
-        <h1 className="text-xl font-semibold">Workflow runs</h1>
-        <p className="text-sm text-pgw-muted-fg">
-          Seed data with <code className="font-mono">npm run seed</code>.
-        </p>
+    <main className="mx-auto min-h-screen w-full px-[clamp(1rem,3vw,2.5rem)] py-[clamp(1.25rem,3vw,2.5rem)]">
+      <header className="mb-6 flex items-end justify-between gap-3 sm:mb-8">
+        <div>
+          <p className="text-xs font-medium text-pgw-muted-fg">pg-workflows</p>
+          <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">Workflows</h1>
+        </div>
       </header>
       <WorkflowRunsDashboard baseUrl="/workflow-runs" />
     </main>

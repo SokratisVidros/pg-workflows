@@ -3,6 +3,7 @@
 import { clsx } from 'clsx';
 import { Check, Copy } from 'lucide-react';
 import { forwardRef, useState } from 'react';
+import { PGW_PILL_OUTLINE } from '../../lib/button-classes';
 
 export type JsonViewerProps = {
   value: unknown;
@@ -28,12 +29,12 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
   return (
     <div
       ref={ref}
-      className={clsx('relative rounded-md border border-pgw-border bg-pgw-muted', className)}
+      className={clsx('relative overflow-hidden rounded-pgw-sm bg-pgw-muted', className)}
     >
       <button
         type="button"
         aria-label="Copy"
-        className="absolute right-2 top-2 inline-flex items-center gap-1 rounded border border-pgw-border bg-pgw-bg px-2 py-0.5 text-xs hover:bg-pgw-muted"
+        className={clsx(PGW_PILL_OUTLINE, 'absolute right-2 top-2 min-h-8 px-3')}
         onClick={() => {
           void navigator.clipboard.writeText(pretty);
           setCopied(true);
@@ -43,7 +44,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
         {copied ? 'Copied' : 'Copy'}
       </button>
-      <pre className="overflow-x-auto p-3 text-xs">{pretty}</pre>
+      <pre className="overflow-x-auto p-4 text-xs leading-relaxed">{pretty}</pre>
     </div>
   );
 });

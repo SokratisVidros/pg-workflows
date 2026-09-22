@@ -56,6 +56,14 @@ function makeClient(full: WorkflowRun = run): WorkflowRunsClient {
       hasPrev: false,
     }),
     getRun: vi.fn().mockResolvedValue(full),
+    getStats: vi.fn().mockResolvedValue({
+      pending: 0,
+      running: 0,
+      paused: 0,
+      completed: 1,
+      failed: 0,
+      cancelled: 0,
+    }),
     cancelRun: vi.fn(),
     pauseRun: vi.fn(),
     resumeRun: vi.fn(),
@@ -146,9 +154,9 @@ describe('ref forwarding', () => {
   });
 
   it('forwards a ref to SearchFilter’s root', () => {
-    const ref = createRef<HTMLDivElement>();
+    const ref = createRef<HTMLLabelElement>();
     render(<SearchFilter ref={ref} onChange={() => {}} />);
-    expect(ref.current).toBeInstanceOf(HTMLDivElement);
+    expect(ref.current?.tagName).toBe('LABEL');
   });
 
   it('forwards a ref to WorkflowIdFilter’s trigger', () => {
@@ -173,15 +181,15 @@ describe('ref forwarding', () => {
     expect(ref.current?.className).toContain('custom-cls');
   });
 
-  it('forwards a ref to RunsTable’s table', () => {
-    const ref = createRef<HTMLTableElement>();
+  it('forwards a ref to RunsTable’s root', () => {
+    const ref = createRef<HTMLDivElement>();
     render(<RunsTable ref={ref} runs={[run]} onSelectRun={() => {}} />);
-    expect(ref.current?.tagName).toBe('TABLE');
+    expect(ref.current?.tagName).toBe('DIV');
   });
 
   it('forwards a ref to StatusSummary’s root', () => {
     const ref = createRef<HTMLDivElement>();
-    render(<StatusSummary ref={ref} runs={[run]} />);
+    render(<StatusSummary ref={ref} counts={{ completed: 1 }} />);
     expect(ref.current).toBeInstanceOf(HTMLDivElement);
   });
 

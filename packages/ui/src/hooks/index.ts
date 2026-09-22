@@ -8,5 +8,6 @@ export {
   useTriggerEvent,
 } from './use-run-mutations';
 export { useWorkflowRun } from './use-workflow-run';
+export { useWorkflowRunStats } from './use-workflow-run-stats';
 export { useWorkflowRuns } from './use-workflow-runs';
 export { useWorkflowRunsClient } from './use-workflow-runs-client';

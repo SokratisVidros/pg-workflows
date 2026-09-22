@@ -3339,6 +3339,101 @@ describe('WorkflowEngine', () => {
     });
   });
 
+  describe('getStats()', () => {
+    let engine: WorkflowEngine;
+
+    beforeEach(async () => {
+      engine = new WorkflowEngine({
+        workflows: [testWorkflow],
+        pool: testPool,
+        boss: testBoss,
+      });
+      await engine.start(false);
+    });
+
+    afterEach(async () => {
+      await engine.stop();
+    });
+
+    it('returns zero counts when no runs match', async () => {
+      const stats = await engine.getStats({ resourceId: 'stats-empty' });
+      expect(stats).toEqual({
+        pending: 0,
+        running: 0,
+        paused: 0,
+        completed: 0,
+        failed: 0,
+        cancelled: 0,
+      });
+    });
+
+    it('counts runs per status scoped by resourceId and workflowId', async () => {
+      const other = workflow(
+        'stats-other-workflow',
+        async ({ step, input }) => {
+          return await step.run('step-1', async () => ({ result: input.data }));
+        },
+        { inputSchema: z.object({ data: z.string() }) },
+      );
+      await engine.registerWorkflow(other);
+
+      await engine.startWorkflow({
+        resourceId: 'stats-a',
+        workflowId: 'test-workflow',
+        input: { data: 'keep' },
+      });
+      const cancel = await engine.startWorkflow({
+        resourceId: 'stats-a',
+        workflowId: 'test-workflow',
+        input: { data: 'cancel' },
+      });
+      await engine.startWorkflow({
+        resourceId: 'stats-a',
+        workflowId: 'stats-other-workflow',
+        input: { data: 'other' },
+      });
+      await engine.startWorkflow({
+        resourceId: 'stats-b',
+        workflowId: 'test-workflow',
+        input: { data: 'other-tenant' },
+      });
+      await engine.cancelWorkflow({ runId: cancel.id, resourceId: 'stats-a' });
+
+      const scoped = await engine.getStats({ resourceId: 'stats-a' });
+      expect(scoped).toEqual({
+        pending: 0,
+        running: 2,
+        paused: 0,
+        completed: 0,
+        failed: 0,
+        cancelled: 1,
+      });
+
+      expect(
+        await engine.getStats({
+          resourceId: 'stats-a',
+          workflowId: 'test-workflow',
+        }),
+      ).toEqual({
+        pending: 0,
+        running: 1,
+        paused: 0,
+        completed: 0,
+        failed: 0,
+        cancelled: 1,
+      });
+
+      expect(await engine.getStats({ resourceId: 'stats-b' })).toEqual({
+        pending: 0,
+        running: 1,
+        paused: 0,
+        completed: 0,
+        failed: 0,
+        cancelled: 0,
+      });
+    });
+  });
+
   describe('fastForwardWorkflow', () => {
     let engine: WorkflowEngine;
 

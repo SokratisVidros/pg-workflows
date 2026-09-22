@@ -25,6 +25,7 @@ const MAIN_EXPORTS = [
   'SearchFilter',
   'useWorkflowRuns',
   'useWorkflowRun',
+  'useWorkflowRunStats',
   'useRunFilters',
   'useWorkflowRunsClient',
   'useCancelRun',
@@ -43,6 +44,8 @@ const MAIN_EXPORTS = [
 const INTERNALS = [
   'FilterPopover',
   'FILTER_TRIGGER_CLASS',
+  'FilterSelect',
+  'FilterSelectItem',
   'WorkflowRunsContext',
   'STATUS_TEXT_CLASS',
   'STATUS_DOT_CLASS',

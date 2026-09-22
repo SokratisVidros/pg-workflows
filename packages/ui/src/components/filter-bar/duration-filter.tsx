@@ -1,55 +1,33 @@
 'use client';
 
 import { forwardRef } from 'react';
-import { msToSeconds, secondsToMs } from '../../lib/duration';
-import { FilterPopover } from './filter-popover';
+import { DURATION_PRESETS, type DurationPreset } from '../../lib/filter-presets';
+import { FilterSelect, FilterSelectItem } from './filter-select';
+
+export type { DurationPreset };
 
 export type DurationFilterProps = {
-  minDurationMs?: number;
-  maxDurationMs?: number;
-  onChange: (next: { minDurationMs?: number; maxDurationMs?: number }) => void;
+  value?: DurationPreset;
+  onChange: (next: DurationPreset | undefined) => void;
   className?: string;
 };
 
 export const DurationFilter = forwardRef<HTMLButtonElement, DurationFilterProps>(
-  function DurationFilter({ minDurationMs, maxDurationMs, onChange, className }, ref) {
-    const active = minDurationMs != null || maxDurationMs != null;
+  function DurationFilter({ value, onChange, className }, ref) {
     return (
-      <FilterPopover
+      <FilterSelect
         ref={ref}
-        label="Duration"
-        suffix={active ? ' (active)' : undefined}
+        value={value ?? 'any'}
+        active={value != null}
+        onValueChange={(v) => onChange(v === 'any' ? undefined : (v as DurationPreset))}
         className={className}
       >
-        <label className="flex flex-col gap-1">
-          Min (seconds)
-          <input
-            type="number"
-            min={0}
-            value={minDurationMs != null ? msToSeconds(minDurationMs) : ''}
-            onChange={(e) =>
-              onChange({
-                minDurationMs: e.target.value ? secondsToMs(Number(e.target.value)) : undefined,
-                maxDurationMs,
-              })
-            }
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          Max (seconds)
-          <input
-            type="number"
-            min={0}
-            value={maxDurationMs != null ? msToSeconds(maxDurationMs) : ''}
-            onChange={(e) =>
-              onChange({
-                minDurationMs,
-                maxDurationMs: e.target.value ? secondsToMs(Number(e.target.value)) : undefined,
-              })
-            }
-          />
-        </label>
-      </FilterPopover>
+        {DURATION_PRESETS.map((preset) => (
+          <FilterSelectItem key={preset.value} value={preset.value}>
+            {preset.label}
+          </FilterSelectItem>
+        ))}
+      </FilterSelect>
     );
   },
 );

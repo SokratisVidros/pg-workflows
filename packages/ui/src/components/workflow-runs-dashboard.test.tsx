@@ -14,6 +14,15 @@ const mkRun = (over: Partial<WorkflowRun> = {}): WorkflowRun =>
     ...over,
   }) as unknown as WorkflowRun;
 
+const stats = {
+  pending: 0,
+  running: 1,
+  paused: 0,
+  completed: 1,
+  failed: 0,
+  cancelled: 0,
+};
+
 function makeClient(): WorkflowRunsClient {
   return {
     listRuns: vi.fn().mockResolvedValue({
@@ -24,6 +33,7 @@ function makeClient(): WorkflowRunsClient {
       hasPrev: false,
     }),
     getRun: vi.fn().mockResolvedValue(mkRun()),
+    getStats: vi.fn().mockResolvedValue(stats),
     cancelRun: vi.fn(),
     pauseRun: vi.fn(),
     resumeRun: vi.fn(),
@@ -49,15 +59,19 @@ describe('WorkflowRunsDashboard', () => {
     );
   });
 
-  it('navigates to the detail page when a row is clicked and back again', async () => {
+  it('replaces the runs table with a full-screen detail view and returns on back', async () => {
     const client = makeClient();
     render(<WorkflowRunsDashboard client={client} pollIntervalMs={0} />);
     await waitFor(() => expect(screen.getByText('ingest')).toBeInTheDocument());
     fireEvent.click(screen.getByText('ingest'));
     await waitFor(() => expect(client.getRun).toHaveBeenCalledWith('run_1'));
     await waitFor(() => expect(screen.getByRole('button', { name: /back/i })).toBeInTheDocument());
+    expect(screen.queryByText('email')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Search runs...')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^live$/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /back/i }));
     await waitFor(() => expect(screen.getByText('email')).toBeInTheDocument());
+    expect(screen.getByPlaceholderText('Search runs...')).toBeInTheDocument();
   });
 
   it('resets pagination cursors when a filter changes', async () => {
@@ -72,6 +86,7 @@ describe('WorkflowRunsDashboard', () => {
         hasPrev: false,
       }),
       getRun: vi.fn().mockResolvedValue(mkRun()),
+      getStats: vi.fn().mockResolvedValue(stats),
       cancelRun: vi.fn(),
       pauseRun: vi.fn(),
       resumeRun: vi.fn(),
@@ -79,9 +94,7 @@ describe('WorkflowRunsDashboard', () => {
       triggerEvent: vi.fn(),
     };
     const listRuns = client.listRuns as ReturnType<typeof vi.fn>;
-    // The page-size (limit: 20) calls are the runs list query; a second query
-    // (limit: 100) powers the workflow-id filter options — filter those out.
-    const runsCalls = () => listRuns.mock.calls.map((c) => c[0]).filter((p) => p.limit === 20);
+    const runsCalls = () => listRuns.mock.calls.map((c) => c[0]);
 
     render(<WorkflowRunsDashboard client={client} pollIntervalMs={0} />);
     await waitFor(() => expect(screen.getByText('ingest')).toBeInTheDocument());
@@ -108,6 +121,7 @@ describe('WorkflowRunsDashboard', () => {
     const client: WorkflowRunsClient = {
       listRuns: vi.fn().mockRejectedValue(new Error('boom')),
       getRun: vi.fn().mockResolvedValue(mkRun()),
+      getStats: vi.fn().mockResolvedValue(stats),
       cancelRun: vi.fn(),
       pauseRun: vi.fn(),
       resumeRun: vi.fn(),
@@ -117,5 +131,48 @@ describe('WorkflowRunsDashboard', () => {
     render(<WorkflowRunsDashboard client={client} pollIntervalMs={0} />);
     await waitFor(() => expect(screen.getByText('Failed to load runs.')).toBeInTheDocument());
     expect(screen.queryByText('No runs')).not.toBeInTheDocument();
+  });
+
+  it('renders LiveToggle above the status summary, outside the filter bar', async () => {
+    const { container } = render(
+      <WorkflowRunsDashboard client={makeClient()} pollIntervalMs={0} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /1\s*running/i })).toBeInTheDocument(),
+    );
+
+    const live = screen.getByRole('button', { name: /^live$/i });
+    const summary = screen.getByRole('button', { name: /1\s*running/i });
+    expect(live.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelector('.pgw-filters')?.contains(live)).toBe(false);
+  });
+
+  it('fetches the runs page once and loads status counts via getStats', async () => {
+    const client = makeClient();
+    render(<WorkflowRunsDashboard client={client} pollIntervalMs={0} />);
+    await waitFor(() => expect(screen.getByText('ingest')).toBeInTheDocument());
+    expect(client.listRuns).toHaveBeenCalledTimes(1);
+    expect(client.listRuns).toHaveBeenCalledWith(expect.objectContaining({ limit: 20 }));
+    expect(client.getStats).toHaveBeenCalledTimes(1);
+    expect(client.getStats).toHaveBeenCalledWith({ workflowId: undefined });
+  });
+
+  it('filters the runs list by status without sending statuses to getStats', async () => {
+    const client = makeClient();
+    render(<WorkflowRunsDashboard client={client} pollIntervalMs={0} />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /1\s*completed/i })).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /1\s*completed/i }));
+
+    await waitFor(() => {
+      const last = (client.listRuns as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+      expect(last).toMatchObject({ limit: 20, statuses: ['completed'] });
+    });
+    expect(client.listRuns).toHaveBeenCalledTimes(2);
+    for (const [params] of (client.getStats as ReturnType<typeof vi.fn>).mock.calls) {
+      expect(params).toEqual({ workflowId: undefined });
+    }
   });
 });

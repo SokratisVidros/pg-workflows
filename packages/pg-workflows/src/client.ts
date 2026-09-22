@@ -13,6 +13,7 @@ import { runMigrations } from './db/migration';
 import {
   assertSingletonSlotAvailable,
   getWorkflowRun,
+  getWorkflowRunStats,
   getWorkflowRuns,
   insertWorkflowRun,
   updateWorkflowRun,
@@ -33,6 +34,7 @@ import {
   type WorkflowLogger,
   type WorkflowRef,
   type WorkflowRunProgress,
+  type WorkflowRunStats,
   WorkflowStatus,
 } from './types';
 
@@ -562,6 +564,21 @@ export class WorkflowClient {
       },
       this.db,
     );
+  }
+
+  async getStats({
+    resourceId,
+    workflowId,
+  }: {
+    resourceId?: string;
+    workflowId?: string;
+  } = {}): Promise<WorkflowRunStats> {
+    await this.ensureStarted();
+
+    if (workflowId) validateWorkflowId(workflowId);
+    validateResourceId(resourceId);
+
+    return getWorkflowRunStats({ resourceId, workflowId }, this.db);
   }
 
   private async ensureStarted(): Promise<void> {

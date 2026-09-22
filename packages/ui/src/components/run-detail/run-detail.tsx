@@ -1,7 +1,7 @@
 'use client';
 
 import { clsx } from 'clsx';
-import { Loader2 } from 'lucide-react';
+import { FastForward, Loader2, Pause, Play, Radio, X } from 'lucide-react';
 import { forwardRef, useState } from 'react';
 import {
   useCancelRun,
@@ -11,6 +11,7 @@ import {
   useTriggerEvent,
 } from '../../hooks/use-run-mutations';
 import { useWorkflowRun } from '../../hooks/use-workflow-run';
+import { PGW_PILL, PGW_PILL_OUTLINE } from '../../lib/button-classes';
 import { isTerminalStatus } from '../../lib/duration';
 import { RunProgress } from '../run-progress';
 import { JsonViewer } from './json-viewer';
@@ -23,8 +24,8 @@ export type RunDetailProps = {
   className?: string;
 };
 
-const actionBtn =
-  'inline-flex items-center gap-1 text-sm text-pgw-fg hover:text-pgw-accent hover:underline disabled:cursor-not-allowed disabled:opacity-40';
+const primaryBtn = clsx(PGW_PILL, 'min-h-12 w-full px-6 text-sm @min-[40rem]:w-auto');
+const ghostBtn = PGW_PILL_OUTLINE;
 
 type ActionFeedback = { kind: 'success' | 'error'; message: string };
 
@@ -68,13 +69,52 @@ export const RunDetail = forwardRef<HTMLDivElement, RunDetailProps>(function Run
   }
 
   const terminal = isTerminalStatus(run.status);
+  const pauseDisabled = run.status !== 'running' || pause.isPending;
+  const resumeDisabled = run.status !== 'paused' || resume.isPending;
 
   return (
-    <div ref={ref} className={clsx('flex flex-col gap-4', className)}>
-      <div className="flex flex-wrap items-center justify-end gap-3">
+    <div ref={ref} className={clsx('flex flex-col gap-5', className)}>
+      <RunDetailHeader run={run} onBack={onBack} />
+      <RunProgress run={run} />
+      {run.status === 'paused' ? (
         <button
           type="button"
-          className={actionBtn}
+          className={primaryBtn}
+          disabled={resumeDisabled}
+          onClick={() => {
+            setFeedback(null);
+            resume.mutate({ id: runId }, feedbackCallbacks('Resumed'));
+          }}
+        >
+          {resume.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" data-testid="spinner" />
+          ) : (
+            <Play className="h-4 w-4" aria-hidden="true" />
+          )}
+          Resume
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={primaryBtn}
+          disabled={pauseDisabled}
+          onClick={() => {
+            setFeedback(null);
+            pause.mutate({ id: runId }, feedbackCallbacks('Paused'));
+          }}
+        >
+          {pause.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" data-testid="spinner" />
+          ) : (
+            <Pause className="h-4 w-4" aria-hidden="true" />
+          )}
+          Pause
+        </button>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className={ghostBtn}
           disabled={terminal || cancel.isPending}
           onClick={() => {
             setFeedback(null);
@@ -84,39 +124,43 @@ export const RunDetail = forwardRef<HTMLDivElement, RunDetailProps>(function Run
           {cancel.isPending && (
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" data-testid="spinner" />
           )}
+          <X className="h-3 w-3" aria-hidden="true" />
           Cancel
         </button>
+        {run.status === 'paused' ? (
+          <button
+            type="button"
+            className={ghostBtn}
+            disabled={pauseDisabled}
+            onClick={() => {
+              setFeedback(null);
+              pause.mutate({ id: runId }, feedbackCallbacks('Paused'));
+            }}
+          >
+            {pause.isPending && (
+              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" data-testid="spinner" />
+            )}
+            Pause
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={ghostBtn}
+            disabled={resumeDisabled}
+            onClick={() => {
+              setFeedback(null);
+              resume.mutate({ id: runId }, feedbackCallbacks('Resumed'));
+            }}
+          >
+            {resume.isPending && (
+              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" data-testid="spinner" />
+            )}
+            Resume
+          </button>
+        )}
         <button
           type="button"
-          className={actionBtn}
-          disabled={run.status !== 'running' || pause.isPending}
-          onClick={() => {
-            setFeedback(null);
-            pause.mutate({ id: runId }, feedbackCallbacks('Paused'));
-          }}
-        >
-          {pause.isPending && (
-            <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" data-testid="spinner" />
-          )}
-          Pause
-        </button>
-        <button
-          type="button"
-          className={actionBtn}
-          disabled={run.status !== 'paused' || resume.isPending}
-          onClick={() => {
-            setFeedback(null);
-            resume.mutate({ id: runId }, feedbackCallbacks('Resumed'));
-          }}
-        >
-          {resume.isPending && (
-            <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" data-testid="spinner" />
-          )}
-          Resume
-        </button>
-        <button
-          type="button"
-          className={actionBtn}
+          className={ghostBtn}
           disabled={terminal || fastForward.isPending}
           onClick={() => {
             setFeedback(null);
@@ -126,11 +170,12 @@ export const RunDetail = forwardRef<HTMLDivElement, RunDetailProps>(function Run
           {fastForward.isPending && (
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" data-testid="spinner" />
           )}
+          <FastForward className="h-3 w-3" aria-hidden="true" />
           Fast-forward
         </button>
         <button
           type="button"
-          className={actionBtn}
+          className={ghostBtn}
           disabled={terminal || trigger.isPending}
           onClick={() => {
             setFeedback(null);
@@ -140,36 +185,48 @@ export const RunDetail = forwardRef<HTMLDivElement, RunDetailProps>(function Run
           {trigger.isPending && (
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" data-testid="spinner" />
           )}
+          <Radio className="h-3 w-3" aria-hidden="true" />
           Trigger
         </button>
       </div>
       {feedback && (
         <div
           className={clsx(
-            'rounded-md border px-3 py-2 text-sm',
+            'rounded-pgw-sm px-4 py-3 text-sm font-medium',
             feedback.kind === 'error'
-              ? 'border-pgw-status-failed text-pgw-status-failed'
-              : 'border-pgw-status-completed text-pgw-status-completed',
+              ? 'bg-pgw-status-failed/10 text-pgw-status-failed'
+              : 'bg-pgw-status-completed/10 text-pgw-status-completed',
           )}
         >
           {feedback.message}
         </div>
       )}
-      <RunDetailHeader run={run} onBack={onBack} />
-      <RunProgress run={run} />
-      <StepTimeline run={run} />
+      <section className="rounded-pgw bg-pgw-card p-5 shadow-pgw">
+        <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold">Run details</h3>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
+          <dt className="text-pgw-muted-fg">Workflow</dt>
+          <dd className="text-right font-medium">{run.workflowId}</dd>
+          <dt className="text-pgw-muted-fg">Resource</dt>
+          <dd className="text-right font-medium">{run.resourceId ?? '—'}</dd>
+          <dt className="text-pgw-muted-fg">Started</dt>
+          <dd className="text-right font-medium">{new Date(run.createdAt).toLocaleString()}</dd>
+        </dl>
+      </section>
+      <section className="rounded-pgw bg-pgw-card p-5 shadow-pgw">
+        <StepTimeline run={run} />
+      </section>
       <section className="flex flex-col gap-3">
-        <div>
-          <h3 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Input</h3>
+        <div className="rounded-pgw bg-pgw-card p-5 shadow-pgw">
+          <h3 className="mb-3 text-sm font-semibold">Input</h3>
           <JsonViewer value={run.input} />
         </div>
-        <div>
-          <h3 className="mb-1 text-xs font-medium uppercase text-pgw-muted-fg">Output</h3>
+        <div className="rounded-pgw bg-pgw-card p-5 shadow-pgw">
+          <h3 className="mb-3 text-sm font-semibold">Output</h3>
           <JsonViewer value={run.output} />
         </div>
         {run.error != null && (
-          <div>
-            <h3 className="mb-1 text-xs font-medium uppercase text-pgw-status-failed">Error</h3>
+          <div className="rounded-pgw bg-pgw-card p-5 shadow-pgw">
+            <h3 className="mb-3 text-sm font-semibold text-pgw-status-failed">Error</h3>
             <JsonViewer value={run.error} />
           </div>
         )}

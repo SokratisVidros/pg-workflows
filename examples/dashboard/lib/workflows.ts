@@ -2,9 +2,12 @@ import { workflow } from 'pg-workflows';
 import { z } from 'zod';
 
 /**
- * Three workflows chosen to cover the states the dashboard renders differently:
- * one that waits on an external event, one that completes, and one that fails.
+ * Workflows chosen to cover the states the dashboard renders differently:
+ * waiting on an event, completing, failing, and staying in `running`.
  */
+
+/** Stays in `running` for hours so the dashboard has in-progress work to show. */
+export const CATALOG_REINDEX_DURATION_MS = 8 * 60 * 60 * 1000;
 
 /** Waits for an external event, so seeded runs sit in a waiting state. */
 export const orderFulfillment = workflow(
@@ -97,7 +100,38 @@ export const flakyImport = workflow(
   },
 );
 
-export const workflows = [orderFulfillment, nightlyReport, flakyImport];
+/**
+ * A long `step.run` so seeded runs remain `running` (unlike `waitFor`/`delay`,
+ * which pause). Enqueued without workers during seed; `dev` executes them.
+ */
+export const catalogReindex = workflow(
+  'catalog-reindex',
+  async ({ step, input }) => {
+    const plan = await step.run('plan-shards', async () => {
+      await sleep(150);
+      return { shards: 8, region: input.region, documents: input.documents };
+    });
+
+    const indexed = await step.run('reindex-shards', async () => {
+      await sleep(CATALOG_REINDEX_DURATION_MS);
+      return { indexed: input.documents, shards: plan.shards };
+    });
+
+    const promoted = await step.run('promote-alias', async () => {
+      await sleep(120);
+      return { alias: `${input.region}-current` };
+    });
+
+    return { plan, indexed, promoted };
+  },
+  {
+    inputSchema: z.object({ region: z.string(), documents: z.number() }),
+    retries: 2,
+    timeout: CATALOG_REINDEX_DURATION_MS + 60_000,
+  },
+);
+
+export const workflows = [orderFulfillment, nightlyReport, flakyImport, catalogReindex];
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

@@ -27,36 +27,36 @@ const WAIT_HATCH_STYLE: React.CSSProperties = {
 };
 
 function StepDot({ status }: { status: StepInfo['status'] }) {
-  const common = 'flex h-3 w-3 items-center justify-center rounded-full';
+  const common = 'flex size-5 items-center justify-center rounded-full';
   switch (status) {
     case 'completed':
       return (
-        <div className={clsx(common, 'bg-pgw-status-completed')}>
-          <Check className="h-1.5 w-1.5 text-white" />
+        <div className={clsx(common, 'bg-pgw-accent')}>
+          <Check className="size-3 text-pgw-accent-fg" />
         </div>
       );
     case 'running':
       return (
-        <div className={clsx(common, 'bg-pgw-status-running')}>
-          <Loader2 className="h-1.5 w-1.5 animate-spin text-white" />
+        <div className={clsx(common, 'bg-pgw-accent')}>
+          <Loader2 className="size-3 animate-spin text-pgw-accent-fg" />
         </div>
       );
     case 'waiting':
       return (
         <div className={clsx(common, 'bg-pgw-status-paused')}>
-          <Pause className="h-1.5 w-1.5 fill-white text-white" />
+          <Pause className="size-3 fill-white text-white" />
         </div>
       );
     case 'failed':
       return (
         <div className={clsx(common, 'bg-pgw-status-failed')}>
-          <X className="h-1.5 w-1.5 text-white" />
+          <X className="size-3 text-white" />
         </div>
       );
     default:
       return (
-        <div className={clsx(common, 'bg-pgw-muted-fg')}>
-          <Circle className="h-1.5 w-1.5 text-white" />
+        <div className={clsx(common, 'bg-pgw-muted')}>
+          <Circle className="size-3 text-pgw-muted-fg" />
         </div>
       );
   }
@@ -73,10 +73,10 @@ function WaterfallBar({ step, totalDurationMs }: { step: StepInfo; totalDuration
         : 0;
   const useHatch = step.isWaitStep;
   return (
-    <div className="relative h-4 w-full rounded bg-pgw-muted">
+    <div className="relative h-2 w-full rounded-pgw-pill bg-pgw-muted">
       <div
         className={clsx(
-          'absolute inset-y-0 rounded',
+          'absolute inset-y-0 rounded-pgw-pill',
           useHatch ? undefined : STATUS_BAR[step.status],
         )}
         style={{
@@ -91,47 +91,51 @@ function WaterfallBar({ step, totalDurationMs }: { step: StepInfo; totalDuration
 
 function StepRow({ step, totalDurationMs }: { step: StepInfo; totalDurationMs: number }) {
   const [open, setOpen] = useState(false);
+  const timeLabel = step.timestamp
+    ? step.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null;
   return (
-    <div className="flex flex-col gap-1 py-1">
+    <div className="flex flex-col gap-1 py-2">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex min-w-0 items-start gap-2 rounded-md py-0.5 text-left hover:bg-pgw-muted/40"
+        className="flex min-w-0 items-start gap-3 rounded-pgw-sm py-1 text-left hover:bg-pgw-muted/40"
       >
-        <div className="flex min-w-0 shrink-0 items-start gap-1.5" style={{ width: '45%' }}>
-          <div className="relative mt-0.5">
-            <StepDot status={step.status} />
-          </div>
-          <ChevronRight
-            aria-hidden
-            className={clsx(
-              'mt-0.5 h-3.5 w-3.5 shrink-0 text-pgw-muted-fg transition-transform duration-200',
-              open && 'rotate-90',
-            )}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-1.5">
-              <span className="truncate font-mono text-xs">{step.id}</span>
-              {step.durationMs != null && (
-                <span
-                  className={clsx(
-                    'shrink-0 text-[10px]',
-                    step.status === 'waiting' ? 'text-pgw-status-paused' : 'text-pgw-muted-fg',
-                  )}
-                >
-                  {step.status === 'waiting' ? 'Waited ' : ''}
-                  {formatDuration(step.durationMs)}
-                </span>
-              )}
-            </div>
-          </div>
+        <div className="flex w-14 shrink-0 flex-col pt-0.5 text-right">
+          {timeLabel && <span className="text-xs font-semibold tabular-nums">{timeLabel}</span>}
         </div>
-        <div className="min-w-0 flex-1 pt-0.5">
-          <WaterfallBar step={step} totalDurationMs={totalDurationMs} />
+        <div className="relative mt-0.5 shrink-0">
+          <StepDot status={step.status} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-1.5">
+            <span className="truncate text-sm font-medium">{step.id}</span>
+            <ChevronRight
+              aria-hidden
+              className={clsx(
+                'size-3.5 shrink-0 text-pgw-muted-fg transition-transform duration-200',
+                open && 'rotate-90',
+              )}
+            />
+            {step.durationMs != null && (
+              <span
+                className={clsx(
+                  'shrink-0 text-[11px]',
+                  step.status === 'waiting' ? 'text-pgw-status-paused' : 'text-pgw-muted-fg',
+                )}
+              >
+                {step.status === 'waiting' ? 'Waited ' : ''}
+                {formatDuration(step.durationMs)}
+              </span>
+            )}
+          </div>
+          <div className="mt-2">
+            <WaterfallBar step={step} totalDurationMs={totalDurationMs} />
+          </div>
         </div>
       </button>
       {open && (
-        <div className="space-y-2 pb-1 pl-[calc(1rem+0.375rem+0.875rem+0.375rem)] pt-0.5">
+        <div className="space-y-2 pb-1 pl-[calc(3.5rem+1.25rem+0.75rem)] pt-0.5">
           <div className="text-[10px] uppercase tracking-wide text-pgw-muted-fg">Input</div>
           <JsonViewer value={step.stepInput} />
           <div className="text-[10px] uppercase tracking-wide text-pgw-muted-fg">Output</div>
@@ -162,12 +166,13 @@ export const StepTimeline = forwardRef<HTMLDivElement, StepTimelineProps>(functi
 
   return (
     <div ref={ref} className={clsx('space-y-0', className)}>
-      <div className="mb-3 flex items-center justify-between text-xs text-pgw-muted-fg">
-        <span>
+      <div className="mb-4 flex items-center justify-between text-sm">
+        <span className="font-semibold">
           {completedCount}/{steps.length} steps
         </span>
         <span
           className={clsx(
+            'text-xs capitalize text-pgw-muted-fg',
             run.status === 'paused' && 'inline-flex items-center gap-1 text-pgw-status-paused',
           )}
         >
@@ -178,7 +183,7 @@ export const StepTimeline = forwardRef<HTMLDivElement, StepTimelineProps>(functi
         </span>
       </div>
 
-      <div className="mb-1 flex items-center gap-2">
+      <div className="mb-4 flex items-center gap-3">
         <div
           className="flex shrink-0 flex-col gap-0.5 text-xs font-medium"
           style={{ width: '45%' }}
@@ -195,11 +200,11 @@ export const StepTimeline = forwardRef<HTMLDivElement, StepTimelineProps>(functi
             </span>
           )}
         </div>
-        <div className="relative h-5 flex-1 overflow-hidden rounded bg-pgw-muted">
+        <div className="relative h-2 flex-1 overflow-hidden rounded-pgw-pill bg-pgw-muted">
           {showSplit ? (
             <>
               <div
-                className="absolute inset-y-0 left-0 bg-pgw-status-running"
+                className="absolute inset-y-0 left-0 bg-pgw-accent"
                 style={{ width: `${activePct}%` }}
               />
               <div
@@ -210,7 +215,7 @@ export const StepTimeline = forwardRef<HTMLDivElement, StepTimelineProps>(functi
           ) : (
             <div
               className={clsx(
-                'absolute inset-y-0 left-0 rounded',
+                'absolute inset-y-0 left-0 rounded-pgw-pill',
                 STATUS_BAR[run.status] ?? 'bg-pgw-muted-fg',
               )}
               style={{ width: totalDurationMs > 0 ? '100%' : '0%' }}
@@ -218,8 +223,6 @@ export const StepTimeline = forwardRef<HTMLDivElement, StepTimelineProps>(functi
           )}
         </div>
       </div>
-
-      <div className="mb-1 border-b border-pgw-border" />
 
       {steps.length > 0 ? (
         steps.map((step) => <StepRow key={step.id} step={step} totalDurationMs={totalDurationMs} />)

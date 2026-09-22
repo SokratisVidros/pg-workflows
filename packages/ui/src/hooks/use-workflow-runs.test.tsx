@@ -15,6 +15,7 @@ function makeClient(): WorkflowRunsClient {
       hasPrev: false,
     }),
     getRun: vi.fn(),
+    getStats: vi.fn(),
     cancelRun: vi.fn(),
     pauseRun: vi.fn(),
     resumeRun: vi.fn(),

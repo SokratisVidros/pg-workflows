@@ -2,7 +2,10 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import type { ListRunsParams, WorkflowRunStatus } from '../client';
+import type { DatePreset, DurationPreset } from '../lib/filter-presets';
 import type { SortDir, SortKey } from '../lib/filters';
+
+export type { DatePreset, DurationPreset };
 
 export type RunFilters = {
   limit: number;
@@ -10,10 +13,8 @@ export type RunFilters = {
   endingBefore?: string;
   statuses?: WorkflowRunStatus[];
   workflowId?: string;
-  from?: string;
-  to?: string;
-  minDurationMs?: number;
-  maxDurationMs?: number;
+  datePreset?: DatePreset;
+  durationPreset?: DurationPreset;
   search?: string;
   sort: SortKey;
   dir: SortDir;
@@ -65,10 +66,8 @@ export function useRunFilters(initial?: Partial<RunFilters>): UseRunFiltersResul
     return (
       !!filters.statuses?.length ||
       !!filters.workflowId ||
-      !!filters.from ||
-      !!filters.to ||
-      filters.minDurationMs != null ||
-      filters.maxDurationMs != null ||
+      (!!filters.datePreset && filters.datePreset !== 'all') ||
+      (!!filters.durationPreset && filters.durationPreset !== 'any') ||
       !!filters.search
     );
   }, [filters]);

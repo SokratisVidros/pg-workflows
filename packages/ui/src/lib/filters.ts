@@ -1,18 +1,31 @@
 import type { WorkflowRun } from '../client';
 import { computeDurationMs } from './duration';
+import {
+  type DatePreset,
+  type DurationPreset,
+  datePresetToFrom,
+  durationPresetToBounds,
+} from './filter-presets';
 
 export type ClientFilters = {
   from?: string;
   to?: string;
+  datePreset?: DatePreset;
+  durationPreset?: DurationPreset;
   minDurationMs?: number;
   maxDurationMs?: number;
   search?: string;
 };
 
 export function applyClientFilters(runs: WorkflowRun[], filters: ClientFilters): WorkflowRun[] {
+  const from = filters.from ?? datePresetToFrom(filters.datePreset);
+  const durationBounds = durationPresetToBounds(filters.durationPreset);
+  const minDurationMs = filters.minDurationMs ?? durationBounds.minDurationMs;
+  const maxDurationMs = filters.maxDurationMs ?? durationBounds.maxDurationMs;
+
   return runs.filter((run) => {
-    if (filters.from) {
-      const fromDate = new Date(filters.from).getTime();
+    if (from) {
+      const fromDate = new Date(from).getTime();
       if (new Date(run.createdAt).getTime() < fromDate) return false;
     }
     if (filters.to) {
@@ -20,16 +33,10 @@ export function applyClientFilters(runs: WorkflowRun[], filters: ClientFilters):
       if (new Date(run.createdAt).getTime() > toDate) return false;
     }
     const durationMs = computeDurationMs(run);
-    if (
-      filters.minDurationMs != null &&
-      (durationMs == null || durationMs < filters.minDurationMs)
-    ) {
+    if (minDurationMs != null && (durationMs == null || durationMs < minDurationMs)) {
       return false;
     }
-    if (
-      filters.maxDurationMs != null &&
-      (durationMs == null || durationMs > filters.maxDurationMs)
-    ) {
+    if (maxDurationMs != null && (durationMs == null || durationMs > maxDurationMs)) {
       return false;
     }
     if (filters.search) {

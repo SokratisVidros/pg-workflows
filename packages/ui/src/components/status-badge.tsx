@@ -1,7 +1,6 @@
 import { clsx } from 'clsx';
 import { forwardRef } from 'react';
 import type { WorkflowRunStatus } from '../client';
-import { STATUS_DOT_CLASS, STATUS_TEXT_CLASS } from '../lib/status-classes';
 
 export type StatusBadgeProps = {
   status: WorkflowRunStatus;
@@ -16,12 +15,11 @@ export const StatusBadge = forwardRef<HTMLSpanElement, StatusBadgeProps>(functio
     <span
       ref={ref}
       className={clsx(
-        'inline-flex items-center gap-1 rounded-md border border-pgw-border px-2 py-0.5 text-xs',
-        STATUS_TEXT_CLASS[status],
+        'inline-flex items-center gap-1.5 rounded-pgw-pill border border-pgw-fg bg-pgw-card px-3 py-1 text-xs font-semibold capitalize text-pgw-fg',
         className,
       )}
     >
-      <span aria-hidden className={clsx('h-1.5 w-1.5 rounded-full', STATUS_DOT_CLASS[status])} />
+      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-pgw-fg" />
       {status}
     </span>
   );

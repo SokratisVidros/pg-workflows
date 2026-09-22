@@ -1,42 +1,33 @@
 'use client';
 
 import { forwardRef } from 'react';
-import { FilterPopover } from './filter-popover';
+import { DATE_PRESETS, type DatePreset } from '../../lib/filter-presets';
+import { FilterSelect, FilterSelectItem } from './filter-select';
+
+export type { DatePreset };
 
 export type DateRangeFilterProps = {
-  from?: string;
-  to?: string;
-  onChange: (next: { from?: string; to?: string }) => void;
+  value?: DatePreset;
+  onChange: (next: DatePreset | undefined) => void;
   className?: string;
 };
 
 export const DateRangeFilter = forwardRef<HTMLButtonElement, DateRangeFilterProps>(
-  function DateRangeFilter({ from, to, onChange, className }, ref) {
-    const active = !!from || !!to;
+  function DateRangeFilter({ value, onChange, className }, ref) {
     return (
-      <FilterPopover
+      <FilterSelect
         ref={ref}
-        label="Dates"
-        suffix={active ? ' (active)' : undefined}
+        value={value ?? 'all'}
+        active={value != null}
+        onValueChange={(v) => onChange(v === 'all' ? undefined : (v as DatePreset))}
         className={className}
       >
-        <label className="flex flex-col gap-1">
-          From
-          <input
-            type="datetime-local"
-            value={from ?? ''}
-            onChange={(e) => onChange({ from: e.target.value || undefined, to })}
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          To
-          <input
-            type="datetime-local"
-            value={to ?? ''}
-            onChange={(e) => onChange({ from, to: e.target.value || undefined })}
-          />
-        </label>
-      </FilterPopover>
+        {DATE_PRESETS.map((preset) => (
+          <FilterSelectItem key={preset.value} value={preset.value}>
+            {preset.label}
+          </FilterSelectItem>
+        ))}
+      </FilterSelect>
     );
   },
 );

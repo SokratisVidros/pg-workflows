@@ -1,7 +1,17 @@
 import ksuid from 'ksuid';
 import type { Db } from 'pg-boss';
 import { WorkflowRunInProgressError } from '../error';
+import { type WorkflowRunStats, WorkflowStatus } from '../types';
 import type { WorkflowRun } from './types';
+
+const EMPTY_RUN_STATS: WorkflowRunStats = {
+  [WorkflowStatus.PENDING]: 0,
+  [WorkflowStatus.RUNNING]: 0,
+  [WorkflowStatus.PAUSED]: 0,
+  [WorkflowStatus.COMPLETED]: 0,
+  [WorkflowStatus.FAILED]: 0,
+  [WorkflowStatus.CANCELLED]: 0,
+};
 
 export function generateKSUID(prefix?: string): string {
   return `${prefix ? `${prefix}_` : ''}${ksuid.randomSync().string}`;
@@ -521,6 +531,46 @@ export async function getWorkflowRuns(
   const prevCursor = hasPrev && items.length > 0 ? (items[0]?.id ?? null) : null;
 
   return { items, nextCursor, prevCursor, hasMore, hasPrev };
+}
+
+export async function getWorkflowRunStats(
+  {
+    resourceId,
+    workflowId,
+  }: {
+    resourceId?: string;
+    workflowId?: string;
+  },
+  db: Db,
+): Promise<WorkflowRunStats> {
+  const conditions: string[] = [];
+  const values: string[] = [];
+  let paramIndex = 1;
+
+  if (resourceId) {
+    conditions.push(`resource_id = $${paramIndex}`);
+    values.push(resourceId);
+    paramIndex++;
+  }
+
+  if (workflowId) {
+    conditions.push(`workflow_id = $${paramIndex}`);
+    values.push(workflowId);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const result = await db.executeSql(
+    `SELECT status, COUNT(*)::int AS count FROM workflow_runs ${whereClause} GROUP BY status`,
+    values,
+  );
+
+  const stats = { ...EMPTY_RUN_STATS };
+  for (const row of result.rows as { status: WorkflowStatus; count: number }[]) {
+    if (row.status in stats) {
+      stats[row.status] = Number(row.count);
+    }
+  }
+  return stats;
 }
 
 /**

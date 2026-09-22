@@ -23,5 +23,6 @@ export type {
   WorkflowPlugin,
   WorkflowRef,
   WorkflowRunProgress,
+  WorkflowRunStats,
 } from './types';
 export { WorkflowStatus } from './types';

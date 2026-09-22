@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { WorkflowRun } from '../client';
 import { applyClientFilters, sortRuns } from './filters';
 
@@ -56,6 +56,31 @@ describe('applyClientFilters', () => {
 
   it('filters by min duration in milliseconds', () => {
     const result = applyClientFilters(makeRuns(), { minDurationMs: 30_000 });
+    expect(result.map((r) => r.id)).not.toContain('run_a');
+  });
+
+  it('filters by a relative date preset against now', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-17T14:30:00Z'));
+    const runs = [
+      ...makeRuns(),
+      {
+        ...makeRuns()[0],
+        id: 'run_old',
+        createdAt: '2026-06-01T12:00:00Z',
+      } as unknown as WorkflowRun,
+    ];
+    expect(applyClientFilters(runs, { datePreset: '7d' }).map((r) => r.id)).toEqual([
+      'run_a',
+      'run_b',
+      'run_c',
+    ]);
+    expect(applyClientFilters(runs, { datePreset: '30d' }).map((r) => r.id)).toContain('run_old');
+    vi.useRealTimers();
+  });
+
+  it('filters by a duration preset', () => {
+    const result = applyClientFilters(makeRuns(), { durationPreset: 'gt-30s' });
     expect(result.map((r) => r.id)).not.toContain('run_a');
   });
 });

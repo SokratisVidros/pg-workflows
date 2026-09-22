@@ -32,10 +32,20 @@ export function getEngine(): WorkflowEngine {
 
 /**
  * Runs migrations and brings up the workers. Lifecycle actions can't enqueue
- * until this resolves, so the catch-all route awaits it — see `runs-api.ts`.
+ * until this resolves, so the catch-all route awaits it — see `lib/runs-api.ts`.
  * Cached, so only the first caller pays for startup.
+ *
+ * Workflows added after the first `start()` (e.g. a new seed fixture while
+ * `next dev` is already running) are registered on later calls so hot reload
+ * can pick them up without restarting the process.
  */
-export function engineReady(): Promise<void> {
+export async function engineReady(): Promise<void> {
   globalForEngine.pgWorkflowsReady ??= getEngine().start();
-  return globalForEngine.pgWorkflowsReady;
+  await globalForEngine.pgWorkflowsReady;
+  const engine = getEngine();
+  for (const definition of workflows) {
+    if (!engine.workflows.has(definition.id)) {
+      await engine.registerWorkflow(definition);
+    }
+  }
 }
