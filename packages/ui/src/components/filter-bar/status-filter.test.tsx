@@ -17,11 +17,12 @@ describe('StatusFilter', () => {
     expect(screen.getByRole('button', { name: /status \(2\)/i })).toBeInTheDocument();
   });
 
-  it('uses a text button trigger', () => {
+  it('uses a text button trigger with a caret', () => {
     render(<StatusFilter value={[]} onChange={() => {}} />);
     const button = screen.getByRole('button', { name: /status/i });
     expect(button).toHaveClass('pgw-button');
     expect(button).not.toHaveAttribute('data-active');
+    expect(button.querySelector('.pgw-caret')).toBeInTheDocument();
   });
 
   it('marks the trigger active when values are selected', () => {

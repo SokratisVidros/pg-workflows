@@ -1,8 +1,9 @@
 'use client';
 
 import { Popover } from '@base-ui/react/popover';
+import { ChevronDown } from 'lucide-react';
 import { forwardRef, type ReactNode } from 'react';
-import { PGW_BUTTON } from '../../lib/button-classes';
+import { PGW_SELECT } from '../../lib/button-classes';
 import { chainClassName, type PartProps } from '../../lib/style-hooks';
 
 export type FilterPopoverParts = {
@@ -34,12 +35,17 @@ export const FilterPopover = forwardRef<HTMLButtonElement, FilterPopoverProps>(
           ref={ref}
           data-active={active ? 'true' : undefined}
           nativeButton={nativeButton}
-          className={chainClassName(PGW_BUTTON, className)}
+          className={chainClassName(PGW_SELECT, className)}
           style={style}
           render={render}
         >
-          {label}
-          {suffix}
+          <span>
+            {label}
+            {suffix}
+          </span>
+          <span className="pgw-caret" aria-hidden>
+            <ChevronDown />
+          </span>
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Positioner
