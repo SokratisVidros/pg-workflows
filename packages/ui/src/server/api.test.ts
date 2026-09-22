@@ -45,6 +45,15 @@ describe('createWorkflowRunsApi — reads', () => {
     );
   });
 
+  it('listRuns attaches the registered workflow step count', async () => {
+    const engine = mockEngine({
+      workflows: new Map([['k', { steps: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] }]]),
+    });
+    const api = createWorkflowRunsApi({ engine });
+    const res = await api.listRuns(new Request('http://x/workflow-runs?limit=5'));
+    expect(await res.json()).toMatchObject({ items: [{ id: 'run_1', totalSteps: 3 }] });
+  });
+
   it('getRun forwards runId + resourceId and returns the run', async () => {
     const engine = mockEngine();
     const api = createWorkflowRunsApi({ engine });

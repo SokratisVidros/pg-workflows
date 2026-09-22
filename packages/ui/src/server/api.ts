@@ -14,7 +14,14 @@ export type EngineLike = Pick<
   | 'cancelWorkflow'
   | 'fastForwardWorkflow'
   | 'triggerEvent'
->;
+> & {
+  /**
+   * Registered workflow definitions. Present on `WorkflowEngine`. Used to attach
+   * the defined step count so the runs table can show progress past the steps
+   * already written to the timeline.
+   */
+  workflows?: WorkflowEngine['workflows'];
+};
 
 export type WorkflowRunsApiOptions = {
   engine: EngineLike;
@@ -33,6 +40,15 @@ export type WorkflowRunsApi = {
   triggerEvent: (req: Request, id: string) => Promise<Response>;
   fetch: (req: Request) => Promise<Response>;
 };
+
+function withDefinedStepCount<T extends { workflowId: string }>(
+  engine: EngineLike,
+  run: T,
+): T & { totalSteps?: number } {
+  const totalSteps = engine.workflows?.get(run.workflowId)?.steps.length ?? 0;
+  if (totalSteps === 0) return run;
+  return { ...run, totalSteps };
+}
 
 export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRunsApi {
   const { engine, resolveContext } = opts;
@@ -53,7 +69,13 @@ export function createWorkflowRunsApi(opts: WorkflowRunsApiOptions): WorkflowRun
       try {
         const params = parseListParams(new URL(req.url));
         const result = await engine.getRuns({ ...params, resourceId: ctx.resourceId });
-        return json(result, 200);
+        return json(
+          {
+            ...result,
+            items: result.items.map((run) => withDefinedStepCount(engine, run)),
+          },
+          200,
+        );
       } catch (err) {
         return toErrorResponse(err);
       }

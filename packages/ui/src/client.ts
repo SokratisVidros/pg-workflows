@@ -1,6 +1,12 @@
-import type { WorkflowRun } from 'pg-workflows/client';
+import type { WorkflowRun as EngineWorkflowRun } from 'pg-workflows/client';
 
-export type { WorkflowRun };
+export type WorkflowRun = EngineWorkflowRun & {
+  /**
+   * Step count from the registered workflow definition, when the list API can
+   * resolve it. Absent for runs whose workflow is not registered.
+   */
+  totalSteps?: number;
+};
 
 // WorkflowRun.status is a string union, not the WorkflowStatus enum.
 // Reuse the union so prop types and run.status are assignable to each other.
