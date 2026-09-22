@@ -110,8 +110,16 @@ describe('RunDetail', () => {
     expect(screen.getByText('job_1')).toBeInTheDocument();
     const errorHeading = screen.getByRole('heading', { name: 'Error' });
     const details = screen.getByRole('heading', { name: 'Details' });
+    const cancel = screen.getByRole('button', { name: /^cancel$/i });
+    const input = screen.getByRole('heading', { name: 'Input' });
     expect(
-      errorHeading.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING,
+      details.compareDocumentPosition(errorHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      cancel.compareDocumentPosition(errorHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      errorHeading.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.getByText(/boom/)).toBeInTheDocument();
     expect(screen.getAllByText('1m 5s').length).toBeGreaterThan(0);
