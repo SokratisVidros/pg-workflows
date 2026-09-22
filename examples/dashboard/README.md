@@ -4,6 +4,8 @@ A Next.js App Router app that embeds `<WorkflowRunsDashboard/>` from
 [`@pg-workflows/ui`](../../packages/ui) and serves it from a real
 `WorkflowEngine`. Used for end-to-end verification of the package.
 
+To open the same default dashboard with no Next.js app, see [Run the default dashboard with npx](../../packages/ui/README.md#variant-3--run-the-default-dashboard-with-npx).
+
 This is a workspace member (`examples/dashboard`). From the repo root, `bun install`
 links the local `pg-workflows` and `@pg-workflows/ui` packages.
 

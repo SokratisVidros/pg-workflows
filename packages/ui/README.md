@@ -4,7 +4,7 @@ React dashboard and HTTP adapters for [pg-workflows](https://github.com/Sokratis
 
 This is a **separate package** from `pg-workflows`. Install it only in apps that render UI. Workers and API services that just run the engine do not need it.
 
-This guide is for developers integrating the UI into an app. It covers installation and every entry-point variant.
+This guide covers embedding the dashboard in an app, composing your own UI from the hooks and components, styling that UI, and opening the default dashboard with `npx` against a local Postgres.
 
 ---
 
@@ -43,7 +43,7 @@ The package is split so client code never pulls in server/engine code:
 | `@pg-workflows/ui/next` | `createAppRouterHandler` (App Router catch-all), `createPagesApiHandler` (Pages Router), `createRouteHandlers` (optional per-file App Router) | server only |
 | `@pg-workflows/ui/tailwind` | Tailwind preset exposing the `pgw-*` color tokens | build |
 | `@pg-workflows/ui/styles.css` | CSS variables (light/dark) + base styles | client |
-| `pg-workflows-ui` (bin) | Standalone localhost dashboard — see Variant 3 | CLI |
+| `pg-workflows-ui` (bin) | Standalone localhost dashboard — see [Variant 3](#variant-3--run-the-default-dashboard-with-npx) | CLI |
 
 The architecture: **browser → hooks → HTTP → server adapter → `WorkflowEngine` → Postgres.**
 
@@ -73,7 +73,7 @@ export default {
 }
 ```
 
-Dark mode works out of the box via `prefers-color-scheme` on the `--pgw-*` variables — see [Theming](#theming).
+Dark mode follows `prefers-color-scheme` on the `--pgw-*` variables. To recolor or restyle components, see [Style them to your liking](#style-them-to-your-liking).
 
 ---
 
@@ -192,99 +192,350 @@ The client + hooks are pure React — host the dashboard in a Vite SPA and point
 
 ---
 
-## Variant 3 — `npx` standalone (no app at all)
+## Variant 3 — Run the default dashboard with `npx`
 
-To inspect runs without integrating anything, run the bundled dashboard straight
-against a database:
+Use this when Postgres and a `pg-workflows` process are already running, and you want the default dashboard without adding React to that app.
+
+The CLI starts its own engine against the **same database**, serves the prebuilt dashboard, and mounts the run API at `/workflow-runs`. It does not register workflow definitions, and it does not execute step handlers. Cancel, pause, resume, fast-forward, and trigger enqueue work for the process that owns the definitions.
+
+### 1. Local Postgres
+
+Any local Postgres works. For example:
 
 ```bash
-npx @pg-workflows/ui --database-url=postgres://… [--port=3777]
+createdb pgworkflows
 ```
 
-It starts an engine, mounts the adapter at `/workflow-runs`, and serves a
-prebuilt SPA. `DATABASE_URL` works instead of the flag.
+Point both processes at that database. The snippets below use `postgres://localhost:5432/pgworkflows`. Change the user, password, host, and database name to match yours.
 
-> **Binds `127.0.0.1` only, with no authentication and no `resolveContext`** —
-> every run in that database is readable *and mutable* by anyone who can reach
-> the port. Localhost is the entire trust boundary; don't put it behind a tunnel
-> or a reverse proxy.
+### 2. Run pg-workflows
 
-Actions (cancel/pause/resume/fast-forward/trigger) are live, but this process
-registers no workflow definitions — it drives runs owned by whichever app does.
+In the app that defines your workflows, start the engine and leave it running:
+
+```ts
+import { WorkflowEngine } from 'pg-workflows'
+import { sendWelcome } from './workflows'
+
+const engine = new WorkflowEngine({
+  connectionString: 'postgres://localhost:5432/pgworkflows',
+  workflows: [sendWelcome],
+})
+await engine.start()
+```
+
+Start a run the way you normally do (`engine.startWorkflow(...)`). The dashboard only shows runs that exist in this database. Defining workflows is covered in the [pg-workflows quick start](../../README.md#quick-start).
+
+### 3. Open the dashboard
+
+From another terminal:
+
+```bash
+npx @pg-workflows/ui --database-url=postgres://localhost:5432/pgworkflows
+```
+
+Then open <http://127.0.0.1:3777>.
+
+`DATABASE_URL` works in place of `--database-url`. `--port` changes the port (default `3777`). `--help` prints the flags.
+
+If the command cannot load `pg-workflows`, install the engine and its `pg` peer in the current directory, then run the command again from there:
+
+```bash
+npm install pg-workflows pg
+npx @pg-workflows/ui --database-url=postgres://localhost:5432/pgworkflows
+```
+
+> **Binds `127.0.0.1` only, with no authentication and no `resolveContext`.** Every run in that database is readable and mutable by anyone who can reach the port. Localhost is the trust boundary. Do not put it behind a tunnel or a reverse proxy.
 
 ---
 
-## Variant 4 — Headless (build your own UI)
+## Variant 4 — Hooks and components
 
-The dashboard's regions are exported, so you can compose your own interface. Provide a client via `WorkflowRunsProvider`, then use the hooks:
+The dashboard's regions are exported. Provide a client with `WorkflowRunsProvider`, then call the hooks and render the components yourself. Every hook below must run under that provider.
 
 ```tsx
 'use client'
-import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
-import {
-  WorkflowRunsProvider, createFetchClient,
-  useWorkflowRuns, useWorkflowRun, useRunFilters, useRunActions,
-} from '@pg-workflows/ui'
+import { useState } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { WorkflowRunsProvider, createFetchClient } from '@pg-workflows/ui'
 
 const qc = new QueryClient()
 const client = createFetchClient({ baseUrl: '/workflow-runs' })
 
-function App() {
+export function App() {
+  const [live, setLive] = useState(true)
   return (
     <QueryClientProvider client={qc}>
-      <WorkflowRunsProvider client={client} pollIntervalMs={5000}>
-        <MyRunsView />
+      <WorkflowRunsProvider client={client} pollIntervalMs={live ? 5000 : 0}>
+        <MyRunsView live={live} onToggleLive={() => setLive((value) => !value)} />
       </WorkflowRunsProvider>
     </QueryClientProvider>
   )
 }
+```
 
-function MyRunsView() {
-  const { serverParams } = useRunFilters()
-  const { data } = useWorkflowRuns(serverParams)   // { items, nextCursor, prevCursor, hasMore, hasPrev }
-  const { cancel } = useRunActions()               // cancel.mutate({ id })
-  return /* your markup */ null
+`pollIntervalMs` is the live-refresh interval for every query under the provider. `0` turns polling off. The default is `5000`.
+
+### Compose a runs view
+
+This is the same wiring `<WorkflowRunsDashboard/>` uses. Status and workflow id go to the server. Search, date, duration, and sort apply to the current page, because the engine paginates by cursor.
+
+```tsx
+import { useMemo, useState } from 'react'
+import {
+  FilterBar,
+  LiveToggle,
+  Pagination,
+  RunDetail,
+  RunsTable,
+  StatusSummary,
+  applyClientFilters,
+  sortRuns,
+  useRunFilters,
+  useWorkflowRunStats,
+  useWorkflowRuns,
+} from '@pg-workflows/ui'
+
+function MyRunsView({ live, onToggleLive }: { live: boolean; onToggleLive: () => void }) {
+  const { filters, setFilters, clearFilters, hasActiveFilters, serverParams } = useRunFilters()
+  const runs = useWorkflowRuns(serverParams)
+  const stats = useWorkflowRunStats({ workflowId: filters.workflowId })
+  const [selected, setSelected] = useState<string | null>(null)
+
+  const items = runs.data?.items ?? []
+  const workflowIds = useMemo(
+    () => [...new Set(items.map((run) => run.workflowId))].sort(),
+    [items],
+  )
+  const rows = useMemo(() => {
+    const filtered = applyClientFilters(items, {
+      datePreset: filters.datePreset,
+      durationPreset: filters.durationPreset,
+      search: filters.search,
+    })
+    return sortRuns(filtered, filters.sort, filters.dir)
+  }, [items, filters])
+
+  if (selected) {
+    return (
+      <div className="pgw-root">
+        <RunDetail runId={selected} onBack={() => setSelected(null)} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="pgw-root flex flex-col gap-5">
+      <LiveToggle isLive={live} isFetching={runs.isFetching} onToggle={onToggleLive} />
+      <StatusSummary
+        counts={stats.data ?? {}}
+        onSelectStatus={(status) =>
+          setFilters({ statuses: [status], startingAfter: undefined, endingBefore: undefined })
+        }
+      />
+      <FilterBar
+        filters={filters}
+        hasActiveFilters={hasActiveFilters}
+        workflowIds={workflowIds}
+        onFiltersChange={(partial) =>
+          setFilters({ ...partial, startingAfter: undefined, endingBefore: undefined })
+        }
+        onClear={clearFilters}
+      />
+      <RunsTable runs={rows} onSelectRun={setSelected} isLoading={runs.isLoading} />
+      <Pagination
+        hasPrev={!!runs.data?.hasPrev}
+        hasNext={!!runs.data?.hasMore}
+        isFetching={runs.isFetching}
+        onPrev={() =>
+          setFilters({
+            endingBefore: runs.data?.prevCursor ?? undefined,
+            startingAfter: undefined,
+          })
+        }
+        onNext={() =>
+          setFilters({
+            startingAfter: runs.data?.nextCursor ?? undefined,
+            endingBefore: undefined,
+          })
+        }
+      />
+    </div>
+  )
 }
 ```
 
-**Query hooks:** `useWorkflowRuns(params)`, `useWorkflowRun(id)`, `useRunFilters(initial?)`, `useWorkflowRunsClient()`.
-**Mutation hook:** `useRunActions()` returns `{ cancel, pause, resume, fastForward, trigger }`. Each is its own mutation: `.mutate({ id, ... })` invalidates the relevant queries on success, and `isPending` stays per action.
-**Components:** `RunsTable`, `Pagination`, `FilterBar`, `StatusSummary`, `LiveToggle`, `RunDetail`, `StatusBadge`. Helpers (`formatDuration`, `timeAgo`, `applyClientFilters`, `sortRuns`, …) are also on the main entry.
+Clear `startingAfter` and `endingBefore` when a filter changes. Otherwise the next request stays on a cursor from the previous filter.
 
-You can also skip React entirely and call `createFetchClient({ baseUrl })` from `@pg-workflows/ui/client` (`listRuns`, `getRun`, `cancelRun`, `pauseRun`, `resumeRun`, `fastForwardRun`, `triggerEvent`).
+`RunDetail` loads the run and calls the lifecycle actions itself. To fire an action from your own control, use `useRunActions()`:
+
+```tsx
+const { cancel, pause, resume, fastForward, trigger } = useRunActions()
+
+cancel.mutate({ id: runId })
+pause.mutate({ id: runId })
+resume.mutate({ id: runId })
+fastForward.mutate({ id: runId, data: { skipped: true } })
+trigger.mutate({ id: runId, eventName: 'payment-confirmed', data: { ok: true } })
+```
+
+### Hooks
+
+#### `useRunFilters(initial?)`
+
+Filter state for the list. `initial` is merged over the defaults (`limit: 20`, `sort: 'createdAt'`, `dir: 'desc'`).
+
+| Field | Role |
+|-------|------|
+| `filters` | Full filter object |
+| `serverParams` | `{ limit, startingAfter, endingBefore, statuses, workflowId }` — pass this to `useWorkflowRuns` |
+| `setFilters(partial)` | Merge a partial update |
+| `replaceFilters(next)` | Replace the whole object |
+| `clearFilters()` | Reset to the defaults |
+| `toggleSort(key)` | Sort by `id`, `workflowId`, `createdAt`, `status`, or `duration`. Calling it again on the same key flips `asc` / `desc` |
+| `hasActiveFilters` | True when status, workflow id, date, duration, or search is set |
+
+`search`, `datePreset`, `durationPreset`, `sort`, and `dir` stay on the client. `applyClientFilters` matches run id, workflow id, and resource id. `sortRuns` orders the current page. `DATE_PRESETS` and `DURATION_PRESETS` are the option lists `FilterBar` already renders.
+
+#### `useWorkflowRuns(params)`
+
+List query. `params` is `serverParams` from `useRunFilters` (`limit` is required). Returns a React Query result whose `data` is `{ items, nextCursor, prevCursor, hasMore, hasPrev }`. Refetches while `pollIntervalMs > 0`, and keeps the previous page on screen while the next request is in flight.
+
+#### `useWorkflowRun(id)`
+
+One run. The query stays disabled when `id` is empty. Polling stops once the status is terminal (`completed`, `failed`, or `cancelled`). `RunDetail` calls this for you.
+
+#### `useWorkflowRunStats(params?)`
+
+Counts keyed by status: `pending`, `running`, `paused`, `completed`, `failed`, `cancelled`. `params` is `{ workflowId? }`. Pass `data` to `StatusSummary` as `counts`. Polls on the same interval as the list.
+
+#### `useRunActions()`
+
+`{ cancel, pause, resume, fastForward, trigger }`. Each is its own React Query mutation, so `isPending` is per action. On success, the run query and the runs list are invalidated.
+
+| Action | Variables |
+|--------|-----------|
+| `cancel`, `pause`, `resume` | `{ id }` |
+| `fastForward` | `{ id, data? }` |
+| `trigger` | `{ id, eventName, data? }` |
+
+#### `useWorkflowRunsClient()`
+
+`{ client, pollIntervalMs }` from the provider. Throws when called outside `WorkflowRunsProvider`.
+
+### Components
+
+Each component also takes `className`, `style`, and `render`. See [Style them to your liking](#style-them-to-your-liking).
+
+| Component | You pass | It renders |
+|-----------|----------|------------|
+| `WorkflowRunsDashboard` | `baseUrl` or `client` | The full list and detail view. Creates its own React Query client and provider. Other props are under [Variant 1](#variant-1--drop-in-dashboard). |
+| `RunsTable` | `runs`, `onSelectRun` | The runs table. `selectedRunId` highlights a row. While `runs` is empty, `isLoading` shows "Loading…" instead of "No runs". |
+| `RunDetail` | `runId` | Step timeline, input and output, and the lifecycle actions. `onBack` is the back control. |
+| `FilterBar` | `filters`, `hasActiveFilters`, `workflowIds`, `onFiltersChange`, `onClear` | Search, plus status, workflow, date, and duration filters. |
+| `StatusSummary` | `counts` | One button per status whose count is above zero. Renders nothing when every count is `0`. `onSelectStatus` fires on click. `trailing` is placed after the stats. |
+| `StatusBadge` | `status` | A status label. |
+| `Pagination` | `hasPrev`, `hasNext`, `onPrev`, `onNext` | Previous and next. `isFetching` disables both buttons. |
+| `LiveToggle` | `isLive`, `isFetching`, `onToggle` | A Live / Paused switch. You own `isLive` and pass `pollIntervalMs={isLive ? 5000 : 0}` to the provider. |
+
+Helpers on the main entry: `applyClientFilters`, `sortRuns`, `formatDuration`, `timeAgo`, `computeDurationMs`, `isTerminalStatus`.
+
+### Without React
+
+`createFetchClient({ baseUrl })` from `@pg-workflows/ui/client` talks to the same HTTP API: `listRuns`, `getRun`, `getStats`, `cancelRun`, `pauseRun`, `resumeRun`, `fastForwardRun`, `triggerEvent`.
 
 ---
 
-## Theming
+## Style them to your liking
 
-The components are styled the way Base UI components are styled: unstyled behavior, your classes on top, state available to both CSS and render props. Four layers, in the order you'll reach for them:
+The components ship with a default look: square corners, ink borders, and status color as the only chroma. Three ways to change it, from the smallest edit to your own markup.
 
-1. **CSS variables.** After importing `@pg-workflows/ui/styles.css`, override any token in your own `:root` or a closer scope. Chrome (borders, radius, type, focus) follows the same tokens as the status hues:
+### 1. Recolor with CSS variables
 
-   ```css
-   :root {
-     --pgw-accent: #6d28d9;
-     --pgw-border: #e5e5e5;
-     --pgw-radius: 0.5rem;
-     --pgw-font: "IBM Plex Sans", sans-serif;
-     --pgw-focus: #6d28d9;
-     /* --pgw-bg, --pgw-fg, --pgw-card, --pgw-muted, --pgw-muted-fg,
-        --pgw-hover, --pgw-active, --pgw-disabled, --pgw-shadow, --pgw-on-status,
-        --pgw-status-{completed,failed,running,paused,cancelled,pending} */
-   }
-   ```
-   A `prefers-color-scheme: dark` block ships defaults, so **dark mode is automatic**.
+Import `@pg-workflows/ui/styles.css`, then override any `--pgw-*` token on `:root` or a closer scope. Borders, radius, type, and focus use the same tokens as the status hues.
 
-2. **Tailwind, CSS modules, or CSS-in-JS on the component.** Every exported component accepts Base UI's style hooks:
-   - `className` — a string, or `(state) => string`. The state is also written to `data-*` attributes (`data-status`, `data-pressed`, `data-open`, …), so plain CSS can target it.
-   - `style` — a style object, or `(state) => style object`.
-   - `render` — a React element or `(props, state) => element` that replaces the root tag. On buttons, set `nativeButton={false}` when `render` is not a `<button>`.
+```css
+:root {
+  --pgw-accent: #6d28d9;
+  --pgw-accent-fg: #fff;
+  --pgw-border: #e5e5e5;
+  --pgw-radius: 0.5rem;
+  --pgw-font: "IBM Plex Sans", sans-serif;
+  --pgw-focus: #6d28d9;
+  --pgw-status-running: #2563eb;
+  /* also: --pgw-bg, --pgw-fg, --pgw-card, --pgw-muted, --pgw-muted-fg,
+     --pgw-hover, --pgw-active, --pgw-disabled, --pgw-shadow, --pgw-on-status,
+     --pgw-status-completed, --pgw-status-failed, --pgw-status-paused,
+     --pgw-status-cancelled, --pgw-status-pending */
+}
+```
 
-   Composite controls also take part hooks so you can restyle the Base UI pieces they hide: selects (`parts.popup`, `parts.item`, `parts.positioner`, …), the status popover (`parts.popup`, `checkbox`, `indicator`), search (`input`), progress (`parts.track`, `parts.indicator`), the status summary (`stat`), and the step timeline (`parts.trigger`, `parts.panel`). Each part's `className` / `style` receives that part's Base UI state.
+A `prefers-color-scheme: dark` block ships its own defaults, so dark mode follows the OS. There is no toggle yet.
 
-3. **Tailwind preset** (`@pg-workflows/ui/tailwind`) exposes the tokens as utilities (`bg-pgw-bg`, `text-pgw-status-running`, `border-pgw-border`) for your own markup.
+### 2. Restyle one component
 
-4. **`.pgw-root`.** Sets base background, foreground, and font. The dashboard applies it for you; add it to your own page when you compose the pieces yourself. Stable classes (`.pgw-button`, `.pgw-popup`, `.pgw-badge`, …) live in `@layer components`, so your utilities and unlayered CSS override them.
+Every exported component accepts Base UI style hooks:
+
+- `className` — a string, or `(state) => string`.
+- `style` — a style object, or `(state) => style object`.
+- `render` — an element, or `(props, state) => element`, that replaces the root tag.
+
+The same state is written onto the root as `data-*` attributes, so a stylesheet can target it without a function. `StatusBadge` exposes `data-status`. `LiveToggle` exposes `data-pressed` while live and `data-fetching` while a request is in flight.
+
+```tsx
+<StatusBadge
+  status={run.status}
+  className={(state) => (state.status === 'failed' ? 'ring-2 ring-red-600' : undefined)}
+/>
+
+<RunsTable
+  runs={rows}
+  onSelectRun={setSelected}
+  className={(state) => (state.empty ? 'opacity-60' : undefined)}
+/>
+```
+
+```css
+.pgw-badge[data-status='failed'] {
+  color: #b91c1c;
+}
+
+.pgw-live[data-pressed] {
+  border-color: var(--pgw-status-running);
+}
+```
+
+State passed to `className` / `style`:
+
+| Component | State |
+|-----------|--------|
+| `StatusBadge` | `{ status }` |
+| `RunsTable` | `{ empty, loading }` |
+| `RunDetail` | `{ phase, status? }` — `phase` is `'loading'`, `'error'`, or `'ready'` |
+| `FilterBar` | `{ active }` |
+| `StatusSummary` | `{ empty }` — the element is omitted when there is nothing to show |
+| `Pagination` | `{ hasPrev, hasNext, fetching }` |
+| `WorkflowRunsDashboard` | `{ selected }` |
+| `LiveToggle` | Base UI toggle state (`pressed`, `disabled`), plus the `data-fetching` attribute |
+
+`StatusSummary` also takes a `stat` prop so you can restyle each count button. `className`, `style`, and `render` there receive that button's state:
+
+```tsx
+<StatusSummary counts={counts} stat={{ className: 'uppercase tracking-wide' }} />
+```
+
+On `LiveToggle`, set `nativeButton={false}` when `render` is not a `<button>`.
+
+### 3. Use the tokens in your own markup
+
+`@pg-workflows/ui/tailwind` exposes the tokens as utilities: `bg-pgw-bg`, `text-pgw-fg`, `border-pgw-border`, `text-pgw-status-running`, `shadow-pgw`, `font-pgw`.
+
+```tsx
+<span className="bg-pgw-status-running px-2 text-pgw-on-status">running</span>
+```
+
+Add `pgw-root` to the page when you compose the pieces yourself. `<WorkflowRunsDashboard/>` already applies it. It sets the background, foreground, and font.
+
+Stable classes — `.pgw-button`, `.pgw-badge`, `.pgw-input`, `.pgw-popup`, `.pgw-filters`, `.pgw-stat`, `.pgw-live` — live in `@layer components`. Your utilities and unlayered CSS override them.
 
 ---
 
@@ -312,6 +563,7 @@ All under `basePath` (default `/workflow-runs`); `:id` is the run id.
 | Method & path | Engine call |
 |---------------|-------------|
 | `GET /` | `getRuns` (query: `starting_after`, `ending_before`, `limit`, `workflow_id`, `statuses[]`) |
+| `GET /stats` | `getStats` (query: `workflow_id`) |
 | `GET /:id` | `getRun` |
 | `POST /:id/cancel` | `cancelWorkflow` |
 | `POST /:id/pause` | `pauseWorkflow` |
