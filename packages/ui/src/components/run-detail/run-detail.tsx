@@ -132,6 +132,9 @@ export const RunDetail = forwardRef<HTMLElement, RunDetailProps>(function RunDet
         state={{ phase: 'ready', status: run.status }}
         baseClassName="flex flex-col gap-5"
       >
+        {run.status === 'failed' && run.error != null && (
+          <JsonPanel title="Error" value={run.error} titleClassName="text-pgw-status-failed" />
+        )}
         <RunDetailHeader run={run} onBack={onBack} />
         <div className="flex flex-wrap items-center gap-2">
           <RunAction
@@ -198,7 +201,7 @@ export const RunDetail = forwardRef<HTMLElement, RunDetailProps>(function RunDet
         <section className="flex flex-col gap-3">
           <JsonPanel title="Input" value={run.input} />
           <JsonPanel title="Output" value={run.output} />
-          {run.error != null && (
+          {run.error != null && run.status !== 'failed' && (
             <JsonPanel title="Error" value={run.error} titleClassName="text-pgw-status-failed" />
           )}
         </section>

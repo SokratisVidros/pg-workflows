@@ -108,7 +108,11 @@ describe('RunDetail', () => {
     expect(screen.getByText('high')).toBeInTheDocument();
     expect(screen.getByText('Job')).toBeInTheDocument();
     expect(screen.getByText('job_1')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Error' })).toBeInTheDocument();
+    const errorHeading = screen.getByRole('heading', { name: 'Error' });
+    const details = screen.getByRole('heading', { name: 'Details' });
+    expect(
+      errorHeading.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.getByText(/boom/)).toBeInTheDocument();
     expect(screen.getAllByText('1m 5s').length).toBeGreaterThan(0);
   });
