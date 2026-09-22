@@ -216,15 +216,14 @@ registers no workflow definitions — it drives runs owned by whichever app does
 
 ## Variant 4 — Headless (build your own UI)
 
-Everything the dashboard uses is exported, so you can compose your own interface. Provide a client via `WorkflowRunsProvider`, then use the hooks:
+The dashboard's regions are exported, so you can compose your own interface. Provide a client via `WorkflowRunsProvider`, then use the hooks:
 
 ```tsx
 'use client'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
 import {
   WorkflowRunsProvider, createFetchClient,
-  useWorkflowRuns, useWorkflowRun, useRunFilters,
-  useCancelRun, usePauseRun, useResumeRun, useFastForwardRun, useTriggerEvent,
+  useWorkflowRuns, useWorkflowRun, useRunFilters, useRunActions,
 } from '@pg-workflows/ui'
 
 const qc = new QueryClient()
@@ -243,14 +242,14 @@ function App() {
 function MyRunsView() {
   const { serverParams } = useRunFilters()
   const { data } = useWorkflowRuns(serverParams)   // { items, nextCursor, prevCursor, hasMore, hasPrev }
-  const cancel = useCancelRun()                    // cancel.mutate({ id })
+  const { cancel } = useRunActions()               // cancel.mutate({ id })
   return /* your markup */ null
 }
 ```
 
 **Query hooks:** `useWorkflowRuns(params)`, `useWorkflowRun(id)`, `useRunFilters(initial?)`, `useWorkflowRunsClient()`.
-**Mutation hooks:** `useCancelRun`, `usePauseRun`, `useResumeRun`, `useFastForwardRun`, `useTriggerEvent` — each `.mutate({ id, ... })` and invalidates the relevant queries on success.
-**Building blocks (all exported):** `RunsTable`, `Pagination`, `RunDetail`, `StatusBadge`, `StatusSummary`, `RunProgress`, `StepTimeline`, `FilterBar`, `LiveToggle`, `JsonViewer`, `RunDetailHeader`. Individual filters (`StatusFilter`, `WorkflowIdFilter`, `DateRangeFilter`, `DurationFilter`, `SearchFilter`) and helpers (`formatDuration`, `timeAgo`, `applyClientFilters`, `sortRuns`, …) are also on the main entry.
+**Mutation hook:** `useRunActions()` returns `{ cancel, pause, resume, fastForward, trigger }`. Each is its own mutation: `.mutate({ id, ... })` invalidates the relevant queries on success, and `isPending` stays per action.
+**Components:** `RunsTable`, `Pagination`, `FilterBar`, `StatusSummary`, `LiveToggle`, `RunDetail`, `StatusBadge`. Helpers (`formatDuration`, `timeAgo`, `applyClientFilters`, `sortRuns`, …) are also on the main entry.
 
 You can also skip React entirely and call `createFetchClient({ baseUrl })` from `@pg-workflows/ui/client` (`listRuns`, `getRun`, `cancelRun`, `pauseRun`, `resumeRun`, `fastForwardRun`, `triggerEvent`).
 

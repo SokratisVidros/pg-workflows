@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { WorkflowRun } from '../client';
+import type { WorkflowRun, WorkflowRunsClient } from '../client';
 import { useWorkflowRunsClient } from './use-workflow-runs-client';
 
 function useInvalidateRun() {
@@ -12,51 +12,26 @@ function useInvalidateRun() {
   };
 }
 
-export function useCancelRun() {
+function useRunAction<TVars extends { id: string }>(
+  action: (client: WorkflowRunsClient, vars: TVars) => Promise<WorkflowRun>,
+) {
   const { client } = useWorkflowRunsClient();
   const invalidate = useInvalidateRun();
-  return useMutation<WorkflowRun, Error, { id: string }>({
-    mutationFn: ({ id }) => client.cancelRun(id),
+  return useMutation<WorkflowRun, Error, TVars>({
+    mutationFn: (vars) => action(client, vars),
     onSuccess: (_run, { id }) => invalidate(id),
   });
 }
 
-export function usePauseRun() {
-  const { client } = useWorkflowRunsClient();
-  const invalidate = useInvalidateRun();
-  return useMutation<WorkflowRun, Error, { id: string }>({
-    mutationFn: ({ id }) => client.pauseRun(id),
-    onSuccess: (_run, { id }) => invalidate(id),
-  });
-}
-
-export function useResumeRun() {
-  const { client } = useWorkflowRunsClient();
-  const invalidate = useInvalidateRun();
-  return useMutation<WorkflowRun, Error, { id: string }>({
-    mutationFn: ({ id }) => client.resumeRun(id),
-    onSuccess: (_run, { id }) => invalidate(id),
-  });
-}
-
-export function useFastForwardRun() {
-  const { client } = useWorkflowRunsClient();
-  const invalidate = useInvalidateRun();
-  return useMutation<WorkflowRun, Error, { id: string; data?: Record<string, unknown> }>({
-    mutationFn: ({ id, data }) => client.fastForwardRun(id, { data }),
-    onSuccess: (_run, { id }) => invalidate(id),
-  });
-}
-
-export function useTriggerEvent() {
-  const { client } = useWorkflowRunsClient();
-  const invalidate = useInvalidateRun();
-  return useMutation<
-    WorkflowRun,
-    Error,
-    { id: string; eventName: string; data?: Record<string, unknown> }
-  >({
-    mutationFn: ({ id, eventName, data }) => client.triggerEvent(id, { eventName, data }),
-    onSuccess: (_run, { id }) => invalidate(id),
-  });
+export function useRunActions() {
+  const cancel = useRunAction((client, { id }) => client.cancelRun(id));
+  const pause = useRunAction((client, { id }) => client.pauseRun(id));
+  const resume = useRunAction((client, { id }) => client.resumeRun(id));
+  const fastForward = useRunAction<{ id: string; data?: Record<string, unknown> }>(
+    (client, { id, data }) => client.fastForwardRun(id, { data }),
+  );
+  const trigger = useRunAction<{ id: string; eventName: string; data?: Record<string, unknown> }>(
+    (client, { id, eventName, data }) => client.triggerEvent(id, { eventName, data }),
+  );
+  return { cancel, pause, resume, fastForward, trigger };
 }

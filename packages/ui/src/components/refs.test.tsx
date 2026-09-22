@@ -4,25 +4,25 @@ import { createRef, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkflowRun, WorkflowRunsClient } from '../client';
 import { WorkflowRunsProvider } from '../provider';
+import { DateRangeFilter } from './filter-bar/date-range-filter';
+import { DurationFilter } from './filter-bar/duration-filter';
+import { SearchFilter } from './filter-bar/search-filter';
+import { StatusFilter } from './filter-bar/status-filter';
+import { WorkflowIdFilter } from './filter-bar/workflow-id-filter';
 import {
-  DateRangeFilter,
-  DurationFilter,
   FilterBar,
-  JsonViewer,
   LiveToggle,
   Pagination,
   RunDetail,
-  RunDetailHeader,
-  RunProgress,
   RunsTable,
-  SearchFilter,
   StatusBadge,
-  StatusFilter,
   StatusSummary,
-  StepTimeline,
-  WorkflowIdFilter,
   WorkflowRunsDashboard,
 } from './index';
+import { JsonViewer } from './run-detail/json-viewer';
+import { RunDetailHeader } from './run-detail/run-detail-header';
+import { StepTimeline } from './run-detail/step-timeline';
+import { RunProgress } from './run-progress';
 
 const run = {
   id: 'run_a',

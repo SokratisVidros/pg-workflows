@@ -4,13 +4,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkflowRunsClient } from '../client';
 import { WorkflowRunsProvider } from '../provider';
-import {
-  useCancelRun,
-  useFastForwardRun,
-  usePauseRun,
-  useResumeRun,
-  useTriggerEvent,
-} from './use-run-mutations';
+import { useRunActions } from './use-run-mutations';
 
 function makeClient(): WorkflowRunsClient {
   const run = { id: 'run_1', status: 'cancelled' } as never;
@@ -40,44 +34,43 @@ function setup() {
   return { client, invalidate, wrapper };
 }
 
-describe('run mutation hooks', () => {
-  it('useCancelRun calls client.cancelRun and invalidates run + runs queries', async () => {
+describe('useRunActions', () => {
+  it('cancel calls client.cancelRun and invalidates run + runs queries', async () => {
     const { client, invalidate, wrapper } = setup();
-    const { result } = renderHook(() => useCancelRun(), { wrapper });
+    const { result } = renderHook(() => useRunActions(), { wrapper });
     await act(async () => {
-      await result.current.mutateAsync({ id: 'run_1' });
+      await result.current.cancel.mutateAsync({ id: 'run_1' });
     });
     expect(client.cancelRun).toHaveBeenCalledWith('run_1');
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['pgw', 'run', 'run_1'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['pgw', 'runs'] });
   });
 
-  it('usePauseRun and useResumeRun call their client methods', async () => {
+  it('pause and resume call their client methods', async () => {
     const { client, wrapper } = setup();
-    const pause = renderHook(() => usePauseRun(), { wrapper });
-    const resume = renderHook(() => useResumeRun(), { wrapper });
+    const { result } = renderHook(() => useRunActions(), { wrapper });
     await act(async () => {
-      await pause.result.current.mutateAsync({ id: 'run_1' });
-      await resume.result.current.mutateAsync({ id: 'run_1' });
+      await result.current.pause.mutateAsync({ id: 'run_1' });
+      await result.current.resume.mutateAsync({ id: 'run_1' });
     });
     expect(client.pauseRun).toHaveBeenCalledWith('run_1');
     expect(client.resumeRun).toHaveBeenCalledWith('run_1');
   });
 
-  it('useFastForwardRun forwards optional data', async () => {
+  it('fastForward forwards optional data', async () => {
     const { client, wrapper } = setup();
-    const { result } = renderHook(() => useFastForwardRun(), { wrapper });
+    const { result } = renderHook(() => useRunActions(), { wrapper });
     await act(async () => {
-      await result.current.mutateAsync({ id: 'run_1', data: { k: 1 } });
+      await result.current.fastForward.mutateAsync({ id: 'run_1', data: { k: 1 } });
     });
     expect(client.fastForwardRun).toHaveBeenCalledWith('run_1', { data: { k: 1 } });
   });
 
-  it('useTriggerEvent forwards eventName + data', async () => {
+  it('trigger forwards eventName + data', async () => {
     const { client, wrapper } = setup();
-    const { result } = renderHook(() => useTriggerEvent(), { wrapper });
+    const { result } = renderHook(() => useRunActions(), { wrapper });
     await act(async () => {
-      await result.current.mutateAsync({ id: 'run_1', eventName: 'go', data: { a: 1 } });
+      await result.current.trigger.mutateAsync({ id: 'run_1', eventName: 'go', data: { a: 1 } });
     });
     expect(client.triggerEvent).toHaveBeenCalledWith('run_1', { eventName: 'go', data: { a: 1 } });
   });

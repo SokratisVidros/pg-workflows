@@ -5,13 +5,7 @@ import { Tooltip } from '@base-ui/react/tooltip';
 import { clsx } from 'clsx';
 import { FastForward, Loader2, Pause, Play, Radio, X } from 'lucide-react';
 import { forwardRef, type ReactNode, useState } from 'react';
-import {
-  useCancelRun,
-  useFastForwardRun,
-  usePauseRun,
-  useResumeRun,
-  useTriggerEvent,
-} from '../../hooks/use-run-mutations';
+import { useRunActions } from '../../hooks/use-run-mutations';
 import { useWorkflowRun } from '../../hooks/use-workflow-run';
 import { PGW_BUTTON } from '../../lib/button-classes';
 import { computeDurationMs, formatDuration, isTerminalStatus } from '../../lib/duration';
@@ -138,11 +132,7 @@ export const RunDetail = forwardRef<HTMLElement, RunDetailProps>(function RunDet
   ref,
 ) {
   const { data: run, isLoading, error } = useWorkflowRun(runId);
-  const cancel = useCancelRun();
-  const pause = usePauseRun();
-  const resume = useResumeRun();
-  const fastForward = useFastForwardRun();
-  const trigger = useTriggerEvent();
+  const { cancel, pause, resume, fastForward, trigger } = useRunActions();
   const [feedback, setFeedback] = useState<ActionFeedback | null>(null);
 
   function feedbackCallbacks(label: string) {
