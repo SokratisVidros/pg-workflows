@@ -2,7 +2,7 @@
 /**
  * Standalone workflow-runs dashboard.
  *
- *   npx @pg-workflows/ui --database-url=postgres://… [--port=3777]
+ *   npx @pg-workflows/ui [--database-url=postgres://…] [--port=3777]
  *
  * Starts an engine against the given database, mounts the run adapter, and
  * serves the prebuilt SPA from `dist/standalone/`.
@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 const HOST = '127.0.0.1';
 const DEFAULT_PORT = 3777;
+const DEFAULT_DATABASE_URL = 'postgres://localhost:5432/postgres';
 const BASE_PATH = '/workflow-runs';
 const STATIC_ROOT = resolve(fileURLToPath(new URL('../dist/standalone', import.meta.url)));
 
@@ -33,14 +34,17 @@ const MIME = {
 };
 
 function parseArgs(argv) {
-  const args = { port: DEFAULT_PORT, databaseUrl: process.env.DATABASE_URL };
+  const args = {
+    port: DEFAULT_PORT,
+    databaseUrl: process.env.DATABASE_URL || DEFAULT_DATABASE_URL,
+  };
 
   for (const arg of argv) {
     if (arg === '--help' || arg === '-h') return { help: true };
     const match = /^--([^=]+)(?:=(.*))?$/.exec(arg);
     if (!match) continue;
     const [, key, value] = match;
-    if (key === 'database-url') args.databaseUrl = value;
+    if (key === 'database-url' && value) args.databaseUrl = value;
     else if (key === 'port') args.port = Number(value);
   }
 
@@ -48,10 +52,10 @@ function parseArgs(argv) {
 }
 
 const USAGE = `
-Usage: npx @pg-workflows/ui --database-url=<postgres-url> [--port=${DEFAULT_PORT}]
+Usage: npx @pg-workflows/ui [--database-url=<postgres-url>] [--port=${DEFAULT_PORT}]
 
 Options:
-  --database-url=<url>  Postgres connection string (or set DATABASE_URL)
+  --database-url=<url>  Postgres connection string (default ${DEFAULT_DATABASE_URL}, or DATABASE_URL)
   --port=<number>       Port to listen on (default ${DEFAULT_PORT})
   -h, --help            Show this message
 
@@ -94,12 +98,6 @@ async function main() {
 
   if (args.help) {
     process.stdout.write(USAGE);
-    return;
-  }
-
-  if (!args.databaseUrl) {
-    process.stderr.write(`Missing --database-url (or DATABASE_URL).\n${USAGE}`);
-    process.exitCode = 1;
     return;
   }
 

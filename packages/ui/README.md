@@ -1,256 +1,304 @@
 # @pg-workflows/ui
 
-React dashboard and HTTP adapters for [pg-workflows](https://github.com/SokratisVidros/pg-workflows) — browse, monitor, and manage workflow runs, or build your own UI on the headless hooks. It talks to your `WorkflowEngine` through a small, framework-agnostic HTTP layer, so the browser never touches your database.
-
-This is a **separate package** from `pg-workflows`. Install it only in apps that render UI. Workers and API services that just run the engine do not need it.
-
-This guide covers embedding the dashboard in an app, composing your own UI from the hooks and components, styling that UI, and opening the default dashboard with `npx` against a local Postgres.
+React dashboard and HTTP adapters for [pg-workflows](https://github.com/SokratisVidros/pg-workflows). Browse, monitor, and manage workflow runs, or build your own UI on the hooks.
 
 ---
 
-## Install
+## Try the dashboard
+
+The fastest way to look at runs. Postgres and a `pg-workflows` process are already running; this command does not add React to that app.
 
 ```bash
-npm install @pg-workflows/ui
+npx @pg-workflows/ui
 ```
 
-Peer dependencies you provide in your app:
+Open <http://127.0.0.1:3777>.
+
+---
+
+## Next.js
+
+App Router is the default: one catch-all route serves the API, and a page renders `<WorkflowRunsDashboard/>`. A working copy lives in [`examples/dashboard`](../../examples/dashboard).
+
+### Install
 
 ```bash
-npm install react react-dom @tanstack/react-query tailwindcss pg-workflows
+npm install @pg-workflows/ui @tanstack/react-query pg-workflows pg
 ```
 
-| Peer | Range | Why |
-|------|-------|-----|
-| `react`, `react-dom` | `>=18` | components + hooks |
-| `@tanstack/react-query` | `>=5` | data fetching/caching in the hooks |
-| `tailwindcss` | `^4` | components are styled with Tailwind v4 utilities + design tokens |
-| `pg-workflows` | `>=0.13.0` | the engine the server adapter drives (server-side only) |
+Install `tailwindcss` as well when the app does not already use Tailwind v4.
 
-> Ships compiled ESM with type declarations, so no TypeScript/JSX transpilation of `node_modules` is needed. Module structure is preserved rather than bundled, which keeps the `'use client'` directives intact for the React Server Components boundary — you can import the dashboard from a server component in the Next.js App Router.
+### App Router
+
+```ts
+// lib/engine.ts
+import { WorkflowEngine } from 'pg-workflows'
+import { sendWelcome } from './workflows'
+
+const globalForEngine = globalThis as unknown as {
+  engine?: WorkflowEngine
+}
+
+export function getEngine() {
+  if (!globalForEngine.engine) {
+    const connectionString = process.env.DATABASE_URL
+    if (!connectionString) throw new Error('DATABASE_URL is not set')
+    globalForEngine.engine = new WorkflowEngine({
+      connectionString,
+      workflows: [sendWelcome],
+    })
+  }
+  return globalForEngine.engine
+}
+```
+
+```ts
+// app/workflow-runs/[[...path]]/route.ts
+import { createAppRouterHandler } from '@pg-workflows/ui/next'
+import { getEngine } from '@/lib/engine'
+
+// `getEngine` itself — not `getEngine()` — so the handler calls it on the first request, awaits `engine.start()`, and builds the run API once.
+export const { GET, POST } = createAppRouterHandler({ engine: getEngine })
+```
+
+```tsx
+// app/page.tsx — a Server Component is fine
+import { WorkflowRunsDashboard } from '@pg-workflows/ui'
+
+export default function Page() {
+  return <WorkflowRunsDashboard baseUrl="/workflow-runs" />
+}
+```
+
+### Pages Router
+
+One optional catch-all. `basePath` is `/api/workflow-runs`, because that is the public URL Next puts on the request.
+
+```ts
+// pages/api/workflow-runs/[[...path]].ts
+import { createPagesApiHandler } from '@pg-workflows/ui/next'
+import { getEngine } from '@/lib/engine'
+
+export default createPagesApiHandler({
+  engine: getEngine,
+  basePath: '/api/workflow-runs',
+})
+```
+
+```tsx
+<WorkflowRunsDashboard baseUrl="/api/workflow-runs" />
+```
 
 ---
 
-## Entry points
+### Styles
 
-The package is split so client code never pulls in server/engine code:
-
-| Import | Contents | Runs |
-|--------|----------|------|
-| `@pg-workflows/ui` | Dashboard component, all components, hooks, provider, client re-export | client |
-| `@pg-workflows/ui/client` | `createFetchClient` + types (no React) | client or server |
-| `@pg-workflows/ui/server` | `createWorkflowRunsApi`, `toFetchHandler`, `toNodeHandler` — Fetch handler + Node `(req, res)` converter | server only |
-| `@pg-workflows/ui/next` | `createAppRouterHandler` (App Router catch-all), `createPagesApiHandler` (Pages Router), `createRouteHandlers` (optional per-file App Router) | server only |
-| `@pg-workflows/ui/tailwind` | Tailwind preset exposing the `pgw-*` color tokens | build |
-| `@pg-workflows/ui/styles.css` | CSS variables (light/dark) + base styles | client |
-| `pg-workflows-ui` (bin) | Standalone localhost dashboard — see [Variant 3](#variant-3--run-the-default-dashboard-with-npx) | CLI |
-
-The architecture: **browser → hooks → HTTP → server adapter → `WorkflowEngine` → Postgres.**
-
----
-
-## Styling setup (required once)
-
-The components use Tailwind v4 utilities plus `pgw-*` design tokens, so your Tailwind build must (1) see the package's classes and (2) know the tokens.
+The components are [Base UI](https://base-ui.com/react/components) parts with a default theme. Add the stylesheet once. [Styling & Customization](#styling--customization) covers recoloring and the Base UI style hooks (`className`, `style`, `render`).
 
 In your global CSS:
 
 ```css
 @import 'tailwindcss';
-@import '@pg-workflows/ui/styles.css';          /* --pgw-* variables (light + dark) + .pgw-root base */
+@import '@pg-workflows/ui/styles.css';
 
-/* Let Tailwind generate the utility classes the components use: */
 @source '../node_modules/@pg-workflows/ui/dist';
 ```
 
-If you use a JS Tailwind config instead, add the preset (for the `pgw-*` colors) and include the package in `content`:
+`styles.css` defines the `--pgw-*` variables (light and dark) and the `.pgw-root` base. `@source` is relative to this file. From `app/globals.css` or `src/index.css`, `../node_modules/@pg-workflows/ui/dist` is the package build. Tailwind then generates the utility classes the components use.
 
-```ts
-import pgwPreset from '@pg-workflows/ui/tailwind'
-export default {
-  presets: [pgwPreset],
-  content: ['./node_modules/@pg-workflows/ui/dist/**/*.js', /* your files */],
-}
+## Vite
+
+Install the same packages and add the same [stylesheet](#styles) as Next.js. The client and hooks are plain React. Point the dashboard at an API you host with [Express](#express), [Hono](#hono), or any server below.
+
+```css
+@import 'tailwindcss';
+@import '@pg-workflows/ui/styles.css';
+
+@source '../node_modules/@pg-workflows/ui/dist';
 ```
 
-Dark mode follows `prefers-color-scheme` on the `--pgw-*` variables. To recolor or restyle components, see [Style them to your liking](#style-them-to-your-liking).
-
----
-
-## Variant 1 — Drop-in dashboard
-
-The fastest path. `<WorkflowRunsDashboard/>` is self-contained: it creates its own React Query client and provider, renders the runs list, and navigates to a run detail page (timeline, per-step input/output, and lifecycle actions).
-
 ```tsx
-'use client'
-import '@pg-workflows/ui/styles.css'
 import { WorkflowRunsDashboard } from '@pg-workflows/ui'
 
-export default function RunsPage() {
-  // `baseUrl` points at where you mounted the server routes (Variant 2).
+export function App() {
   return <WorkflowRunsDashboard baseUrl="/workflow-runs" />
 }
 ```
 
-Props (`WorkflowRunsDashboardProps`):
-
-- `baseUrl: string` **or** `client: WorkflowRunsClient` — where/how to reach the API (exactly one).
-- `pollIntervalMs?: number` — live-refresh interval (default 5000; `0` disables).
-- `selectedRunId?: string | null` + `onSelectRun?: (id: string | null) => void` — optional controlled selection (wire to your router for deep-linkable runs).
-- `className`, `style`, and `render` — Base UI style hooks. `className` and `style` may be a value or a function of the dashboard state (`{ selected }`). `render` replaces the root element.
-
-You still need the server routes from Variant 2 for it to have data.
+Proxy `/workflow-runs` to the API from the Vite dev server so the page and the API share an origin. The adapter does not send CORS headers. A `baseUrl` on another origin stays blocked in the browser until that server allows the page's origin.
 
 ---
 
-## Variant 2 — Server adapter
+## Express
 
-`createWorkflowRunsApi` maps HTTP requests onto your engine's management API (list/get runs + cancel/pause/resume/fast-forward/trigger). It's built on Web-standard `Request`/`Response`, so it drops into any modern server; a `toNodeHandler` bridges to Node `(req, res)`.
-
-```ts
-import { createWorkflowRunsApi } from '@pg-workflows/ui/server'
-import { engine } from '@/lib/engine' // your started WorkflowEngine
-
-export const runsApi = createWorkflowRunsApi({
-  engine,
-  // basePath?: '/workflow-runs'            // defaults to '/workflow-runs'
-  // resolveContext?: (req) => ({ resourceId })   // see Security below
-})
-```
-
-### Next.js — App Router
-
-One optional catch-all. `api.fetch` already dispatches on method + path, so you do not need a `route.ts` per endpoint:
-
-```ts
-// app/workflow-runs/[[...path]]/route.ts
-import { createAppRouterHandler } from '@pg-workflows/ui/next'
-import { runsApi } from '@/lib/runs-api'
-
-export const { GET, POST } = createAppRouterHandler(runsApi)
-```
-
-Use `[[...path]]` (optional) so both `GET /workflow-runs` (list) and `POST /workflow-runs/:id/cancel` match. Point the dashboard at the same prefix: `<WorkflowRunsDashboard baseUrl="/workflow-runs" />`. If you mount under `/api/workflow-runs`, create the api with `basePath: '/api/workflow-runs'` and pass that as `baseUrl`.
-
-> A complete working version of this setup — catch-all route, engine singleton, and a seed script covering every run state — lives in [`examples/dashboard`](../../examples/dashboard).
-
-If you need a file per endpoint (for example to wrap mutations in extra auth), `createRouteHandlers(api)` still returns one named export per route (`const h = createRouteHandlers(runsApi)`). Every export is `api.fetch` — Next provides the full URL, so routing is not reimplemented:
-
-| File | Export |
-|------|--------|
-| `app/workflow-runs/route.ts` | `export const GET = h.list` |
-| `app/workflow-runs/[id]/route.ts` | `export const GET = h.detail` |
-| `app/workflow-runs/[id]/cancel/route.ts` | `export const POST = h.cancel` |
-| `app/workflow-runs/[id]/pause/route.ts` | `export const POST = h.pause` |
-| `app/workflow-runs/[id]/resume/route.ts` | `export const POST = h.resume` |
-| `app/workflow-runs/[id]/fast-forward/route.ts` | `export const POST = h.fastForward` |
-| `app/workflow-runs/[id]/trigger/route.ts` | `export const POST = h.trigger` |
-
-### Next.js — Pages Router
-
-One catch-all API route. Create the api with a `basePath` matching the mount:
-
-```ts
-// pages/api/workflow-runs/[[...path]].ts
-import { createWorkflowRunsApi } from '@pg-workflows/ui/server'
-import { createPagesApiHandler } from '@pg-workflows/ui/next'
-import { engine } from '@/lib/engine'
-
-const api = createWorkflowRunsApi({ engine, basePath: '/api/workflow-runs' })
-export default createPagesApiHandler(api)
-```
-
-Use `<WorkflowRunsDashboard baseUrl="/api/workflow-runs" />`.
-
-### TanStack Start / Hono / Bun / Deno / Cloudflare Workers
-
-Any Web-standard server can call `api.fetch(request)` directly (or `toFetchHandler(runsApi)` if you already have a wrapper):
-
-```ts
-// e.g. a TanStack Start server route or a Hono handler
-import { runsApi } from '@/lib/runs-api'
-export const handler = (request: Request) => runsApi.fetch(request)
-```
-
-### Express / Node
-
-Bridge the Web handler to Node with `toNodeHandler` (Express, Fastify `req.raw`/`reply.raw`, Nest, raw `node:http`). Pass the api or `api.fetch`:
+`createWorkflowRunsApi` maps HTTP onto the engine (list, get, stats, cancel, pause, resume, fast-forward, trigger). It speaks Web `Request` / `Response`. `toNodeHandler` adapts that to Node `(req, res)` for Express, Fastify (`req.raw` / `reply.raw`), Nest, or raw `node:http`.
 
 ```ts
 import express from 'express'
-import { toNodeHandler } from '@pg-workflows/ui/server'
-import { runsApi } from './runs-api'
+import { createWorkflowRunsApi, toNodeHandler } from '@pg-workflows/ui/server'
+import { engine } from './engine'
+
+const runsApi = createWorkflowRunsApi({
+  engine,
+  basePath: '/workflow-runs',
+})
 
 const app = express()
-// create the api with basePath: '/workflow-runs' — originalUrl keeps the mount prefix
 app.use('/workflow-runs', toNodeHandler(runsApi))
 ```
 
-### Vite / SPA (no server of your own)
+`basePath` has to match the mount. Express strips that prefix from `req.url` and keeps it on `req.originalUrl`, which is what `toNodeHandler` reads. Leave the body stream unread — `express.json()` on this path consumes it before the handler can.
 
-The client + hooks are pure React — host the dashboard in a Vite SPA and point it at an API served by any of the targets above (e.g. a separate Node/Hono service): `<WorkflowRunsDashboard baseUrl="https://api.example.com/workflow-runs" />`.
+Render the dashboard from [Next.js](#nextjs) or [Vite](#vite) with `baseUrl="/workflow-runs"`.
 
 ---
 
-## Variant 3 — Run the default dashboard with `npx`
+## Hono
 
-Use this when Postgres and a `pg-workflows` process are already running, and you want the default dashboard without adding React to that app.
-
-The CLI starts its own engine against the **same database**, serves the prebuilt dashboard, and mounts the run API at `/workflow-runs`. It does not register workflow definitions, and it does not execute step handlers. Cancel, pause, resume, fast-forward, and trigger enqueue work for the process that owns the definitions.
-
-### 1. Local Postgres
-
-Any local Postgres works. For example:
-
-```bash
-createdb pgworkflows
-```
-
-Point both processes at that database. The snippets below use `postgres://localhost:5432/pgworkflows`. Change the user, password, host, and database name to match yours.
-
-### 2. Run pg-workflows
-
-In the app that defines your workflows, start the engine and leave it running:
+Create the api the same way as in [Express](#express) (the default `basePath` is `/workflow-runs`), then forward the Fetch request:
 
 ```ts
-import { WorkflowEngine } from 'pg-workflows'
-import { sendWelcome } from './workflows'
+import { Hono } from 'hono'
+import { runsApi } from './runs-api'
 
-const engine = new WorkflowEngine({
-  connectionString: 'postgres://localhost:5432/pgworkflows',
-  workflows: [sendWelcome],
-})
-await engine.start()
+const app = new Hono()
+
+app.all('/workflow-runs', (c) => runsApi.fetch(c.req.raw))
+app.all('/workflow-runs/*', (c) => runsApi.fetch(c.req.raw))
 ```
 
-Start a run the way you normally do (`engine.startWorkflow(...)`). The dashboard only shows runs that exist in this database. Defining workflows is covered in the [pg-workflows quick start](../../README.md#quick-start).
-
-### 3. Open the dashboard
-
-From another terminal:
-
-```bash
-npx @pg-workflows/ui --database-url=postgres://localhost:5432/pgworkflows
-```
-
-Then open <http://127.0.0.1:3777>.
-
-`DATABASE_URL` works in place of `--database-url`. `--port` changes the port (default `3777`). `--help` prints the flags.
-
-If the command cannot load `pg-workflows`, install the engine and its `pg` peer in the current directory, then run the command again from there:
-
-```bash
-npm install pg-workflows pg
-npx @pg-workflows/ui --database-url=postgres://localhost:5432/pgworkflows
-```
-
-> **Binds `127.0.0.1` only, with no authentication and no `resolveContext`.** Every run in that database is readable and mutable by anyone who can reach the port. Localhost is the trust boundary. Do not put it behind a tunnel or a reverse proxy.
+`toFetchHandler(runsApi)` is the same function if you already hold a wrapper that expects `(request) => Response`.
 
 ---
 
-## Variant 4 — Hooks and components
+## TanStack Start
 
-The dashboard's regions are exported. Provide a client with `WorkflowRunsProvider`, then call the hooks and render the components yourself. Every hook below must run under that provider.
+Server routes are `createFileRoute` handlers. The list path and the splat are different files: `/workflow-runs/$` matches `/workflow-runs/stats` and `/workflow-runs/:id/cancel`, and it does not match `GET /workflow-runs`.
+
+```ts
+// src/routes/workflow-runs.index.ts
+import { createFileRoute } from '@tanstack/react-router'
+import { runsApi } from '../lib/runs-api'
+
+export const Route = createFileRoute('/workflow-runs')({
+  server: {
+    handlers: {
+      GET: ({ request }) => runsApi.fetch(request),
+    },
+  },
+})
+```
+
+```ts
+// src/routes/workflow-runs/$.ts
+import { createFileRoute } from '@tanstack/react-router'
+import { runsApi } from '../../lib/runs-api'
+
+const handle = ({ request }: { request: Request }) => runsApi.fetch(request)
+
+export const Route = createFileRoute('/workflow-runs/$')({
+  server: {
+    handlers: {
+      GET: handle,
+      POST: handle,
+    },
+  },
+})
+```
+
+
+
+---
+
+## Bun
+
+```ts
+import { runsApi } from './runs-api'
+
+Bun.serve({
+  fetch(request) {
+    return runsApi.fetch(request)
+  },
+})
+```
+
+This process serves the API. A request whose path is not under `basePath` (default `/workflow-runs`) gets a 404 from the adapter. Point the dashboard `baseUrl` at that prefix.
+
+---
+
+## Deno
+
+```ts
+import { runsApi } from './runs-api.ts'
+
+Deno.serve((request) => runsApi.fetch(request))
+```
+
+Same API-only behavior as [Bun](#bun).
+
+---
+
+## Reference
+
+### Architecture
+
+```mermaid
+flowchart LR
+  Dashboard["Dashboard and hooks"] --> Client["createFetchClient"]
+  Client --> HTTP["HTTP /workflow-runs"]
+  Next["Next.js handlers"] --> API["createWorkflowRunsApi"]
+  Node["toNodeHandler"] --> API
+  Fetch["api.fetch"] --> API
+  HTTP --> API
+  API --> Engine["WorkflowEngine"]
+  Engine --> DB[("PostgreSQL")]
+```
+
+The browser calls the hooks, the hooks call HTTP, and the server adapter calls `WorkflowEngine`. Postgres stays on the server.
+
+### Entry points
+
+Client code never imports the server entry, so a browser bundle does not pull in the engine.
+
+| Import | Contents | Runs |
+|--------|----------|------|
+| `@pg-workflows/ui` | Dashboard, components, hooks, provider, and a re-export of the fetch client | client |
+| `@pg-workflows/ui/client` | `createFetchClient` and types, no React | client or server |
+| `@pg-workflows/ui/server` | `createWorkflowRunsApi`, `toFetchHandler`, `toNodeHandler` | server only |
+| `@pg-workflows/ui/next` | `createAppRouterHandler`, `createPagesApiHandler`, `createRouteHandlers` | server only |
+| `@pg-workflows/ui/tailwind` | Tailwind preset for the `pgw-*` color tokens | build |
+| `@pg-workflows/ui/styles.css` | CSS variables (light and dark) and base styles | client |
+| `pg-workflows-ui` (bin) | Standalone localhost dashboard — see [Try the dashboard](#try-the-dashboard) | CLI |
+
+If you use a JS Tailwind config instead of `@source`, add the preset and the package to `content`:
+
+```ts
+import pgwPreset from '@pg-workflows/ui/tailwind'
+
+export default {
+  presets: [pgwPreset],
+  content: ['./node_modules/@pg-workflows/ui/dist/**/*.js'],
+}
+```
+
+Dark mode follows `prefers-color-scheme` on the `--pgw-*` variables. To recolor or restyle, see [Styling & Customization](#styling--customization).
+
+### Dashboard
+
+`<WorkflowRunsDashboard/>` is self-contained. Pass exactly one of `baseUrl` or `client`.
+
+| Prop | Role |
+|------|------|
+| `baseUrl` | Prefix of the routes you mounted. Mutually exclusive with `client`. |
+| `client` | A `WorkflowRunsClient`, usually from `createFetchClient`. Mutually exclusive with `baseUrl`. |
+| `pollIntervalMs` | Live-refresh interval. Omitted, the Live control uses `5000` while on and `0` while off. Set it, and that value replaces the control: the button still toggles, but the interval does not. |
+| `selectedRunId` | Controlled selection. Pair with `onSelectRun` and your router for a deep link. |
+| `onSelectRun` | `(id: string \| null) => void` |
+| `className`, `style`, `render` | Base UI style hooks. `className` and `style` may be a value or a function of `{ selected }`. `render` replaces the root element. |
+
+### Hooks and components
+
+Provide a client with `WorkflowRunsProvider`, then call the hooks and render the components yourself. Every hook below must run under that provider.
 
 ```tsx
 'use client'
@@ -275,9 +323,9 @@ export function App() {
 
 `pollIntervalMs` is the live-refresh interval for every query under the provider. `0` turns polling off. The default is `5000`.
 
-### Compose a runs view
+#### Compose a runs view
 
-This is the same wiring `<WorkflowRunsDashboard/>` uses. Status and workflow id go to the server. Search, date, duration, and sort apply to the current page, because the engine paginates by cursor.
+This is the wiring `<WorkflowRunsDashboard/>` uses. Status and workflow id go to the server. Search, date, duration, and sort apply to the current page, because the engine paginates by cursor.
 
 ```tsx
 import { useMemo, useState } from 'react'
@@ -378,8 +426,6 @@ fastForward.mutate({ id: runId, data: { skipped: true } })
 trigger.mutate({ id: runId, eventName: 'payment-confirmed', data: { ok: true } })
 ```
 
-### Hooks
-
 #### `useRunFilters(initial?)`
 
 Filter state for the list. `initial` is merged over the defaults (`limit: 20`, `sort: 'createdAt'`, `dir: 'desc'`).
@@ -422,13 +468,13 @@ Counts keyed by status: `pending`, `running`, `paused`, `completed`, `failed`, `
 
 `{ client, pollIntervalMs }` from the provider. Throws when called outside `WorkflowRunsProvider`.
 
-### Components
+#### Components
 
-Each component also takes `className`, `style`, and `render`. See [Style them to your liking](#style-them-to-your-liking).
+Each component also takes `className`, `style`, and `render`. See [Styling & Customization](#styling--customization).
 
 | Component | You pass | It renders |
 |-----------|----------|------------|
-| `WorkflowRunsDashboard` | `baseUrl` or `client` | The full list and detail view. Creates its own React Query client and provider. Other props are under [Variant 1](#variant-1--drop-in-dashboard). |
+| `WorkflowRunsDashboard` | `baseUrl` or `client` | The full list and detail view. Creates its own React Query client and provider. Other props are under [Dashboard](#dashboard). |
 | `RunsTable` | `runs`, `onSelectRun` | The runs table. `selectedRunId` highlights a row. While `runs` is empty, `isLoading` shows "Loading…" instead of "No runs". |
 | `RunDetail` | `runId` | Step timeline, input and output, and the lifecycle actions. `onBack` is the back control. |
 | `FilterBar` | `filters`, `hasActiveFilters`, `workflowIds`, `onFiltersChange`, `onClear` | Search, plus status, workflow, date, and duration filters. |
@@ -437,19 +483,35 @@ Each component also takes `className`, `style`, and `render`. See [Style them to
 | `Pagination` | `hasPrev`, `hasNext`, `onPrev`, `onNext` | Previous and next. `isFetching` disables both buttons. |
 | `LiveToggle` | `isLive`, `isFetching`, `onToggle` | A Live / Paused switch. You own `isLive` and pass `pollIntervalMs={isLive ? 5000 : 0}` to the provider. |
 
-Helpers on the main entry: `applyClientFilters`, `sortRuns`, `formatDuration`, `timeAgo`, `computeDurationMs`, `isTerminalStatus`.
+Helpers on the main entry: `applyClientFilters`, `sortRuns`, `formatDuration`, `timeAgo`, `computeDurationMs`, `isTerminalStatus`, `DATE_PRESETS`, `DURATION_PRESETS`, `datePresetToFrom`, `durationPresetToBounds`.
 
-### Without React
+#### Client without React
 
 `createFetchClient({ baseUrl })` from `@pg-workflows/ui/client` talks to the same HTTP API: `listRuns`, `getRun`, `getStats`, `cancelRun`, `pauseRun`, `resumeRun`, `fastForwardRun`, `triggerEvent`.
 
----
+#### Server
 
-## Style them to your liking
+| Export | From | Role |
+|--------|------|------|
+| `createWorkflowRunsApi({ engine, basePath?, resolveContext? })` | `@pg-workflows/ui/server` | Builds the handler. `basePath` defaults to `/workflow-runs`. `resolveContext` returns `{ resourceId }` or throws. |
+| `toFetchHandler(api)` | `@pg-workflows/ui/server` | Normalizes the api or a `(request) => api.fetch(request)` wrapper to one Fetch function. |
+| `toNodeHandler(api)` | `@pg-workflows/ui/server` | Node `(req, res)` adapter. |
+| `createAppRouterHandler({ engine })` | `@pg-workflows/ui/next` | `{ GET, POST }` for an App Router catch-all. `engine` may be `getEngine`. The first request awaits `start()` and builds the API once. An existing API or fetch function still works. |
+| `createPagesApiHandler({ engine, basePath? })` | `@pg-workflows/ui/next` | Default export for a Pages Router catch-all. Same engine startup as `createAppRouterHandler`. |
+| `createRouteHandlers({ engine })` | `@pg-workflows/ui/next` | One Fetch handler per endpoint name, for a file per route. Same engine startup as `createAppRouterHandler`. |
 
-The components ship with a default look: square corners, ink borders, and status color as the only chroma. Three ways to change it, from the smallest edit to your own markup.
+### Styling & Customization
 
-### 1. Recolor with CSS variables
+The UI is built on [Base UI](https://base-ui.com/react/components). Buttons, toggles, selects, popovers, inputs, checkboxes, tooltips, collapsibles, and progress indicators are Base UI parts. The exported roots go through Base UI's `useRender`, so a change uses the same hooks Base UI documents — not a separate styling API.
+
+- `className` and `style` take a value, or a function of that component's state.
+- `render` replaces the root element. It does not wrap it. The part's props and behavior stay on the element you pass.
+- That state is also written as `data-*` attributes, so a stylesheet can target it without a function.
+- Style the public root and the documented parts (`stat` on `StatusSummary`). Reaching into the markup inside a part fights the next release.
+
+The default look follows the chrome Base UI publishes: square corners, a 1px ink border, neutral surfaces, and a hard offset shadow. Status color is the only chroma. Three ways to change it, from a token override to your own markup.
+
+#### 1. Recolor with CSS variables
 
 Import `@pg-workflows/ui/styles.css`, then override any `--pgw-*` token on `:root` or a closer scope. Borders, radius, type, and focus use the same tokens as the status hues.
 
@@ -471,15 +533,11 @@ Import `@pg-workflows/ui/styles.css`, then override any `--pgw-*` token on `:roo
 
 A `prefers-color-scheme: dark` block ships its own defaults, so dark mode follows the OS. There is no toggle yet.
 
-### 2. Restyle one component
+#### 2. Restyle one component
 
-Every exported component accepts Base UI style hooks:
+Pass the Base UI hooks on the component. `className` is a string or `(state) => string`. `style` is a style object or `(state) => style object`. `render` is an element or `(props, state) => element`.
 
-- `className` — a string, or `(state) => string`.
-- `style` — a style object, or `(state) => style object`.
-- `render` — an element, or `(props, state) => element`, that replaces the root tag.
-
-The same state is written onto the root as `data-*` attributes, so a stylesheet can target it without a function. `StatusBadge` exposes `data-status`. `LiveToggle` exposes `data-pressed` while live and `data-fetching` while a request is in flight.
+`StatusBadge` exposes `data-status`. `LiveToggle` exposes `data-pressed` while live and `data-fetching` while a request is in flight. On `LiveToggle`, set `nativeButton={false}` when `render` is not a `<button>` — Base UI uses that flag when the rendered element is not a native button.
 
 ```tsx
 <StatusBadge
@@ -520,14 +578,12 @@ State passed to `className` / `style`:
 `StatusSummary` also takes a `stat` prop so you can restyle each count button. `className`, `style`, and `render` there receive that button's state:
 
 ```tsx
-<StatusSummary counts={counts} stat={{ className: 'uppercase tracking-wide' }} />
+<StatusSummary counts={counts} stat={ { className: 'uppercase tracking-wide' } } />
 ```
 
-On `LiveToggle`, set `nativeButton={false}` when `render` is not a `<button>`.
+#### 3. Use the tokens in your own markup
 
-### 3. Use the tokens in your own markup
-
-`@pg-workflows/ui/tailwind` exposes the tokens as utilities: `bg-pgw-bg`, `text-pgw-fg`, `border-pgw-border`, `text-pgw-status-running`, `shadow-pgw`, `font-pgw`.
+Importing `styles.css` registers the tokens with Tailwind v4 `@theme`, including `bg-pgw-bg`, `text-pgw-fg`, `border-pgw-border`, `text-pgw-status-running`, `shadow-pgw`, and `font-pgw`. The [`@pg-workflows/ui/tailwind`](#entry-points) preset only adds the color tokens, for a JS config. It does not define `shadow-pgw` or `font-pgw`.
 
 ```tsx
 <span className="bg-pgw-status-running px-2 text-pgw-on-status">running</span>
@@ -537,11 +593,11 @@ Add `pgw-root` to the page when you compose the pieces yourself. `<WorkflowRunsD
 
 Stable classes — `.pgw-button`, `.pgw-badge`, `.pgw-input`, `.pgw-popup`, `.pgw-filters`, `.pgw-stat`, `.pgw-live` — live in `@layer components`. Your utilities and unlayered CSS override them.
 
----
+### Security
 
-## Security & multi-tenancy
+The adapter leaves authentication to your app. Put the routes behind your own middleware.
 
-The adapter does **not** own authentication — protect the routes with your app's own middleware. It owns **scoping** via the optional `resolveContext` hook:
+Scoping is the optional `resolveContext` hook. The `resourceId` it returns is passed to every read and every action, so a caller only sees and changes their own runs. `resourceId` is never read from the client.
 
 ```ts
 createWorkflowRunsApi({
@@ -550,18 +606,14 @@ createWorkflowRunsApi({
 })
 ```
 
-The resolved `resourceId` is passed to every read and every action, so a caller can only see and act on their own runs. `resourceId` is never read from the client.
+> **Open by default.** With no `resolveContext`, the adapter exposes and mutates every run in the database. That suits a single-tenant dashboard that already sits behind your auth. When more than one tenant shares the database, pass `resolveContext`.
 
-> ⚠️ **Open by default.** With no `resolveContext`, the adapter exposes and mutates **all runs across all tenants**. That's intended for single-tenant/internal dashboards behind your own auth. For anything multi-tenant, always supply `resolveContext`.
+### HTTP
 
----
+All paths are under `basePath` (default `/workflow-runs`). `:id` is the run id.
 
-## HTTP reference
-
-All under `basePath` (default `/workflow-runs`); `:id` is the run id.
-
-| Method & path | Engine call |
-|---------------|-------------|
+| Method and path | Engine call |
+|-----------------|-------------|
 | `GET /` | `getRuns` (query: `starting_after`, `ending_before`, `limit`, `workflow_id`, `statuses[]`) |
 | `GET /stats` | `getStats` (query: `workflow_id`) |
 | `GET /:id` | `getRun` |
@@ -571,32 +623,7 @@ All under `basePath` (default `/workflow-runs`); `:id` is the run id.
 | `POST /:id/fast-forward` | `fastForwardWorkflow` (body: `{ data? }`) |
 | `POST /:id/trigger` | `triggerEvent` (body: `{ eventName, data? }`) |
 
-Errors map to `400` (validation), `401` (`resolveContext` threw), `404` (unknown run), `409` (illegal transition), `500`.
-
-## Not built yet
-
-Ledgered deliberately, not oversights — each needs a design decision more than
-it needs code:
-
-| | Notes |
-|---|---|
-| Dark-mode **toggle** | The tokens already switch on `prefers-color-scheme`; this is an explicit override control, which needs somewhere to persist the choice |
-| Keyboard navigation | Arrow-key row traversal and shortcuts for the action bar |
-| Bulk actions | Multi-select plus a confirm step; the adapter has no batch endpoint, so it would be N requests |
-| Sortable column headers | The engine paginates by cursor, so sorting has to happen server-side to stay correct across pages |
-| Real Trigger event form | Currently a stub. A useful form needs to know a workflow's event names, which the engine doesn't expose |
-| Copy / deep-link a run | Shareable URL per run; needs the host app's routing, since the dashboard doesn't own the URL bar |
-
-Also out of scope by design: starting workflows from the UI, metrics, alerting,
-and realtime streaming.
-
----
-
-## Why a separate package
-
-`pg-workflows` is a Node/Postgres engine. Its peers are `pg`, not React. Putting the dashboard on `pg-workflows/ui` would make every worker install Radix and see a React peer. Keep the engine in workers; add `@pg-workflows/ui` only where you render a UI.
-
----
+Errors map to `400` (validation), `401` (`resolveContext` threw), `404` (unknown run or path), `405` (method not allowed on a known path), `409` (illegal transition, or `WorkflowRunInProgressError`), `500`.
 
 ## License
 

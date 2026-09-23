@@ -19,7 +19,20 @@ include:
 exclude:
   - node_modules
   - examples/node_modules
-  - packages
+  # Keep packages/ui/README.md. Excluding `packages` skips the directory
+  # before Jekyll can publish that page.
+  - packages/pg-workflows
+  - packages/ui/bin
+  - packages/ui/dist
+  - packages/ui/node_modules
+  - packages/ui/scripts
+  - packages/ui/src
+  - packages/ui/standalone
+  - packages/ui/package.json
+  - packages/ui/tsconfig.json
+  - packages/ui/tsconfig.build.json
+  - packages/ui/vite.config.ts
+  - packages/ui/vitest.config.ts
   - dist
   - tests
   - bun.lock

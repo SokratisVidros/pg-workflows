@@ -4,7 +4,7 @@ A Next.js App Router app that embeds `<WorkflowRunsDashboard/>` from
 [`@pg-workflows/ui`](../../packages/ui) and serves it from a real
 `WorkflowEngine`. Used for end-to-end verification of the package.
 
-To open the same default dashboard with no Next.js app, see [Run the default dashboard with npx](../../packages/ui/README.md#variant-3--run-the-default-dashboard-with-npx).
+To open the same default dashboard with no Next.js app, see [Try the dashboard](../../packages/ui/README.md#try-the-dashboard).
 
 This is a workspace member (`examples/dashboard`). From the repo root, `bun install`
 links the local `pg-workflows` and `@pg-workflows/ui` packages.
@@ -35,8 +35,7 @@ the engine if `packages/pg-workflows/dist` is missing.
 | `app/page.tsx` | Server component rendering `<WorkflowRunsDashboard baseUrl="/workflow-runs" />` |
 | `app/workflow-runs/[[...path]]/route.ts` | Optional catch-all adapter, from `createAppRouterHandler` |
 | `lib/workflows.ts` | Four workflows covering the completed / failed / waiting / running states |
-| `lib/engine.ts` | Lazily-constructed engine singleton |
-| `lib/runs-api.ts` | `createWorkflowRunsApi` + startup gating |
+| `lib/engine.ts` | Lazily-constructed engine singleton. The route passes `getEngine` to `createAppRouterHandler`, which awaits startup and builds the API. |
 | `scripts/seed.ts` | Seeds runs across every status |
 
 The seeded workflows are chosen so the dashboard has something distinct to show
@@ -62,18 +61,18 @@ no separate "waiting" status, so those runs *are* the paused ones and calling
 **Nothing is constructed at import time.** `next build` imports every route
 module to collect metadata, so building a connection pool — or even reading
 `DATABASE_URL` — at module scope would make your build depend on a reachable
-database. `getEngine()` and `runsApi.fetch` defer everything to the first
-request.
+database. The route passes `getEngine` (not `getEngine()`), and
+`createAppRouterHandler` calls it when a request arrives.
 
 **The catch-all awaits engine startup.** Lifecycle actions can't enqueue a job
-until `engine.start()` has resolved, and a route handler has no lifecycle hook
-in which to wait for that. `runsApi.fetch` awaits one shared, cached start
-promise first — see `lib/runs-api.ts`.
+until `engine.start()` has resolved. The handler awaits that once and reuses
+the promise. `getEngine` also registers workflow definitions added after the
+first start, so a hot reload can pick up a new seed fixture.
 
 ## Security
 
 This demo passes no `resolveContext`, so the adapter is open over **every run**
 — appropriate for a local single-tenant demo and nothing else. Anything
 multi-tenant must mount these routes behind its own auth and supply
-`resolveContext`; see the [Security section](../../packages/ui/README.md#security--multi-tenancy)
+`resolveContext`; see the [Security section](../../packages/ui/README.md#security)
 of the package README.

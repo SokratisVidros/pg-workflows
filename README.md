@@ -156,7 +156,7 @@ See [runnable examples](https://github.com/SokratisVidros/pg-workflows/tree/main
 - **[API Reference](docs/api-reference.md)** - `WorkflowEngine`, `WorkflowClient`, `WorkflowRef`, types
 - **[Configuration](docs/configuration.md)** - env vars, database setup, requirements
 - **[Observability](docs/observability.md)** - OpenTelemetry tracing via `otelPlugin`
-- **[UI](packages/ui/README.md)** - `@pg-workflows/ui`: hooks, components, styling, and [running the default dashboard with `npx`](packages/ui/README.md#variant-3--run-the-default-dashboard-with-npx)
+- **[UI](packages/ui/README.md)** - `@pg-workflows/ui`: hooks, components, styling, and [running the default dashboard with `npx`](packages/ui/README.md#try-the-dashboard)
 
 ---
 

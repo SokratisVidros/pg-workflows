@@ -97,6 +97,45 @@ describe('createAppRouterHandler (App Router catch-all)', () => {
     });
   });
 
+  it('defers the engine until the first request, starts it once, then serves', async () => {
+    const order: string[] = [];
+    let resolveStart: (() => void) | undefined;
+    const engine = {
+      ...mockEngine(),
+      start: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            order.push('start');
+            resolveStart = resolve;
+          }),
+      ),
+      getRuns: vi.fn(async () => {
+        order.push('getRuns');
+        return {
+          items: [],
+          nextCursor: null,
+          prevCursor: null,
+          hasMore: false,
+          hasPrev: false,
+        };
+      }),
+    };
+    const getEngine = vi.fn(() => engine);
+    const { GET } = createAppRouterHandler({ engine: getEngine });
+
+    expect(getEngine).not.toHaveBeenCalled();
+
+    const first = GET(new Request('http://x/workflow-runs'));
+    const second = GET(new Request('http://x/workflow-runs?limit=1'));
+    await vi.waitFor(() => expect(engine.start).toHaveBeenCalledOnce());
+    expect(order).toEqual(['start']);
+    resolveStart?.();
+    expect((await first).status).toBe(200);
+    expect((await second).status).toBe(200);
+    expect(order).toEqual(['start', 'getRuns', 'getRuns']);
+    expect(getEngine).toHaveBeenCalledOnce();
+  });
+
   it('ignores Next route context (catch-all params) and still dispatches on the URL', async () => {
     const engine = mockEngine();
     const api = createWorkflowRunsApi({ engine: engine as never });

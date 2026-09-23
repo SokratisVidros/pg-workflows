@@ -12,12 +12,16 @@ const globalForEngine = globalThis as unknown as {
 };
 
 /**
- * Everything here is deferred to the first request rather than done at import
- * time. `next build` imports every route module to collect its metadata, so
- * constructing a pool — or reading DATABASE_URL — at module scope would make
- * the build depend on a reachable database.
+ * Called by `createAppRouterHandler` on each request, never at import time.
+ * `next build` imports the route module, so constructing a pool — or reading
+ * `DATABASE_URL` — at module scope would make the build depend on a reachable
+ * database.
+ *
+ * Return the same engine every time. The handler awaits `start()` once; this
+ * function also awaits it so a workflow added after that first start (a new
+ * seed fixture while `next dev` is running) can be registered on a live engine.
  */
-export function getEngine(): WorkflowEngine {
+export async function getEngine(): Promise<WorkflowEngine> {
   if (!globalForEngine.pgWorkflowsEngine) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
@@ -27,25 +31,13 @@ export function getEngine(): WorkflowEngine {
     }
     globalForEngine.pgWorkflowsEngine = new WorkflowEngine({ connectionString, workflows });
   }
-  return globalForEngine.pgWorkflowsEngine;
-}
-
-/**
- * Runs migrations and brings up the workers. Lifecycle actions can't enqueue
- * until this resolves, so the catch-all route awaits it — see `lib/runs-api.ts`.
- * Cached, so only the first caller pays for startup.
- *
- * Workflows added after the first `start()` (e.g. a new seed fixture while
- * `next dev` is already running) are registered on later calls so hot reload
- * can pick them up without restarting the process.
- */
-export async function engineReady(): Promise<void> {
-  globalForEngine.pgWorkflowsReady ??= getEngine().start();
+  const engine = globalForEngine.pgWorkflowsEngine;
+  globalForEngine.pgWorkflowsReady ??= engine.start();
   await globalForEngine.pgWorkflowsReady;
-  const engine = getEngine();
   for (const definition of workflows) {
     if (!engine.workflows.has(definition.id)) {
       await engine.registerWorkflow(definition);
     }
   }
+  return engine;
 }
