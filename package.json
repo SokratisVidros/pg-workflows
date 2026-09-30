@@ -4,6 +4,7 @@
   "workspaces": {
     "packages": [
       "packages/*",
+      "apps/*",
       "examples/*"
     ],
     "catalog": {
@@ -28,6 +29,8 @@
     "build:ui": "bun run --filter '@pg-workflows/ui' build",
     "dev": "bun run --filter pg-workflows dev",
     "dev:ui": "bun run --filter pg-workflows-dashboard-example dev",
+    "dev:docs": "bun run --filter pg-workflows-docs dev",
+    "build:docs": "bun run --filter pg-workflows-docs build",
     "test": "bun run test:unit && bun run test:otel && bun run test:ui && bun run test:integration",
     "test:unit": "bun run --filter pg-workflows test:unit",
     "test:otel": "bun run --filter '@pg-workflows/otel' test",

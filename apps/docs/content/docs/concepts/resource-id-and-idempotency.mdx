@@ -1,0 +1,45 @@
+---
+title: Resource IDs and idempotency
+description: Scope runs to a tenant, and deduplicate starts.
+---
+
+## Resource ID
+
+`resourceId` ties a run to an entity in your app, such as a user, tenant, or order.
+
+- **Query.** `getRuns({ resourceId })` lists the runs for that entity.
+- **Scope.** When you pass `resourceId` to `getRun`, `pauseWorkflow`, `resumeWorkflow`, `cancelWorkflow`, `triggerEvent`, and the other run methods, the query also matches on `resource_id`. A run that belongs to a different resource returns `WorkflowRunNotFoundError`. Use this for tenant isolation.
+
+```typescript
+const run = await engine.startWorkflow({
+  workflowId: 'send-invoice',
+  resourceId: 'tenant_42',
+  input: { orderId: 'ord_1', total: 99 },
+})
+
+const { items } = await engine.getRuns({ resourceId: 'tenant_42' })
+```
+
+`resourceId` is optional everywhere. Omit it to address runs by `runId` alone.
+
+## Idempotency key
+
+Pass `idempotencyKey` when the same start can be requested twice, for example on a double click, a client retry, or an at-least-once webhook. A second `startWorkflow` with the same key returns the existing run and enqueues nothing.
+
+```typescript
+const first = await engine.startWorkflow({
+  workflowId: 'send-invoice',
+  input: { orderId: 'ord_1', total: 99 },
+  idempotencyKey: 'send-invoice:ord_1',
+})
+
+const second = await engine.startWorkflow({
+  workflowId: 'send-invoice',
+  input: { orderId: 'ord_1', total: 99 },
+  idempotencyKey: 'send-invoice:ord_1',
+})
+
+second.id === first.id // true
+```
+
+Keys are unique across the whole table, not per workflow or resource, and can be up to 256 characters. Prefix them with the workflow ID. The input of a duplicate call is ignored.

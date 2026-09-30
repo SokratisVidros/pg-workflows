@@ -1,4 +1,7 @@
-# AI and agent workflows
+---
+title: AI and agent workflows
+description: Durable LLM pipelines, human review, and retrieval.
+---
 
 LLM calls are slow, cost money, and fail with 429s and 500s. Running them as workflow steps gives you:
 
@@ -190,6 +193,6 @@ const ragAgent = workflow(
 ## Limits to plan for
 
 - **A step can repeat after a crash.** If the process dies after an LLM call returns but before its result is saved, the call runs again on retry. Pass an idempotency key to APIs that charge or send.
-- **Execution time is capped.** A single handler execution is limited by [`WORKFLOW_RUN_EXPIRE_IN_SECONDS`](configuration.md#environment-variables) (default 300). The limit resets at every pause, so an agent that waits for review is unaffected, but a long chain of slow calls without a pause can hit it. Raise the limit or split the chain into [child workflows](core-concepts.md#child-workflows).
+- **Execution time is capped.** A single handler execution is limited by [`WORKFLOW_RUN_EXPIRE_IN_SECONDS`](/docs/reference/configuration#environment-variables) (default 300). The limit resets at every pause, so an agent that waits for review is unaffected, but a long chain of slow calls without a pause can hit it. Raise the limit or split the chain into [child workflows](/docs/concepts/child-workflows).
 - **The workflow `timeout` isn't enforced.** It's saved as `run.timeoutAt`. To bound a wait, use `timeout` on `step.waitFor` or `step.poll`.
 - **Code between steps must be deterministic.** The handler runs from the top on every resume. Keep LLM calls, randomness, and `Date.now()` inside steps.

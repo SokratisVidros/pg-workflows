@@ -1,0 +1,40 @@
+---
+title: Pause and resume
+description: Pause runs manually, resume them, or complete a waiting step with fast-forward.
+---
+
+`step.pause` pauses the run at that point until something calls `resumeWorkflow`:
+
+```typescript
+const publishPost = workflow('publish-post', async ({ step }) => {
+  await step.run('render-preview', async () => ({ rendered: true }))
+  await step.pause('editor-approval')
+  await step.run('publish', async () => ({ published: true }))
+})
+```
+
+```typescript
+await engine.resumeWorkflow({ runId: run.id })
+```
+
+`engine.pauseWorkflow({ runId })` pauses a pending or running run from outside. `engine.cancelWorkflow({ runId })` cancels a pending, running, or paused run.
+
+## Fast-forward
+
+`fastForwardWorkflow` completes whatever step the run is paused on. It's intended for tests, debugging, and support tooling. It does nothing if the run isn't paused.
+
+```typescript
+// Paused on waitFor: `data` becomes the event payload (default `{}`)
+await engine.fastForwardWorkflow({ runId: run.id, data: { approved: true } })
+
+// Paused on delay or waitUntil: skips the wait
+await engine.fastForwardWorkflow({ runId: run.id })
+```
+
+| Paused on | Effect |
+|-----------|--------|
+| `step.waitFor()` | Sends the event with `data` (default `{}`). |
+| `step.delay()` / `step.waitUntil()` | Ends the wait. |
+| `step.poll()` | Resolves the poll with `data` as its result. |
+| `step.pause()` | Same as `resumeWorkflow()`. |
+| `step.invokeChildWorkflow()` | Nothing. The child's outcome decides when the parent continues. |

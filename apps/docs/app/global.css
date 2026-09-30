@@ -1,0 +1,28 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+@theme {
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
+}
+
+/* PostgreSQL blue as the accent, on Fumadocs' neutral palette. */
+:root {
+  --color-fd-primary: oklch(0.49 0.13 250);
+  --color-fd-primary-foreground: oklch(0.99 0 0);
+}
+
+.dark {
+  --color-fd-primary: oklch(0.72 0.12 245);
+  --color-fd-primary-foreground: oklch(0.16 0.02 250);
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}

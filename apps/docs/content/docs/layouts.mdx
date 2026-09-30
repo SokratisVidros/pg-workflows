@@ -1,4 +1,7 @@
-# Architecture
+---
+title: Deployment layouts
+description: Run pg-workflows in a single service, or split API services from workers.
+---
 
 pg-workflows runs in one of two layouts:
 
@@ -43,7 +46,7 @@ const run = await engine.startWorkflow({
 })
 ```
 
-To scale, run more copies of the process. Every engine that has called `start()` pulls runs from the same queue. Each engine runs [`WORKFLOW_RUN_WORKERS`](configuration.md#environment-variables) workers (default 3).
+To scale, run more copies of the process. Every engine that has called `start()` pulls runs from the same queue. Each engine runs [`WORKFLOW_RUN_WORKERS`](/docs/reference/configuration#environment-variables) workers (default 3).
 
 ## API and worker
 
@@ -125,14 +128,14 @@ await engine.start()
 
 The client doesn't load definitions, which has two consequences:
 
-- **Singleton.** Set `singleton: true` on the ref, not only on the worker's definition. See [Singleton workflows](core-concepts.md#singleton-workflows).
+- **Singleton.** Set `singleton: true` on the ref, not only on the worker's definition. See [Singleton workflows](/docs/concepts/singleton-workflows).
 - **Progress.** `client.checkProgress` can't report `totalSteps` or a percentage for an in-progress run. Use `getRun` and read `status` and `currentStepId`, or call `checkProgress` on an engine that has the workflow registered.
 
-A runnable version of this layout is in [`examples/node/microservices`](../examples/node/microservices).
+A runnable version of this layout is in [`examples/node/microservices`](https://github.com/SokratisVidros/pg-workflows/tree/main/examples/node/microservices).
 
 ## Dashboard
 
-The engine has no built-in UI. [`@pg-workflows/ui`](../packages/ui/README.md) is a separate package of React components and hooks for browsing runs and step timelines.
+The engine has no built-in UI. [`@pg-workflows/ui`](/docs/ui) is a separate package of React components and hooks for browsing runs and step timelines.
 
 ```
 ┌───────────┐   HTTP    ┌──────────────┐   pg-workflows   ┌────────────┐
@@ -142,17 +145,6 @@ The engine has no built-in UI. [`@pg-workflows/ui`](../packages/ui/README.md) is
 └───────────┘           └──────────────┘                  └────────────┘
 ```
 
-The browser never connects to the database. Expose list and get endpoints on top of `getRuns` and `getRun`, then point the UI's `WorkflowRunsProvider` at them. Setup is in the [UI package README](../packages/ui/README.md).
+The browser never connects to the database. Expose list and get endpoints on top of `getRuns` and `getRun`, then point the UI's `WorkflowRunsProvider` at them. Setup is in the [UI package README](/docs/ui).
 
 Keep `@pg-workflows/ui` out of worker services. Its peer dependencies are React, Tailwind, and TanStack Query. The engine's only peer dependency is `pg`.
-
-## How a run executes
-
-PostgreSQL is both the job queue (through pg-boss) and the state store (`workflow_runs`).
-
-1. **Start.** `startWorkflow` inserts a `workflow_runs` row with status `running` and enqueues a job.
-2. **Execute.** A worker picks up the job and calls the handler.
-3. **Save each step.** Each `step.run` result is written to the run's `timeline` before the handler moves on.
-4. **Pause.** `waitFor`, `pause`, `delay`, `waitUntil`, `poll`, and `invokeChildWorkflow` save the run as `paused` and end the execution. No worker or connection is held while it waits.
-5. **Resume.** An event, `resumeWorkflow`, a timer, or a finished child enqueues a new job. The handler runs from the top, and completed steps return their saved results.
-6. **Finish.** The handler's return value is saved as `output` and the run is `completed`. If the handler throws, the run is retried up to `retries` times, then marked `failed`.

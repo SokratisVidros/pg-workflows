@@ -1,0 +1,211 @@
+---
+title: Components
+description: The dashboard components, and how to compose them.
+---
+
+## `<WorkflowRunsDashboard/>`
+
+The whole dashboard in one component: live toggle, status counts, filters, runs table, pagination, and run detail. It creates its own React Query client and provider.
+
+![WorkflowRunsDashboard](/images/dashboard.png)
+
+```tsx
+import { WorkflowRunsDashboard } from '@pg-workflows/ui'
+
+export default function Page() {
+  return <WorkflowRunsDashboard baseUrl="/workflow-runs" />
+}
+```
+
+The components below are the pieces of the dashboard. They need a [`WorkflowRunsProvider`](/docs/ui/reference#workflowrunsprovider) above them. Each snippet is an excerpt from the full page in [Compose the components](/docs/ui/components#compose-the-components).
+
+## `<RunsTable/>`
+
+The list of runs, with step progress, IDs, status, timestamps, and duration.
+
+![RunsTable](/images/runs-table.png)
+
+```tsx
+<RunsTable
+  runs={rows}
+  isLoading={runs.isLoading}
+  selectedRunId={runId}
+  onSelectRun={setRunId}
+/>
+```
+
+## `<RunDetail/>`
+
+One run: header, details, lifecycle actions, step timeline, and input and output. It loads the run and calls the actions itself.
+
+![RunDetail](/images/run-detail.png)
+
+```tsx
+<RunDetail runId={runId} onBack={() => setRunId(null)} />
+```
+
+## `<StatusSummary/>`
+
+A count per status. Click a count to filter by that status.
+
+![StatusSummary](/images/status-summary.png)
+
+```tsx
+<StatusSummary
+  counts={stats.data ?? {}}
+  onSelectStatus={(status) => filter({ statuses: [status] })}
+/>
+```
+
+## `<FilterBar/>`
+
+Search, plus status, workflow, date, and duration filters.
+
+![FilterBar](/images/filter-bar.png)
+
+```tsx
+<FilterBar
+  filters={filters}
+  hasActiveFilters={hasActiveFilters}
+  workflowIds={['nightly-report', 'order-fulfillment']}
+  onFiltersChange={filter}
+  onClear={clearFilters}
+/>
+```
+
+## `<Pagination/>`
+
+Previous and next controls for the cursor-paginated list.
+
+![Pagination](/images/pagination.png)
+
+```tsx
+<Pagination
+  hasPrev={!!runs.data?.hasPrev}
+  hasNext={!!runs.data?.hasMore}
+  isFetching={runs.isFetching}
+  onPrev={() =>
+    setFilters({ endingBefore: runs.data?.prevCursor ?? undefined, startingAfter: undefined })
+  }
+  onNext={() =>
+    setFilters({ startingAfter: runs.data?.nextCursor ?? undefined, endingBefore: undefined })
+  }
+/>
+```
+
+## `<LiveToggle/>`
+
+A Live / Paused switch for polling. You own the state and pass the matching interval to the provider.
+
+![LiveToggle](/images/live-toggle.png)
+
+```tsx
+<LiveToggle isLive={live} isFetching={runs.isFetching} onToggle={onToggleLive} />
+```
+
+## `<StatusBadge/>`
+
+A status label.
+
+![StatusBadge](/images/status-badge.png)
+
+```tsx
+<StatusBadge status={run.status} />
+```
+
+## Compose the components
+
+The same wiring `<WorkflowRunsDashboard/>` uses, as one client component. Filter changes reset the page cursor, and the client-side filters (search, date, duration) and sort are applied to the current page before rendering.
+
+```tsx
+'use client'
+import {
+  applyClientFilters,
+  createFetchClient,
+  FilterBar,
+  LiveToggle,
+  Pagination,
+  RunDetail,
+  type RunFilters,
+  RunsTable,
+  StatusSummary,
+  sortRuns,
+  useRunFilters,
+  useWorkflowRunStats,
+  useWorkflowRuns,
+  WorkflowRunsProvider,
+} from '@pg-workflows/ui'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState } from 'react'
+
+const client = createFetchClient({ baseUrl: '/workflow-runs' })
+
+export function RunsPage() {
+  const [queryClient] = useState(() => new QueryClient())
+  const [live, setLive] = useState(true)
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <WorkflowRunsProvider client={client} pollIntervalMs={live ? 5000 : 0}>
+        <div className="pgw-root flex flex-col gap-5">
+          <Runs live={live} onToggleLive={() => setLive((v) => !v)} />
+        </div>
+      </WorkflowRunsProvider>
+    </QueryClientProvider>
+  )
+}
+
+function Runs({ live, onToggleLive }: { live: boolean; onToggleLive: () => void }) {
+  const { filters, setFilters, clearFilters, hasActiveFilters, serverParams } = useRunFilters()
+  const runs = useWorkflowRuns(serverParams)
+  const stats = useWorkflowRunStats({ workflowId: filters.workflowId })
+  const [runId, setRunId] = useState<string | null>(null)
+
+  const filter = (partial: Partial<RunFilters>) =>
+    setFilters({ ...partial, startingAfter: undefined, endingBefore: undefined })
+
+  const rows = sortRuns(
+    applyClientFilters(runs.data?.items ?? [], filters),
+    filters.sort,
+    filters.dir,
+  )
+
+  if (runId) return <RunDetail runId={runId} onBack={() => setRunId(null)} />
+
+  return (
+    <>
+      <LiveToggle isLive={live} isFetching={runs.isFetching} onToggle={onToggleLive} />
+      <StatusSummary
+        counts={stats.data ?? {}}
+        onSelectStatus={(status) => filter({ statuses: [status] })}
+      />
+      <FilterBar
+        filters={filters}
+        hasActiveFilters={hasActiveFilters}
+        workflowIds={['nightly-report', 'order-fulfillment']}
+        onFiltersChange={filter}
+        onClear={clearFilters}
+      />
+      <RunsTable
+        runs={rows}
+        isLoading={runs.isLoading}
+        selectedRunId={runId}
+        onSelectRun={setRunId}
+      />
+      <Pagination
+        hasPrev={!!runs.data?.hasPrev}
+        hasNext={!!runs.data?.hasMore}
+        isFetching={runs.isFetching}
+        onPrev={() =>
+          setFilters({ endingBefore: runs.data?.prevCursor ?? undefined, startingAfter: undefined })
+        }
+        onNext={() =>
+          setFilters({ startingAfter: runs.data?.nextCursor ?? undefined, endingBefore: undefined })
+        }
+      />
+    </>
+  )
+}
+```
+
+---

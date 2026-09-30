@@ -11,7 +11,7 @@ pg-workflows is a TypeScript workflow engine that uses PostgreSQL for durable ex
 - **Runtime:** Node.js >= 18
 - **Database:** PostgreSQL >= 10
 - **License:** MIT
-- **Workspace:** Bun workspaces under `packages/*` and `examples/*`
+- **Workspace:** Bun workspaces under `packages/*`, `apps/*`, and `examples/*`
 
 ## Project Structure
 
@@ -30,15 +30,28 @@ packages/
 │   └── bunup.config.ts
 ├── otel/                   # npm: @pg-workflows/otel (plugin built on workflow.use)
 └── ui/                     # npm: @pg-workflows/ui
+apps/
+└── docs/                   # pgworkflows.dev: Fumadocs (Next.js static export) on Cloudflare Workers Static Assets
+    └── content/docs/       # the docs pages (MDX), the single source of truth for docs
+skills/
+└── pg-workflows-install/   # public install skill, served at pgworkflows.dev/skill.md
 examples/
 ├── node/                   # CLI examples
 └── dashboard/              # Next.js dashboard example
 ```
 
+## Docs site
+
+- `apps/docs` builds to static files in `apps/docs/out/`. `apps/docs/wrangler.jsonc` serves them as Workers Static Assets (Worker `pg-workflows-docs`). `.github/workflows/docs.yml` runs `wrangler deploy` on pushes to `main` and `wrangler versions upload --preview-alias <branch>` on PRs. Run `bun run --filter pg-workflows-docs preview` to serve the build locally.
+- The prebuild step (`apps/docs/scripts/copy-skill.ts`) copies `skills/pg-workflows-install` into `public/`. It also fails the build if `README.md` stops containing `agentPrompt` from `apps/docs/lib/site.ts`, the prompt behind the home page's main call to action.
+- When engine, UI, or OTel behavior changes, update the matching page in `apps/docs/content/docs` **and** the install skill's references.
+
 ## Commands
 
 - `bun run build` - Build engine, then the OTel plugin, then UI
 - `bun run dev` - Watch-mode engine build
+- `bun run dev:docs` - Docs site dev server
+- `bun run build:docs` - Build the docs site to `apps/docs/out`
 - `bun run test` - Run unit, OTel, UI, and integration tests
 - `bun run test:unit` - Engine unit tests (PGlite, no PostgreSQL needed)
 - `bun run test:otel` - OTel plugin tests (PGlite, no PostgreSQL needed)

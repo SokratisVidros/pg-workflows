@@ -1,0 +1,67 @@
+name: Docs
+
+on:
+  pull_request:
+    paths:
+      - 'apps/docs/**'
+      - 'skills/**'
+      - 'README.md'
+      - 'bun.lock'
+      - '.github/workflows/docs.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/docs/**'
+      - 'skills/**'
+      - 'README.md'
+      - 'bun.lock'
+      - '.github/workflows/docs.yml'
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & deploy to Cloudflare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build docs
+        run: bun run build:docs
+
+      # apps/docs/wrangler.jsonc serves ./out with Workers Static Assets. Runs
+      # without the secrets (forked PRs, or before setup) build but skip this.
+      - name: Deploy to production
+        if: github.event_name == 'push' && env.CLOUDFLARE_API_TOKEN != ''
+        working-directory: apps/docs
+        run: bunx wrangler deploy --message "${{ github.sha }}"
+
+      # PRs upload a version without promoting it, under a stable preview URL
+      # per branch: https://<branch>-pg-workflows-docs.<subdomain>.workers.dev
+      - name: Upload preview
+        if: github.event_name == 'pull_request' && env.CLOUDFLARE_API_TOKEN != ''
+        working-directory: apps/docs
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          alias=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g' | cut -c1-40)
+          bunx wrangler versions upload --preview-alias "$alias" --message "${{ github.sha }}"

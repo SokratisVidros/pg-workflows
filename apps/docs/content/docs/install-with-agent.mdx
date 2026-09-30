@@ -1,0 +1,49 @@
+---
+title: Install with an agent
+description: Hand the setup to Claude Code, Cursor, Codex, or any coding agent that can fetch a URL.
+---
+
+pg-workflows publishes an install skill: instructions written for coding agents. The agent reads your codebase, picks a layout, installs and verifies the engine, mounts the dashboard for your stack, and offers to add tracing. It asks before touching your database.
+
+## Copy the prompt
+
+Paste this into your agent, from the root of your project:
+
+<CopyPrompt />
+
+The agent fetches [`/skill.md`](/skill.md) and follows it. Nothing is installed in the agent itself.
+
+## Install the skill
+
+To keep the skill available in every session, install it into your agent instead:
+
+```bash
+npx skills add SokratisVidros/pg-workflows --skill pg-workflows-install
+```
+
+Then ask the agent to "add pg-workflows to this project". The skill's source is in [`skills/pg-workflows-install`](https://github.com/SokratisVidros/pg-workflows/tree/main/skills/pg-workflows-install).
+
+## What the agent does
+
+1. **Inspects the project**: package manager, services and their frameworks, hosting, the Postgres connection, React and Tailwind, and any existing OpenTelemetry setup.
+2. **Picks a layout** and tells you why:
+
+   | Layout | When |
+   |--------|------|
+   | Monolith | One long-running service starts and executes workflows. |
+   | Web app plus worker | One codebase whose web tier is serverless or shouldn't carry heavy workflow dependencies. A worker process joins it. |
+   | Microservices | Several services start runs with `WorkflowClient`. One worker service owns every workflow. |
+
+3. **Installs the engine** and runs a workflow end to end against your database, showing you the output.
+4. **Adds the dashboard** with the adapter for your stack: Next.js (App Router or Pages Router), Express, Fastify, Hono, TanStack Start, Bun, or Deno. The dashboard's API goes behind your existing auth.
+5. **Offers tracing** with `@pg-workflows/otel`, reusing your OpenTelemetry SDK if you have one.
+6. **Reports** every file it changed and what each process needs in production.
+
+The same steps are documented for people in [Deployment layouts](/docs/layouts), [Dashboard](/docs/ui), and [Tracing](/docs/observability/tracing).
+
+## For agents
+
+- [`/skill.md`](/skill.md): the install skill
+- [`/llms.txt`](/llms.txt): an index of these docs
+- [`/llms-full.txt`](/llms-full.txt): every page in one file
+- Every page has a **Copy Markdown** button, and its Markdown at `/llms.mdx/docs/<page>/content.md`

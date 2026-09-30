@@ -1,0 +1,51 @@
+---
+title: Child workflows
+description: Start a workflow from another workflow and wait for its output.
+---
+
+`step.invokeChildWorkflow` starts another workflow, pauses the parent, and returns the child's output when the child completes. The parent holds no worker while it waits.
+
+```typescript
+import { createWorkflowRef, workflow } from 'pg-workflows'
+import { z } from 'zod'
+
+type ReceiptOutput = { receiptId: string }
+const receiptInput = z.object({ orderId: z.string() })
+
+// Explicit generics turn off inference, so pass the schema type as the second one
+const sendReceiptRef = createWorkflowRef<ReceiptOutput, typeof receiptInput>('send-receipt', {
+  inputSchema: receiptInput,
+})
+
+export const sendReceipt = sendReceiptRef(async ({ step, input }) => {
+  return step.run('email-receipt', async () => ({ receiptId: `rcpt_${input.orderId}` }))
+})
+
+export const checkout = workflow(
+  'checkout',
+  async ({ step, input }) => {
+    const receipt = await step.invokeChildWorkflow('send-receipt', sendReceiptRef, {
+      orderId: input.orderId,
+    })
+    return { receiptId: receipt.receiptId } // receipt: ReceiptOutput
+  },
+  { inputSchema: z.object({ orderId: z.string() }) },
+)
+```
+
+Register both `checkout` and `sendReceipt` with the engine. You can also invoke by ID and type the output with a generic:
+
+```typescript
+const receipt = await step.invokeChildWorkflow<ReceiptOutput>('send-receipt', {
+  workflowId: 'send-receipt',
+  input: { orderId: input.orderId },
+})
+```
+
+Behavior:
+
+- The child starts once per parent step. Its output is saved on the parent like any step result.
+- If the child fails or is cancelled, the parent step throws, and the parent's own `retries` apply.
+- The child inherits the parent's priority unless the call or the child's definition sets one.
+- **Cancelling the parent does not cancel the child.** The child runs to its own end state. The same applies when the parent fails, completes, or times out while the child is running.
+- `resumeWorkflow()` and `fastForwardWorkflow()` do nothing while the parent waits on a child.
