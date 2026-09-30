@@ -9,5 +9,7 @@
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "404-page"
   },
+  "routes": [{ "pattern": "pgworkflows.dev", "custom_domain": true }],
+  "workers_dev": true,
   "preview_urls": true
 }

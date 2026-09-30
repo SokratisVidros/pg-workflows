@@ -12,10 +12,10 @@ Durable workflows for TypeScript, backed by PostgreSQL. Each step's result is sa
 Paste this into Claude Code, Cursor, Codex, or any agent that can fetch a URL:
 
 ```
-Add pg-workflows to this project. Fetch https://pgpworkflows.dev/skill.md and follow it step by step: pick the right layout for this codebase (monolith, web app plus worker, or microservices), install and verify the engine, add the @pg-workflows/ui dashboard for our stack, then ask me whether to add OpenTelemetry tracing.
+Add pg-workflows to this project. Fetch https://pgworkflows.dev/skill.md and follow it step by step: pick the right layout for this codebase (monolith, web app plus worker, or microservices), install and verify the engine, add the @pg-workflows/ui dashboard for our stack, then ask me whether to add OpenTelemetry tracing.
 ```
 
-Or install the skill: `npx skills add SokratisVidros/pg-workflows --skill pg-workflows-install`. See [Install with an agent](https://pgpworkflows.dev/docs/install-with-agent).
+Or install the skill: `npx skills add SokratisVidros/pg-workflows --skill pg-workflows-install`. See [Install with an agent](https://pgworkflows.dev/docs/install-with-agent).
 
 ## Quickstart
 
@@ -177,16 +177,16 @@ main()
 
 ## Documentation
 
-Full docs are at **[pgpworkflows.dev](https://pgpworkflows.dev)**.
+Full docs are at **[pgworkflows.dev](https://pgworkflows.dev)**.
 
 | Guide | Covers |
 |-------|--------|
-| [Core concepts](https://pgpworkflows.dev/docs/concepts/workflows) | Steps, events, timers, polling, child workflows, schedules, retries, priorities, singletons, idempotency, input validation |
-| [Deployment layouts](https://pgpworkflows.dev/docs/layouts) | Single-service and API/worker deployments |
-| [Examples](https://pgpworkflows.dev/docs/guides/examples) | Conditional steps, fan-out loops, reminders, polling, retries, progress |
-| [AI and agent workflows](https://pgpworkflows.dev/docs/guides/ai-agents) | Durable LLM pipelines, human review, retrieval |
-| [API reference](https://pgpworkflows.dev/docs/reference/api) | `WorkflowEngine`, `WorkflowClient`, `WorkflowRef`, `workflow()`, types |
-| [Configuration](https://pgpworkflows.dev/docs/reference/configuration) | Environment variables, database objects, requirements |
+| [Core concepts](https://pgworkflows.dev/docs/concepts/workflows) | Steps, events, timers, polling, child workflows, schedules, retries, priorities, singletons, idempotency, input validation |
+| [Deployment layouts](https://pgworkflows.dev/docs/layouts) | Single-service and API/worker deployments |
+| [Examples](https://pgworkflows.dev/docs/guides/examples) | Conditional steps, fan-out loops, reminders, polling, retries, progress |
+| [AI and agent workflows](https://pgworkflows.dev/docs/guides/ai-agents) | Durable LLM pipelines, human review, retrieval |
+| [API reference](https://pgworkflows.dev/docs/reference/api) | `WorkflowEngine`, `WorkflowClient`, `WorkflowRef`, `workflow()`, types |
+| [Configuration](https://pgworkflows.dev/docs/reference/configuration) | Environment variables, database objects, requirements |
 
 ### Packages
 

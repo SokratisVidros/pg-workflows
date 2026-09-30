@@ -31,10 +31,10 @@ packages/
 ├── otel/                   # npm: @pg-workflows/otel (plugin built on workflow.use)
 └── ui/                     # npm: @pg-workflows/ui
 apps/
-└── docs/                   # pgpworkflows.dev: Fumadocs (Next.js static export) on Cloudflare Workers Static Assets
+└── docs/                   # pgworkflows.dev: Fumadocs (Next.js static export) on Cloudflare Workers Static Assets
     └── content/docs/       # the docs pages (MDX), the single source of truth for docs
 skills/
-└── pg-workflows-install/   # public install skill, served at pgpworkflows.dev/skill.md
+└── pg-workflows-install/   # public install skill, served at pgworkflows.dev/skill.md
 examples/
 ├── node/                   # CLI examples
 └── dashboard/              # Next.js dashboard example

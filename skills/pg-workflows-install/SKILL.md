@@ -5,7 +5,7 @@ description: Add pg-workflows (durable workflows on PostgreSQL) to an existing T
 
 # Install pg-workflows
 
-You are adding [pg-workflows](https://pgpworkflows.dev) to the user's project. pg-workflows is a TypeScript workflow engine that stores every step's result in PostgreSQL and uses PostgreSQL as its job queue. There's no Redis, broker, or separate scheduler.
+You are adding [pg-workflows](https://pgworkflows.dev) to the user's project. pg-workflows is a TypeScript workflow engine that stores every step's result in PostgreSQL and uses PostgreSQL as its job queue. There's no Redis, broker, or separate scheduler.
 
 Work through the steps in order. Each step ends on a **done when** line. Don't start the next step until it holds.
 
@@ -78,4 +78,4 @@ Tell the user:
 - which layout you chose and every file you added or changed
 - the commands to run the app, and the worker if there is one
 - what each new process needs in production: `DATABASE_URL`, and a long-running host for the worker
-- where to go next: https://pgpworkflows.dev/docs (the step types are `step.run`, `step.waitFor`, `step.delay`, `step.poll`, and `step.invokeChildWorkflow`)
+- where to go next: https://pgworkflows.dev/docs (the step types are `step.run`, `step.waitFor`, `step.delay`, `step.poll`, and `step.invokeChildWorkflow`)

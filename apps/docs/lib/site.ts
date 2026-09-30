@@ -1,4 +1,4 @@
-export const siteUrl = 'https://pgpworkflows.dev';
+export const siteUrl = 'https://pgworkflows.dev';
 
 export const skillUrl = `${siteUrl}/skill.md`;
 
