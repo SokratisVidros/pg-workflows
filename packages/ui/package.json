@@ -1,6 +1,6 @@
 {
   "name": "@pg-workflows/ui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "React UI for pg-workflows: browse runs and inspect step timelines.",
   "license": "MIT",
   "type": "module",
@@ -46,7 +46,7 @@
     "check-types": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "bun run clean && bun run build"
+    "prepublishOnly": "node ../../scripts/assert-bun-publish.mjs && bun run clean && bun run build"
   },
   "peerDependencies": {
     "react": ">=18",

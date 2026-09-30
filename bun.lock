@@ -122,7 +122,7 @@
     },
     "packages/ui": {
       "name": "@pg-workflows/ui",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "bin": {
         "pg-workflows-ui": "./bin/pg-workflows-ui.mjs",
       },

@@ -266,7 +266,7 @@ Always end with:
 - GitHub release URLs
 - reminder that publishing is intentionally not run
 
-Use `bun publish`, not `npm publish`: it rewrites the `catalog:` and `workspace:` protocols into real version ranges. Publish in release order, so the engine reaches npm before the packages that peer on it. List only the released packages:
+Use `bun publish`, not `npm publish`: it rewrites the `catalog:` and `workspace:` protocols into real version ranges. Each package's `prepublishOnly` runs `scripts/assert-bun-publish.mjs`, which refuses `npm publish` from a package folder. If bun's browser login fails, pack with `bun pm pack` and publish the tarball with `npm publish <tarball> --access public`, which asks for the one-time password. Publish in release order, so the engine reaches npm before the packages that peer on it. List only the released packages:
 
 ```text
 Release prepared. Final step for you, in order:

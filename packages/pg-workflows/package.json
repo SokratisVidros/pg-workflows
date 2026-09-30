@@ -41,7 +41,7 @@
     "test:watch": "vitest watch --config vitest.unit.config.ts",
     "check-types": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "prepublishOnly": "bun run clean && bun run build"
+    "prepublishOnly": "node ../../scripts/assert-bun-publish.mjs && bun run clean && bun run build"
   },
   "keywords": [
     "postgres-workflow",

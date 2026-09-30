@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## @pg-workflows/ui@0.1.1 - 2026-09-30
+
+### Fixed
+
+- `npm install @pg-workflows/ui` failed with `Unsupported URL Type "catalog:"`, because 0.1.0 was published with the monorepo's `catalog:` range for `zod`. 0.1.1 declares `zod@^4.5.4`. 0.1.0 is deprecated.
+
+[@pg-workflows/ui@0.1.1]: https://github.com/SokratisVidros/pg-workflows/compare/%40pg-workflows/ui%400.1.0...%40pg-workflows/ui%400.1.1
+
 ## pg-workflows@0.16.0 - 2026-09-30
 
 ### Added
