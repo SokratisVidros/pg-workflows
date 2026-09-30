@@ -1,7 +1,7 @@
 {
   "name": "@pg-workflows/otel",
   "description": "OpenTelemetry tracing plugin for pg-workflows: one span per workflow execution and per step",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "files": [
     "dist"

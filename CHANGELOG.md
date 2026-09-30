@@ -2,11 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## @pg-workflows/otel@0.1.1 - 2026-09-30
+
+### Fixed
+
+- 0.1.0 was published with npm from the package folder, so its manifest carried the monorepo's `catalog:` and `workspace:` ranges. It has been unpublished. 0.1.1 ships the same code, packed with bun so every range is real.
+
+[@pg-workflows/otel@0.1.1]: https://github.com/SokratisVidros/pg-workflows/compare/%40pg-workflows/otel%400.1.0...%40pg-workflows/otel%400.1.1
+
 ## @pg-workflows/ui@0.1.1 - 2026-09-30
 
 ### Fixed
 
-- `npm install @pg-workflows/ui` failed with `Unsupported URL Type "catalog:"`, because 0.1.0 was published with the monorepo's `catalog:` range for `zod`. 0.1.1 declares `zod@^4.5.4`. 0.1.0 is deprecated.
+- `npm install @pg-workflows/ui` failed with `Unsupported URL Type "catalog:"`, because 0.1.0 was published with the monorepo's `catalog:` range for `zod`. 0.1.1 declares `zod@^4.5.4`. 0.1.0 has been unpublished.
 
 [@pg-workflows/ui@0.1.1]: https://github.com/SokratisVidros/pg-workflows/compare/%40pg-workflows/ui%400.1.0...%40pg-workflows/ui%400.1.1
 
