@@ -96,7 +96,7 @@
     },
     "packages/pg-workflows": {
       "name": "pg-workflows",
-      "version": "0.15.0",
+      "version": "0.16.0",
       "dependencies": {
         "@standard-schema/spec": "^1.1.0",
         "cron-parser": "^5.5.0",
@@ -152,7 +152,7 @@
       },
       "peerDependencies": {
         "@tanstack/react-query": ">=5",
-        "pg-workflows": ">=0.13.0",
+        "pg-workflows": ">=0.16.0",
         "react": ">=18",
         "react-dom": ">=18",
         "tailwindcss": "^4",
