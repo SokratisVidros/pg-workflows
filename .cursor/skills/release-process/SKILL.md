@@ -1,6 +1,6 @@
 ---
 name: release-process
-description: Prepare deterministic repository releases with a fixed format for version bumps, changelog entries, release commits, tags, and GitHub releases. Use when the user asks to cut a release, bump version, tag a release, or publish release notes.
+description: Prepare deterministic releases of every changed package in the monorepo (independent versions, per-package tags) with a fixed format for version bumps, changelog entries, release commits, tags, and GitHub releases. Use when the user asks to cut a release, bump version, tag a release, or publish release notes.
 ---
 
 # Release Process
