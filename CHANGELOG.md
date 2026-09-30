@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## pg-workflows@0.16.0 - 2026-09-30
+
+### Added
+
+- Added `getStats({ resourceId?, workflowId? })` on `WorkflowEngine` and `WorkflowClient`. It counts runs per status in the database, so totals stay accurate beyond one page of results.
+- Added `isStepCached(timeline, stepId)`, so plugins can tell replayed steps from real executions without depending on the timeline's shape.
+
+### Fixed
+
+- Importing `pg-workflows` no longer fails when `@opentelemetry/api` isn't installed. The main entry used to import it at the top level, although the peer was optional.
+
+### Changed
+
+- **BREAKING —** `otelPlugin` moved to the new `@pg-workflows/otel` package. Install `@pg-workflows/otel` and change the import to `import { otelPlugin } from '@pg-workflows/otel'`. Options and spans are unchanged.
+
+[pg-workflows@0.16.0]: https://github.com/SokratisVidros/pg-workflows/compare/v0.15.0...pg-workflows%400.16.0
+
+## @pg-workflows/otel@0.1.0 - 2026-09-30
+
+Initial release.
+
+### Added
+
+- OpenTelemetry tracing for pg-workflows, as a plugin for `workflow.use()`: `workflow.use(otelPlugin())`. Emits one `pg_workflows.workflow.run` span per execution, with a child span per step kind. Steps replayed from cache after a pause emit no span.
+- Options: `tracer`, `spanNamePrefix`, and `attributes(ctx)` for extra attributes on the run span.
+- Requires `pg-workflows` >= 0.16.0 and `@opentelemetry/api` ^1.9.0.
+
+[@pg-workflows/otel@0.1.0]: https://github.com/SokratisVidros/pg-workflows/tree/%40pg-workflows/otel%400.1.0/packages/otel
+
+## @pg-workflows/ui@0.1.0 - 2026-09-30
+
+Initial release.
+
+### Added
+
+- `<WorkflowRunsDashboard/>`, a React dashboard for browsing runs, inspecting step output, and cancelling, pausing, resuming, or triggering runs. Composable components and headless hooks let you build your own views.
+- Status counters come from the database (`getStats`), and the runs list filters by status, workflow, and date and duration presets.
+- Server adapters: `createWorkflowRunsApi`, `toNodeHandler` for Node servers, and Next.js App Router and Pages Router handlers, with `resolveContext` for tenant scoping.
+- `npx @pg-workflows/ui --database-url=<url>` serves a local dashboard on `127.0.0.1`.
+- Requires `pg-workflows` >= 0.16.0, React >= 18, Tailwind CSS v4, and `@tanstack/react-query` >= 5.
+
+### Documentation
+
+- Guides for setup, components, hooks, and styling, now also at https://pgworkflows.dev/docs/ui.
+
+[@pg-workflows/ui@0.1.0]: https://github.com/SokratisVidros/pg-workflows/tree/%40pg-workflows/ui%400.1.0/packages/ui
+
 ## v0.15.0 - 2026-09-01
 
 ### Added
