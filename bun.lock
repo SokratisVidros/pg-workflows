@@ -104,6 +104,7 @@
         "ksuid": "^3.0.0",
         "parse-duration": "^2.1.5",
         "pg-boss": "catalog:",
+        "typescript": "catalog:",
       },
       "devDependencies": {
         "@electric-sql/pglite": "^0.3.14",
@@ -111,7 +112,6 @@
         "@types/pg": "catalog:",
         "bunup": "^0.16.11",
         "pg": "catalog:",
-        "typescript": "catalog:",
         "valibot": "^1.3.1",
         "vitest": "catalog:",
         "zod": "catalog:",
