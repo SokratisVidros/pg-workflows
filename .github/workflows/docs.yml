@@ -29,6 +29,9 @@ jobs:
     permissions:
       contents: read
       deployments: write
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
     steps:
       - name: Checkout code
@@ -46,13 +49,11 @@ jobs:
         run: bun run build:docs
 
       # Pushes to main deploy to production (pgpworkflows.dev). Other branches get
-      # a preview URL. Forked PRs build but can't deploy: they have no secrets.
+      # a preview URL. Runs without the secrets (forked PRs, or before the
+      # Cloudflare project is set up) build but skip the deploy.
       - name: Deploy
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        if: env.CLOUDFLARE_API_TOKEN != ''
         working-directory: apps/docs
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: >-
           bunx wrangler pages deploy out
           --project-name=pg-workflows-docs
