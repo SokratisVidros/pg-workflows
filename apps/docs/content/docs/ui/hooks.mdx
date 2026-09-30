@@ -1,0 +1,149 @@
+---
+title: Custom UI with hooks
+description: Build your own run views on the @pg-workflows/ui hooks.
+---
+
+Wrap your tree in `WorkflowRunsProvider` once. Every hook reads from it and returns a plain [TanStack Query](https://tanstack.com/query) result, so loading, error, and refetch states work as usual.
+
+```tsx
+'use client'
+import { createFetchClient, WorkflowRunsProvider } from '@pg-workflows/ui'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
+
+const queryClient = new QueryClient()
+const client = createFetchClient({ baseUrl: '/workflow-runs' })
+
+export function Providers({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <WorkflowRunsProvider client={client}>{children}</WorkflowRunsProvider>
+    </QueryClientProvider>
+  )
+}
+```
+
+## `useWorkflowRuns()`: list runs
+
+```tsx
+import { useWorkflowRuns } from '@pg-workflows/ui'
+
+export function FailedRuns() {
+  const { data, isLoading } = useWorkflowRuns({ limit: 20, statuses: ['failed'] })
+
+  if (isLoading) return <p>Loading…</p>
+
+  return (
+    <ul>
+      {data?.items.map((run) => (
+        <li key={run.id}>
+          {run.workflowId}: {run.status}
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
+## `useWorkflowRun()`: one run
+
+Polls until the run reaches a terminal status.
+
+```tsx
+import { useWorkflowRun } from '@pg-workflows/ui'
+
+export function RunStatus({ runId }: { runId: string }) {
+  const { data: run } = useWorkflowRun(runId)
+
+  return (
+    <p>
+      {run?.workflowId} is {run?.status}
+    </p>
+  )
+}
+```
+
+## `useWorkflowRunStats()`: counts by status
+
+```tsx
+import { useWorkflowRunStats } from '@pg-workflows/ui'
+
+export function RunCounts() {
+  const { data: stats } = useWorkflowRunStats()
+
+  return (
+    <p>
+      {stats?.failed ?? 0} failed, {stats?.running ?? 0} running
+    </p>
+  )
+}
+```
+
+## `useRunActions()`: control a run
+
+```tsx
+import { useRunActions } from '@pg-workflows/ui'
+
+export function RunControls({ runId }: { runId: string }) {
+  const { cancel, resume, trigger } = useRunActions()
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => resume.mutate({ id: runId })}
+        disabled={resume.isPending}
+      >
+        Resume
+      </button>
+      <button type="button" onClick={() => cancel.mutate({ id: runId })}>
+        Cancel
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          trigger.mutate({ id: runId, eventName: 'payment-confirmed', data: { ok: true } })
+        }
+      >
+        Confirm payment
+      </button>
+    </>
+  )
+}
+```
+
+After each successful action, the run and every runs list refetch.
+
+## `useRunFilters()`: filter state
+
+Holds the filter, sort, and cursor state. Pass `serverParams` to `useWorkflowRuns`.
+
+```tsx
+import { useRunFilters, useWorkflowRuns } from '@pg-workflows/ui'
+
+export function RunsByWorkflow() {
+  const { filters, setFilters, serverParams } = useRunFilters()
+  const runs = useWorkflowRuns(serverParams)
+
+  return (
+    <>
+      <select
+        value={filters.workflowId ?? ''}
+        onChange={(e) =>
+          setFilters({
+            workflowId: e.target.value || undefined,
+            startingAfter: undefined,
+            endingBefore: undefined,
+          })
+        }
+      >
+        <option value="">All workflows</option>
+        <option value="nightly-report">nightly-report</option>
+      </select>
+      <p>{runs.data?.items.length ?? 0} runs on this page</p>
+    </>
+  )
+}
+```
+
+---

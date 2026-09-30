@@ -1,0 +1,55 @@
+---
+title: Workflows and steps
+description: Define a workflow, configure it, and make each unit of work durable with step.run.
+---
+
+The snippets on this page assume an `engine` like the one in the [quickstart](/docs/quickstart), with each workflow passed to `workflows: [...]`.
+
+A workflow is an async function with an ID. Every durable operation inside it goes through `step`.
+
+```typescript
+import { workflow } from 'pg-workflows'
+import { z } from 'zod'
+
+export const sendInvoice = workflow(
+  'send-invoice',
+  async ({ step, input }) => {
+    const invoice = await step.run('create-invoice', async () => {
+      return { id: `inv_${input.orderId}`, total: input.total }
+    })
+    return invoice
+  },
+  {
+    inputSchema: z.object({ orderId: z.string(), total: z.number() }),
+    retries: 3,
+  },
+)
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `inputSchema` | Standard Schema | none | Validates `input` at `startWorkflow` and types it in the handler. See [Input validation](/docs/concepts/input-validation). |
+| `retries` | `number` | `0` | Retry attempts after a failure. See [Retries and timeouts](/docs/concepts/retries-and-timeouts). |
+| `timeout` | `number` (ms) | none | Recorded as `run.timeoutAt`. See [Retries and timeouts](/docs/concepts/retries-and-timeouts). |
+| `priority` | `'high' \| 'normal' \| 'low' \| number` | `'normal'` | Queue priority. See [Priorities](/docs/concepts/priorities). |
+| `singleton` | `boolean` | `false` | At most one pending or running run. See [Singleton workflows](/docs/concepts/singleton-workflows). |
+| `schedule` | cron string, duration string, or duration object | none | Starts runs on a recurring schedule. See [Recurring schedules](/docs/concepts/recurring-schedules). |
+| `timezone` | IANA zone | `'UTC'` | Time zone for cron schedules. |
+
+The handler receives `input`, `step`, `runId`, `workflowId`, `resourceId`, `attempt` (zero-based retry count), `timeline`, `logger`, and `schedule`. The full type is in the [API reference](/docs/reference/api#workflowcontext).
+
+The handler runs from the top each time the run resumes after a pause or a retry. Completed steps return their saved result without running again, so the code between steps must be deterministic. Put anything with side effects, randomness, or the current time inside a step.
+
+## Steps
+
+`step.run` executes a function once and saves its return value on the run.
+
+```typescript
+const user = await step.run('create-user', async () => {
+  return { id: 'usr_123', email: input.email }
+})
+```
+
+- **IDs must be unique within a workflow.** In loops, build the ID from the item: `` step.run(`charge-$\{order.id\}`, ...) ``.
+- **Return JSON-serializable values.** Results are stored as `jsonb`. A `Date` comes back as an ISO string when the step is replayed, and class instances lose their prototype. Return plain objects, and use `toISOString()` for dates.
+- **A step can run more than once if the process crashes mid-step**, before its result is saved. Make external side effects idempotent, for example by passing an idempotency key to your payment provider.

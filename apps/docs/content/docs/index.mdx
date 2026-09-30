@@ -1,0 +1,54 @@
+---
+title: Introduction
+description: Durable workflows for TypeScript, backed by PostgreSQL.
+---
+
+pg-workflows runs durable workflows on the PostgreSQL you already have. Each step's result is saved, a retried run skips the steps that already finished, and a run can pause for an event, a timer, or a polled condition. There's no Redis, broker, or scheduler to run.
+
+<CopyPrompt />
+
+## Start here
+
+<Cards>
+  <Card title="Quickstart" href="/docs/quickstart" description="Run your first durable workflow in about two minutes." />
+  <Card title="Install with an agent" href="/docs/install-with-agent" description="Let Claude Code, Cursor, or Codex wire pg-workflows into your project." />
+  <Card title="Deployment layouts" href="/docs/layouts" description="One service, or API services plus workers." />
+  <Card title="Dashboard" href="/docs/ui" description="Browse and control runs with @pg-workflows/ui." />
+</Cards>
+
+## Features
+
+| Feature | API |
+|---------|-----|
+| [Durable steps](/docs/concepts/workflows#steps) | `step.run(id, fn)` |
+| [Wait for external events](/docs/concepts/events) | `step.waitFor(id, { eventName, timeout?, schema? })` + `engine.triggerEvent()` |
+| [Timers](/docs/concepts/timers) | `step.delay(id, '3 days')`, `step.waitUntil(id, date)` |
+| [Polling](/docs/concepts/polling) | `step.poll(id, fn, { interval, timeout })` |
+| [Manual pause and resume](/docs/concepts/pause-and-resume) | `step.pause(id)`, `engine.resumeWorkflow()` |
+| [Child workflows](/docs/concepts/child-workflows) | `step.invokeChildWorkflow(id, ref, input)` |
+| [Recurring schedules](/docs/concepts/recurring-schedules) | `workflow(id, fn, { schedule: '0 9 * * 1-5' })` |
+| [Retries](/docs/concepts/retries-and-timeouts) | `workflow(id, fn, { retries: 3 })` |
+| [Priorities](/docs/concepts/priorities) | `workflow(id, fn, { priority: 'high' })` |
+| [One run at a time](/docs/concepts/singleton-workflows) | `workflow(id, fn, { singleton: true })` |
+| [Deduplicated starts](/docs/concepts/resource-id-and-idempotency#idempotency-key) | `startWorkflow({ idempotencyKey })` |
+| [Tenant scoping](/docs/concepts/resource-id-and-idempotency#resource-id) | `resourceId` on every run and every API call |
+| [Typed input](/docs/concepts/input-validation) | Any [Standard Schema](https://github.com/standard-schema/standard-schema) library (Zod, Valibot, ArkType) |
+| [API/worker split](/docs/layouts#api-and-worker) | `WorkflowClient` from `pg-workflows/client` |
+
+## Packages
+
+| Package | Purpose |
+|---------|---------|
+| [`pg-workflows`](https://www.npmjs.com/package/pg-workflows) | The engine and client |
+| [`@pg-workflows/ui`](/docs/ui) | React dashboard, components, and hooks. Try it with `npx @pg-workflows/ui` |
+| [`@pg-workflows/otel`](/docs/observability/tracing) | OpenTelemetry spans for workflow runs and steps |
+
+## Requirements
+
+- Node.js >= 18
+- PostgreSQL >= 10
+- `pg` >= 8 (peer dependency). `pg-boss` ships with the engine and needs no setup.
+
+## Acknowledgments
+
+[Temporal](https://temporal.io/), [Inngest](https://www.inngest.com/), [Trigger.dev](https://trigger.dev/), and [DBOS](https://www.dbos.dev/) pioneered the durable execution patterns this project builds on.

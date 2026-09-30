@@ -1,0 +1,37 @@
+---
+title: Singleton workflows
+description: Allow at most one pending or running run of a workflow.
+---
+
+`singleton: true` allows at most one pending or running run of a workflow ID. Starting a second run throws `WorkflowRunInProgressError`.
+
+```typescript
+import { WorkflowRunInProgressError, workflow } from 'pg-workflows'
+
+const nightlySync = workflow(
+  'nightly-sync',
+  async ({ step }) => {
+    await step.run('pull', async () => ({ pulled: true }))
+  },
+  { singleton: true },
+)
+
+await engine.startWorkflow({ workflowId: 'nightly-sync', input: {} })
+
+try {
+  await engine.startWorkflow({ workflowId: 'nightly-sync', input: {} })
+} catch (error) {
+  if (error instanceof WorkflowRunInProgressError) {
+    // the first run is still pending or running
+  }
+}
+```
+
+A run releases the slot when it pauses (`waitFor`, `pause`, `delay`, `waitUntil`, `poll`), completes, fails, or is cancelled. Resuming a paused run while another run holds the slot also throws `WorkflowRunInProgressError`.
+
+`WorkflowClient` doesn't load workflow definitions, so it can't see `singleton` on the definition. Set it on the ref instead:
+
+```typescript
+const nightlySyncRef = workflow.ref('nightly-sync', { singleton: true })
+await client.startWorkflow(nightlySyncRef, {})
+```

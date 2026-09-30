@@ -1,0 +1,31 @@
+---
+title: Retries and timeouts
+description: How failed runs are retried, and what timeouts do.
+---
+
+When a handler throws, the run is retried up to `retries` times (default `0`). Each retry runs the handler from the top, and completed steps return their saved result, so only the failed step and the steps after it run again. The number of the current attempt is `attempt` on the handler context and `retryCount` on the run.
+
+Retries are scheduled by pg-boss with exponential backoff: roughly 1s, 2s, 4s, 8s, and so on, with up to ±50% jitter. After the last attempt fails, the run's status is `failed` and `error` holds the message.
+
+```typescript
+const syncCustomer = workflow(
+  'sync-customer',
+  async ({ step, input, attempt }) => {
+    return step.run('push-to-crm', async () => {
+      const response = await fetch('https://crm.example.com/customers', {
+        method: 'POST',
+        body: JSON.stringify({ id: input.customerId, attempt }),
+      })
+      if (!response.ok) throw new Error(`CRM returned ${response.status}`)
+      return { synced: true }
+    })
+  },
+  { inputSchema: z.object({ customerId: z.string() }), retries: 5 },
+)
+```
+
+Override `retries` for a single run with `startWorkflow({ options: { retries } })`.
+
+`timeout` (milliseconds, on the workflow or in `startWorkflow` options) is saved on the run as `timeoutAt`. The engine does not currently fail a run that passes `timeoutAt`. To bound a wait, use the `timeout` option of `step.waitFor` or `step.poll`.
+
+A single execution of the handler is also bounded by the job expiry, `WORKFLOW_RUN_EXPIRE_IN_SECONDS` (default 300). Split work that takes longer into several steps. See [Configuration](/docs/reference/configuration#environment-variables).

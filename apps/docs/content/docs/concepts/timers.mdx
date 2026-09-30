@@ -1,0 +1,19 @@
+---
+title: Timers
+description: Delay a run for a duration or until a date.
+---
+
+`step.waitUntil` pauses until a date. `step.delay` pauses for a duration, and `step.sleep` is an alias for it. A date in the past resumes immediately.
+
+```typescript
+await step.waitUntil('send-at-launch', new Date('2026-12-01T09:00:00Z'))
+await step.waitUntil('send-at-launch', '2026-12-01T09:00:00Z')
+await step.waitUntil('send-at-launch', { date: new Date('2026-12-01T09:00:00Z') })
+
+await step.delay('cool-off', '3 days')
+await step.delay('cool-off', { days: 3 })
+await step.delay('ramp-up', '2 days 12 hours')
+await step.sleep('backoff', '1 hour')
+```
+
+A duration is a string (`'90s'`, `'2h'`, `'3 days'`) or an object with any of `weeks`, `days`, `hours`, `minutes`, and `seconds`.

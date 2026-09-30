@@ -1,0 +1,25 @@
+---
+title: Monitoring runs
+description: Query run state from code, or browse it in the dashboard.
+---
+
+## Run state
+
+Every run's status, step outputs, and error are in `workflow_runs`. Query them from code:
+
+| Method | Use |
+|--------|-----|
+| `getRun({ runId })` | Status, `output`, `error`, and the `timeline` of step results for one run |
+| `checkProgress({ runId })` | Completed and total steps, and a percentage |
+| `getRuns({ statuses, workflowId, resourceId })` | Lists runs, for example every failed run of one workflow |
+| `getStats({ workflowId })` | Run counts per status |
+
+See the [API reference](/docs/reference/api#queries).
+
+## Dashboard
+
+[`@pg-workflows/ui`](/docs/ui) is a React dashboard for browsing runs and step timelines. Try it against your database with:
+
+```bash
+npx @pg-workflows/ui --database-url=postgres://postgres:postgres@localhost:5432/postgres
+```

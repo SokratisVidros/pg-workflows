@@ -7,6 +7,16 @@ Durable workflows for TypeScript, backed by PostgreSQL. Each step's result is sa
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-%3E%3D10-336791.svg)](https://www.postgresql.org/)
 
+## Install with your coding agent
+
+Paste this into Claude Code, Cursor, Codex, or any agent that can fetch a URL:
+
+```
+Add pg-workflows to this project. Fetch https://pgpworkflows.dev/skill.md and follow it step by step: pick the right layout for this codebase (monolith, web app plus worker, or microservices), install and verify the engine, add the @pg-workflows/ui dashboard for our stack, then ask me whether to add OpenTelemetry tracing.
+```
+
+Or install the skill: `npx skills add SokratisVidros/pg-workflows --skill pg-workflows-install`. See [Install with an agent](https://pgpworkflows.dev/docs/install-with-agent).
+
 ## Quickstart
 
 **1. Start Postgres** (skip if you already have one):
@@ -167,14 +177,16 @@ main()
 
 ## Documentation
 
+Full docs are at **[pgpworkflows.dev](https://pgpworkflows.dev)**.
+
 | Guide | Covers |
 |-------|--------|
-| [Core concepts](docs/core-concepts.md) | Steps, events, timers, polling, child workflows, schedules, retries, priorities, singletons, idempotency, input validation |
-| [Architecture](docs/architecture.md) | Single-service and API/worker deployments, how execution works |
-| [Examples](docs/examples.md) | Conditional steps, fan-out loops, reminders, polling, retries, progress |
-| [AI and agent workflows](docs/ai-agents.md) | Durable LLM pipelines, human review, retrieval |
-| [API reference](docs/api-reference.md) | `WorkflowEngine`, `WorkflowClient`, `WorkflowRef`, `workflow()`, types |
-| [Configuration](docs/configuration.md) | Environment variables, database objects, requirements |
+| [Core concepts](https://pgpworkflows.dev/docs/concepts/workflows) | Steps, events, timers, polling, child workflows, schedules, retries, priorities, singletons, idempotency, input validation |
+| [Deployment layouts](https://pgpworkflows.dev/docs/layouts) | Single-service and API/worker deployments |
+| [Examples](https://pgpworkflows.dev/docs/guides/examples) | Conditional steps, fan-out loops, reminders, polling, retries, progress |
+| [AI and agent workflows](https://pgpworkflows.dev/docs/guides/ai-agents) | Durable LLM pipelines, human review, retrieval |
+| [API reference](https://pgpworkflows.dev/docs/reference/api) | `WorkflowEngine`, `WorkflowClient`, `WorkflowRef`, `workflow()`, types |
+| [Configuration](https://pgpworkflows.dev/docs/reference/configuration) | Environment variables, database objects, requirements |
 
 ### Packages
 

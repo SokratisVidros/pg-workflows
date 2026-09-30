@@ -1,0 +1,36 @@
+---
+title: Polling
+description: Check a condition on an interval until it holds or times out.
+---
+
+`step.poll` calls a function on an interval until it returns a truthy value or the timeout passes. Return `false` to keep polling.
+
+```typescript
+const exportJob = workflow(
+  'wait-for-export',
+  async ({ step, input }) => {
+    const result = await step.poll(
+      'wait-for-file',
+      async () => {
+        const response = await fetch(`https://api.example.com/exports/${input.exportId}`)
+        const body = (await response.json()) as { status: string; url?: string }
+        return body.status === 'ready' ? { url: body.url } : false
+      },
+      { interval: '1 minute', timeout: '24 hours' },
+    )
+
+    if (result.timedOut) {
+      return { status: 'expired' }
+    }
+    return { status: 'ready', url: result.data.url }
+  },
+  { inputSchema: z.object({ exportId: z.string() }) },
+)
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `interval` | `'30s'` | Time between checks. The minimum is 30 seconds. |
+| `timeout` | none | Stops polling and returns `{ timedOut: true }`. Omit it to poll indefinitely. |
+
+The run is paused between checks and holds no worker.

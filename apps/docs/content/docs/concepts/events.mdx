@@ -1,0 +1,39 @@
+---
+title: Events
+description: Pause a run until your code delivers an event with triggerEvent.
+---
+
+`step.waitFor` pauses the run until an event with the matching name arrives. The paused run holds no worker.
+
+```typescript
+const payment = await step.waitFor('wait-for-payment', {
+  eventName: 'payment-completed',
+  schema: z.object({ amount: z.number() }),
+})
+// payment: { amount: number }
+```
+
+Send the event from anywhere that has an engine or client:
+
+```typescript
+await engine.triggerEvent({
+  runId: run.id,
+  eventName: 'payment-completed',
+  data: { amount: 99 },
+})
+```
+
+With `timeout` (in milliseconds), the step resolves to `undefined` if no event arrives in time:
+
+```typescript
+const payment = await step.waitFor('wait-for-payment', {
+  eventName: 'payment-completed',
+  timeout: 24 * 60 * 60 * 1000,
+})
+
+if (!payment) {
+  return { status: 'expired' }
+}
+```
+
+`schema` sets the TypeScript type of the result. It is not checked at runtime, so validate `data` before calling `triggerEvent` if it comes from an untrusted source. Without `schema`, the result is `unknown`.

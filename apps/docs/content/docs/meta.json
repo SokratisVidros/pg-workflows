@@ -1,0 +1,20 @@
+{
+  "title": "Docs",
+  "pages": [
+    "---Get started---",
+    "index",
+    "quickstart",
+    "install-with-agent",
+    "layouts",
+    "---Concepts---",
+    "...concepts",
+    "---Guides---",
+    "...guides",
+    "---Dashboard---",
+    "...ui",
+    "---Observability---",
+    "...observability",
+    "---Reference---",
+    "...reference"
+  ]
+}

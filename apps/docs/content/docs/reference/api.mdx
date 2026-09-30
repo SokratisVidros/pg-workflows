@@ -1,12 +1,7 @@
-# API reference
-
-- [`WorkflowEngine`](#workflowengine)
-- [`WorkflowClient`](#workflowclient)
-- [`workflow()`](#workflow)
-- [`WorkflowRef`](#workflowref)
-- [`WorkflowContext`](#workflowcontext)
-- [Types](#types)
-- [Errors](#errors)
+---
+title: API reference
+description: WorkflowEngine, WorkflowClient, workflow(), refs, context, types, and errors.
+---
 
 ## WorkflowEngine
 
@@ -30,7 +25,7 @@ const engine = new WorkflowEngine({
 | `connectionString` | `string` | The engine creates a `pg.Pool` and closes it on `stop()`. |
 | `pool` | `pg.Pool` | Use an existing pool. You own its lifecycle. |
 | `workflows` | `WorkflowDefinition[]` | Registered when `start()` runs. |
-| `logger` | [`WorkflowLogger`](#workflowlogger) | Defaults to `console.warn` and `console.error`. |
+| `logger` | [`WorkflowLogger`](/docs/reference/api#workflowlogger) | Defaults to `console.warn` and `console.error`. |
 | `boss` | `PgBoss` | Your own pg-boss instance. When omitted, the engine creates one in the `pgboss_v12_pgworkflow` schema. |
 
 Pass exactly one of `connectionString` and `pool`.
@@ -39,7 +34,7 @@ Pass exactly one of `connectionString` and `pool`.
 
 | Method | Description |
 |--------|-------------|
-| `start(asEngine = true, { batchSize = 1, heartbeatSeconds = 30 }?)` | Starts pg-boss, runs migrations, registers `workflows`, starts [`WORKFLOW_RUN_WORKERS`](configuration.md#environment-variables) workers, and registers schedules. With `asEngine: false`, it does everything except start workers and schedules. Calling it again is a no-op. |
+| `start(asEngine = true, { batchSize = 1, heartbeatSeconds = 30 }?)` | Starts pg-boss, runs migrations, registers `workflows`, starts [`WORKFLOW_RUN_WORKERS`](/docs/reference/configuration#environment-variables) workers, and registers schedules. With `asEngine: false`, it does everything except start workers and schedules. Calling it again is a no-op. |
 | `stop()` | Unschedules recurring workflows, stops pg-boss, and closes the pool if the engine created it. |
 | `registerWorkflow(definition)` | Parses the handler's steps and registers it. Throws if the ID is already registered or the schedule is invalid. |
 | `unregisterWorkflow(workflowId)` | Removes a definition and its schedule. |
@@ -51,15 +46,15 @@ If you call `startWorkflow` before `start()`, the engine calls `start(false)`: t
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `startWorkflow(ref, input, options?)` | `WorkflowRun` | Starts a run from a typed [`WorkflowRef`](#workflowref). |
-| `startWorkflow({ workflowId, input, resourceId?, idempotencyKey?, options? })` | `WorkflowRun` | Starts a run by ID. Throws `WorkflowRunInProgressError` for a [singleton](core-concepts.md#singleton-workflows) workflow that already has a run in progress. |
+| `startWorkflow(ref, input, options?)` | `WorkflowRun` | Starts a run from a typed [`WorkflowRef`](/docs/reference/api#workflowref). |
+| `startWorkflow({ workflowId, input, resourceId?, idempotencyKey?, options? })` | `WorkflowRun` | Starts a run by ID. Throws `WorkflowRunInProgressError` for a [singleton](/docs/concepts/singleton-workflows) workflow that already has a run in progress. |
 | `pauseWorkflow({ runId, resourceId? })` | `WorkflowRun` | Pauses a pending or running run. |
 | `resumeWorkflow({ runId, resourceId?, options? })` | `WorkflowRun` | Resumes a paused run. Throws if the run is not paused. Does nothing while the run waits on a child workflow. |
 | `cancelWorkflow({ runId, resourceId? })` | `WorkflowRun` | Cancels a pending, running, or paused run. |
 | `triggerEvent({ runId, eventName, data?, resourceId?, options? })` | `WorkflowRun` | Delivers an event to a run waiting in `step.waitFor`. |
-| `fastForwardWorkflow({ runId, data?, resourceId? })` | `WorkflowRun` | Completes the step the run is paused on. See [Fast-forward](core-concepts.md#fast-forward). |
+| `fastForwardWorkflow({ runId, data?, resourceId? })` | `WorkflowRun` | Completes the step the run is paused on. See [Fast-forward](/docs/concepts/pause-and-resume#fast-forward). |
 
-`options` on `startWorkflow` is a [`StartWorkflowOptions`](#startworkflowoptions). `options` on `resumeWorkflow` and `triggerEvent` accepts `{ expireInSeconds }`.
+`options` on `startWorkflow` is a [`StartWorkflowOptions`](/docs/reference/api#startworkflowoptions). `options` on `resumeWorkflow` and `triggerEvent` accepts `{ expireInSeconds }`.
 
 ### Queries
 
@@ -71,7 +66,7 @@ If you call `startWorkflow` before `start()`, the engine calls `start(false)`: t
 | `getStats({ resourceId?, workflowId? })` | `WorkflowRunStats` | Run counts per status. |
 | `checkProgress({ runId, resourceId? })` | `WorkflowRunProgress` | The run plus `completedSteps`, `totalSteps`, and `completionPercentage`. Throws if the workflow is not registered on this engine. |
 
-Every method that takes `resourceId` also matches on it. See [Resource ID](core-concepts.md#resource-id).
+Every method that takes `resourceId` also matches on it. See [Resource ID](/docs/concepts/resource-id-and-idempotency#resource-id).
 
 ## WorkflowClient
 
@@ -92,7 +87,7 @@ The client has the same run and query methods as the engine, except `getWorkflow
 Differences from the engine:
 
 - **`checkProgress`** can't count a workflow's steps without the definition. It returns `totalSteps: 0` and `completionPercentage: 0` until the run completes, then `100`. `completedSteps` is accurate.
-- **`singleton`** must be set on the ref or in `startWorkflow` options, because the client can't read it from the definition. See [Singleton workflows](core-concepts.md#singleton-workflows).
+- **`singleton`** must be set on the ref or in `startWorkflow` options, because the client can't read it from the definition. See [Singleton workflows](/docs/concepts/singleton-workflows).
 
 ## workflow()
 
@@ -106,11 +101,11 @@ const definition = workflow(id, handler, options)
 |-----------|------|-------------|
 | `id` | `string` | Unique workflow ID, up to 256 characters. |
 | `handler` | `(context: WorkflowContext) => Promise<unknown>` | The workflow body. Its return value becomes `run.output`. |
-| `options` | `WorkflowOptions` | `inputSchema`, `retries`, `timeout`, `priority`, `singleton`, `schedule`, `timezone`. See the [options table](core-concepts.md#workflows). |
+| `options` | `WorkflowOptions` | `inputSchema`, `retries`, `timeout`, `priority`, `singleton`, `schedule`, `timezone`. See the [options table](/docs/concepts/workflows). |
 
 ### workflow.use(plugin)
 
-Returns a new `workflow` factory whose handlers get the plugin's step methods and `wrap` middleware. Plugins compose in the order you call `.use()`. [`@pg-workflows/otel`](../packages/otel/README.md) is built on this.
+Returns a new `workflow` factory whose handlers get the plugin's step methods and `wrap` middleware. Plugins compose in the order you call `.use()`. [`@pg-workflows/otel`](/docs/observability/tracing) is built on this.
 
 ```typescript
 import { otelPlugin } from '@pg-workflows/otel'
@@ -121,7 +116,7 @@ const tracedWorkflow = workflow.use(otelPlugin())
 
 ### workflow.ref(id, options?)
 
-Same as [`createWorkflowRef`](#workflowref), with the generics in `<TInput, TOutput>` order.
+Same as [`createWorkflowRef`](/docs/reference/api#workflowref), with the generics in `<TInput, TOutput>` order.
 
 ## WorkflowRef
 
@@ -186,22 +181,22 @@ The object passed to a handler.
 | `attempt` | `number` | Zero-based retry attempt. Same as `run.retryCount`. |
 | `timeline` | `Record<string, unknown>` | Saved step results, keyed by step ID. |
 | `logger` | `WorkflowLogger` | The engine's logger. |
-| `schedule` | `{ timestamp: Date } \| undefined` | Set only for runs started by a [schedule](core-concepts.md#recurring-schedules). |
+| `schedule` | `{ timestamp: Date } \| undefined` | Set only for runs started by a [schedule](/docs/concepts/recurring-schedules). |
 
 ### Step methods
 
 | Method | Returns | Guide |
 |--------|---------|-------|
-| `step.run(stepId, fn)` | `Promise<T>` | [Steps](core-concepts.md#steps) |
-| `step.waitFor(stepId, { eventName, schema? })` | `Promise<T>` | [Events](core-concepts.md#events) |
-| `step.waitFor(stepId, { eventName, timeout, schema? })` | `Promise<T \| undefined>` | [Events](core-concepts.md#events) |
-| `step.waitUntil(stepId, date \| isoString \| { date })` | `Promise<void>` | [Timers](core-concepts.md#timers) |
-| `step.delay(stepId, duration)` | `Promise<void>` | [Timers](core-concepts.md#timers) |
+| `step.run(stepId, fn)` | `Promise<T>` | [Steps](/docs/concepts/workflows#steps) |
+| `step.waitFor(stepId, { eventName, schema? })` | `Promise<T>` | [Events](/docs/concepts/events) |
+| `step.waitFor(stepId, { eventName, timeout, schema? })` | `Promise<T \| undefined>` | [Events](/docs/concepts/events) |
+| `step.waitUntil(stepId, date \| isoString \| { date })` | `Promise<void>` | [Timers](/docs/concepts/timers) |
+| `step.delay(stepId, duration)` | `Promise<void>` | [Timers](/docs/concepts/timers) |
 | `step.sleep(stepId, duration)` | `Promise<void>` | Alias for `delay` |
-| `step.pause(stepId)` | `Promise<void>` | [Pause and resume](core-concepts.md#pause-and-resume) |
-| `step.poll(stepId, fn, { interval?, timeout? })` | `Promise<{ timedOut: false, data: T } \| { timedOut: true }>` | [Polling](core-concepts.md#polling) |
-| `step.invokeChildWorkflow(stepId, ref, input, options?)` | `Promise<TOutput>` | [Child workflows](core-concepts.md#child-workflows) |
-| `step.invokeChildWorkflow<TOutput>(stepId, { workflowId, input, resourceId?, idempotencyKey?, options? })` | `Promise<TOutput>` | [Child workflows](core-concepts.md#child-workflows) |
+| `step.pause(stepId)` | `Promise<void>` | [Pause and resume](/docs/concepts/pause-and-resume) |
+| `step.poll(stepId, fn, { interval?, timeout? })` | `Promise<{ timedOut: false, data: T } \| { timedOut: true }>` | [Polling](/docs/concepts/polling) |
+| `step.invokeChildWorkflow(stepId, ref, input, options?)` | `Promise<TOutput>` | [Child workflows](/docs/concepts/child-workflows) |
+| `step.invokeChildWorkflow<TOutput>(stepId, { workflowId, input, resourceId?, idempotencyKey?, options? })` | `Promise<TOutput>` | [Child workflows](/docs/concepts/child-workflows) |
 
 A `duration` is a string (`'90s'`, `'2h'`, `'3 days'`) or `{ weeks?, days?, hours?, minutes?, seconds? }`.
 
@@ -221,7 +216,7 @@ A `duration` is a string (`'90s'`, `'2h'`, `'3 days'`) or `{ weeks?, days?, hour
 | `currentStepId` | `string` | |
 | `timeline` | `Record<string, unknown>` | Saved step results. |
 | `retryCount` / `maxRetries` | `number` | |
-| `priority` | `number` | Resolved priority. See [Priorities](core-concepts.md#priorities). |
+| `priority` | `number` | Resolved priority. See [Priorities](/docs/concepts/priorities). |
 | `singleton` | `boolean` | |
 | `idempotencyKey` | `string \| null` | |
 | `parentRunId`, `parentStepId`, `parentResourceId` | `string \| null` | Set on child runs. |
@@ -236,7 +231,7 @@ A `duration` is a string (`'90s'`, `'2h'`, `'3 days'`) or `{ weeks?, days?, hour
 | Option | Type | Description |
 |--------|------|-------------|
 | `retries` | `number` | Overrides the definition's `retries`. |
-| `timeout` | `number` (ms) | Saved as `run.timeoutAt`. Not enforced. See [Retries and timeouts](core-concepts.md#retries-and-timeouts). |
+| `timeout` | `number` (ms) | Saved as `run.timeoutAt`. Not enforced. See [Retries and timeouts](/docs/concepts/retries-and-timeouts). |
 | `priority` | `WorkflowPriority` | Overrides the definition's `priority`. |
 | `expireInSeconds` | `number` | Per-execution limit for this run's first job. Defaults to `WORKFLOW_RUN_EXPIRE_IN_SECONDS`. |
 | `singleton` | `boolean` | For `WorkflowClient`, which can't read the definition. |
@@ -283,4 +278,4 @@ All three are exported from `pg-workflows` and `pg-workflows/client`.
 
 ## UI
 
-React components and hooks for browsing runs are in the separate [`@pg-workflows/ui`](../packages/ui/README.md) package. They talk to your API over HTTP, which calls `getRuns` and `getRun`. Nothing from `@pg-workflows/ui` is exported by `pg-workflows`.
+React components and hooks for browsing runs are in the separate [`@pg-workflows/ui`](/docs/ui) package. They talk to your API over HTTP, which calls `getRuns` and `getRun`. Nothing from `@pg-workflows/ui` is exported by `pg-workflows`.

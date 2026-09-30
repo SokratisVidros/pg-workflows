@@ -1,0 +1,29 @@
+---
+title: Priorities
+description: Order runs in the queue with named or numeric priorities.
+---
+
+`priority` orders runs in the queue. Higher values run first.
+
+| Value | Integer |
+|-------|---------|
+| `'high'` | `100` |
+| `'normal'` | `0` (default) |
+| `'low'` | `-100` |
+| any integer | as given |
+
+Set a default on the workflow, and override it for a single run:
+
+```typescript
+const billing = workflow('billing', handler, { priority: 'high' })
+
+await engine.startWorkflow({
+  workflowId: 'billing',
+  input: {},
+  options: { priority: 'low' },
+})
+```
+
+The effective priority is `startWorkflow` option, then the workflow's `priority`, then `'normal'`. It's resolved once when the run is created and saved as `run.priority`. Resumes, retries, and poll checks reuse the saved value.
+
+Child workflows use the call's `options.priority`, then the child definition's `priority`, then the parent run's priority.

@@ -1,6 +1,9 @@
-# Examples
+---
+title: Examples
+description: Conditional steps, loops, reminders, polling, retries, and progress.
+---
 
-Each snippet defines a workflow. To run one, pass it to `workflows: [...]` on an engine like the one in the [quickstart](../README.md#quickstart), then call `engine.startWorkflow`. Full runnable scripts are in [`examples/node`](../examples/node):
+Each snippet defines a workflow. To run one, pass it to `workflows: [...]` on an engine like the one in the [quickstart](/docs/quickstart), then call `engine.startWorkflow`. Full runnable scripts are in [`examples/node`](https://github.com/SokratisVidros/pg-workflows/tree/main/examples/node):
 
 ```bash
 git clone https://github.com/SokratisVidros/pg-workflows.git
@@ -16,7 +19,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres bun run exampl
 | `example:timeout` | `waitFor` timing out, and bringing your own pg-boss |
 | `example:polling` | `step.poll` against a simulated payment API |
 | `example:cron` | A recurring schedule |
-| `example:microservices:worker` / `example:microservices:api` | The [API and worker](architecture.md#api-and-worker) layout |
+| `example:microservices:worker` / `example:microservices:api` | The [API and worker](/docs/layouts#api-and-worker) layout |
 
 ## Conditional steps
 
@@ -74,7 +77,7 @@ const resizeImages = workflow(
 )
 ```
 
-Each handler execution is limited by [`WORKFLOW_RUN_EXPIRE_IN_SECONDS`](configuration.md#environment-variables) (default 300). For a long list, split the work across [child workflows](core-concepts.md#child-workflows) instead.
+Each handler execution is limited by [`WORKFLOW_RUN_EXPIRE_IN_SECONDS`](/docs/reference/configuration#environment-variables) (default 300). For a long list, split the work across [child workflows](/docs/concepts/child-workflows) instead.
 
 ## Follow-up after a delay
 
@@ -173,4 +176,4 @@ const progress = await engine.checkProgress({ runId: run.id })
 console.log(progress.status, `${progress.completedSteps}/${progress.totalSteps}`, `${progress.completionPercentage}%`)
 ```
 
-To show runs in a React app, use [`@pg-workflows/ui`](../packages/ui/README.md) behind your own API. Don't call the engine from the browser.
+To show runs in a React app, use [`@pg-workflows/ui`](/docs/ui) behind your own API. Don't call the engine from the browser.
