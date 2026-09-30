@@ -31,7 +31,7 @@ packages/
 ├── otel/                   # npm: @pg-workflows/otel (plugin built on workflow.use)
 └── ui/                     # npm: @pg-workflows/ui
 apps/
-└── docs/                   # pgpworkflows.dev: Fumadocs (Next.js static export) on Cloudflare Pages
+└── docs/                   # pgpworkflows.dev: Fumadocs (Next.js static export) on Cloudflare Workers Static Assets
     └── content/docs/       # the docs pages (MDX), the single source of truth for docs
 skills/
 └── pg-workflows-install/   # public install skill, served at pgpworkflows.dev/skill.md
@@ -42,7 +42,7 @@ examples/
 
 ## Docs site
 
-- `apps/docs` builds to static files in `apps/docs/out/`. `.github/workflows/docs.yml` deploys them to the Cloudflare Pages project `pg-workflows-docs`: pushes to `main` go to production, PR branches get preview URLs.
+- `apps/docs` builds to static files in `apps/docs/out/`. `apps/docs/wrangler.jsonc` serves them as Workers Static Assets (Worker `pg-workflows-docs`). `.github/workflows/docs.yml` runs `wrangler deploy` on pushes to `main` and `wrangler versions upload --preview-alias <branch>` on PRs. Run `bun run --filter pg-workflows-docs preview` to serve the build locally.
 - The prebuild step (`apps/docs/scripts/copy-skill.ts`) copies `skills/pg-workflows-install` into `public/`. It also fails the build if `README.md` stops containing `agentPrompt` from `apps/docs/lib/site.ts`, the prompt behind the home page's main call to action.
 - When engine, UI, or OTel behavior changes, update the matching page in `apps/docs/content/docs` **and** the install skill's references.
 

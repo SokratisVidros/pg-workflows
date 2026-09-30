@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Build & deploy to Cloudflare Pages
+    name: Build & deploy to Cloudflare
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -48,14 +48,20 @@ jobs:
       - name: Build docs
         run: bun run build:docs
 
-      # Pushes to main deploy to production (pgpworkflows.dev). Other branches get
-      # a preview URL. Runs without the secrets (forked PRs, or before the
-      # Cloudflare project is set up) build but skip the deploy.
-      - name: Deploy
-        if: env.CLOUDFLARE_API_TOKEN != ''
+      # apps/docs/wrangler.jsonc serves ./out with Workers Static Assets. Runs
+      # without the secrets (forked PRs, or before setup) build but skip this.
+      - name: Deploy to production
+        if: github.event_name == 'push' && env.CLOUDFLARE_API_TOKEN != ''
         working-directory: apps/docs
-        run: >-
-          bunx wrangler pages deploy out
-          --project-name=pg-workflows-docs
-          --branch=${{ github.head_ref || github.ref_name }}
-          --commit-hash=${{ github.sha }}
+        run: bunx wrangler deploy --message "${{ github.sha }}"
+
+      # PRs upload a version without promoting it, under a stable preview URL
+      # per branch: https://<branch>-pg-workflows-docs.<subdomain>.workers.dev
+      - name: Upload preview
+        if: github.event_name == 'pull_request' && env.CLOUDFLARE_API_TOKEN != ''
+        working-directory: apps/docs
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          alias=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g' | cut -c1-40)
+          bunx wrangler versions upload --preview-alias "$alias" --message "${{ github.sha }}"

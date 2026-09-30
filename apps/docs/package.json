@@ -8,7 +8,7 @@
     "predev": "bun scripts/copy-skill.ts",
     "build": "next build",
     "dev": "next dev",
-    "preview": "wrangler pages dev out",
+    "preview": "wrangler dev",
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {

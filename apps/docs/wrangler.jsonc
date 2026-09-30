@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Static assets only: `next build` exports the site to ./out, and Workers
+  // Static Assets serves it. There is no Worker script.
+  "name": "pg-workflows-docs",
+  "compatibility_date": "2026-09-26",
+  "assets": {
+    "directory": "./out",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "preview_urls": true
+}
