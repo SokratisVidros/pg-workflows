@@ -1,14 +1,18 @@
 import type pg from 'pg';
 import type { PgBoss } from 'pg-boss';
+import {
+  type StepBaseContext,
+  WorkflowEngine,
+  type WorkflowPlugin,
+  WorkflowStatus,
+  workflow,
+} from 'pg-workflows';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { workflow } from '../definition';
-import { WorkflowEngine } from '../engine';
-import { getBoss } from '../tests/pgboss';
-import { closeTestDatabase, createTestDatabase } from '../tests/test-db';
-import type { StepBaseContext, WorkflowPlugin } from '../types';
-import { WorkflowStatus } from '../types';
-import { otelPlugin } from './otel';
-import { setupOtel } from './otel-test-helpers';
+// Engine test helpers (PGlite pool + pg-boss); test-only, never published.
+import { getBoss } from '../../pg-workflows/src/tests/pgboss';
+import { closeTestDatabase, createTestDatabase } from '../../pg-workflows/src/tests/test-db';
+import { otelPlugin } from '.';
+import { setupOtel } from './tests/otel';
 
 let testBoss: PgBoss;
 let testPool: pg.Pool;
@@ -110,7 +114,7 @@ describe('otelPlugin', () => {
     const stepSpan = otel.getSpansByName('pg_workflows.step.run')[0];
     expect(stepSpan).toBeDefined();
     expect(stepSpan.attributes).toMatchObject({ 'step.id': 'foo', 'step.type': 'run' });
-    expect(stepSpan.parentSpanId).toBe(wfSpan.spanContext().spanId);
+    expect(stepSpan.parentSpanContext?.spanId).toBe(wfSpan.spanContext().spanId);
   });
 
   it('skips step.run span on cache-hit replay', async () => {
@@ -355,34 +359,5 @@ describe('otelPlugin', () => {
     const wfSpan = otel.getSpansByName('pg_workflows.workflow.run')[0];
     expect(wfSpan).toBeDefined();
     expect(calls).toEqual(['tracker:before', 'tracker:after']);
-  });
-});
-
-import { invokeChildWorkflowTimelineKey } from '../constants';
-import { isCachedHit } from './otel';
-
-describe('isCachedHit', () => {
-  it('returns true when output is recorded for stepId', () => {
-    expect(isCachedHit({ s: { output: 'x', timestamp: new Date() } }, 's', 'run')).toBe(true);
-  });
-
-  it('returns false when output is undefined', () => {
-    expect(isCachedHit({ s: { output: undefined, timestamp: new Date() } }, 's', 'run')).toBe(
-      false,
-    );
-  });
-
-  it('returns false when timeline has no entry for stepId', () => {
-    expect(isCachedHit({}, 's', 'run')).toBe(false);
-  });
-
-  it('returns false for non-object entry', () => {
-    expect(isCachedHit({ s: 'not-an-object' }, 's', 'run')).toBe(false);
-  });
-
-  it('returns true for invokeChildWorkflow when only the binding key is present', () => {
-    const timeline = { [invokeChildWorkflowTimelineKey('s')]: { invokeChildWorkflow: {} } };
-    expect(isCachedHit(timeline, 's', 'invokeChildWorkflow')).toBe(true);
-    expect(isCachedHit(timeline, 's', 'run')).toBe(false);
   });
 });

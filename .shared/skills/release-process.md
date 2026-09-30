@@ -4,27 +4,45 @@ This is the single source of truth for deterministic releases in this repository
 
 ## Scope
 
-- Release type: **patch** by default
+- One release run covers **every publishable package** under `packages/*` (any `package.json` without `"private": true`). Packages with no changes since their last release are **skipped**.
 - Release artifacts:
-  - `packages/pg-workflows/package.json` version
-  - `bun.lock` (refreshed after the version bump)
-  - `CHANGELOG.md` release entry
-  - one release commit
-  - one annotated git tag
-  - one GitHub release
-- Do **not** run `npm publish` unless the user explicitly asks
+  - bumped `package.json` version for each released package
+  - `bun.lock` (refreshed after the version bumps)
+  - one `CHANGELOG.md` entry per released package
+  - one release commit covering all released packages
+  - one annotated git tag per released package
+  - one GitHub release per released package
+- Do **not** publish to npm unless the user explicitly asks
+
+## Versioning Scheme
+
+Packages are versioned **independently**. Each package has its own semver line and is bumped only when it changed. There is no shared version number.
+
+- Cross-package compatibility is expressed through peer ranges (e.g. `"pg-workflows": ">=0.16.0"`), not matching versions.
+- A package that needs a new engine API raises its `pg-workflows` peer floor in the same PR that uses the API.
+
+Current packages, in release (and publish) order. `pg-workflows` always goes first because the others peer on it:
+
+| Directory               | npm name             | Peers on       |
+| ----------------------- | -------------------- | -------------- |
+| `packages/pg-workflows` | `pg-workflows`       | —              |
+| `packages/otel`         | `@pg-workflows/otel` | `pg-workflows` |
+| `packages/ui`           | `@pg-workflows/ui`   | `pg-workflows` |
+
+New publishable packages join automatically. Put them after `pg-workflows`, sorted by directory name.
 
 ## Deterministic Conventions
 
-- **Version tag format:** `vX.Y.Z`
-- **Release commit title:** `Release vX.Y.Z`
-- **Tag annotation message:** `Release vX.Y.Z`
-- **Changelog heading:** `## vX.Y.Z - YYYY-MM-DD`
+- **Tag format:** `<npm name>@X.Y.Z` (e.g. `pg-workflows@0.16.0`, `@pg-workflows/otel@0.1.0`)
+- **Legacy tags:** engine releases up to `v0.15.0` used `vX.Y.Z`. Treat the latest `v*` tag as the engine's previous tag when no `pg-workflows@*` tag exists yet.
+- **Release commit title:** `Release <tag>[, <tag>...]` in release order (e.g. `Release pg-workflows@0.16.0, @pg-workflows/otel@0.1.0`)
+- **Tag annotation message:** `Release <tag>`
+- **Changelog heading:** `## <tag> - YYYY-MM-DD`
 - **Release date format:** `YYYY-MM-DD` (UTC/local current date, consistent within the release)
 
 ## Required Files
 
-- `packages/pg-workflows/package.json`
+- `packages/*/package.json` of each released package
 - `bun.lock`
 - `CHANGELOG.md` (create if missing)
 
@@ -35,15 +53,16 @@ Copy this checklist and execute in order:
 ```text
 Release checklist:
 - [ ] 1) Inspect repo and verify release baseline
-- [ ] 2) Compute previous tag and next minor version
-- [ ] 3) Collect key changes since previous tag
-- [ ] 4) Bump version in package files
-- [ ] 5) Update/create CHANGELOG.md with deterministic format
-- [ ] 6) Commit only release files with deterministic message
-- [ ] 7) Create deterministic annotated tag
-- [ ] 8) Push commit + tag
-- [ ] 9) Create GitHub release with deterministic notes
-- [ ] 10) Stop and tell user to run npm publish
+- [ ] 2) Find each package's previous tag and detect changed packages
+- [ ] 3) Collect key changes per changed package
+- [ ] 4) Decide bump level per package and bump versions
+- [ ] 5) Check cross-package peer ranges
+- [ ] 6) Update/create CHANGELOG.md with deterministic format
+- [ ] 7) Commit only release files with deterministic message
+- [ ] 8) Create one annotated tag per released package
+- [ ] 9) Push commit + tags
+- [ ] 10) Create one GitHub release per released package
+- [ ] 11) Stop and tell user the publish commands
 ```
 
 ### 1) Inspect repo and baseline
@@ -51,53 +70,88 @@ Release checklist:
 Run:
 
 ```bash
+git fetch --tags origin
 git status --short --branch
-git tag --sort=-version:refname | head -n 20
+git tag --sort=-creatordate | head -n 20
 ```
 
 Rules:
 
+- Release from an up-to-date `main`.
 - If there are unrelated dirty changes, stop and ask the user how to proceed.
 - Releasing from a dirty tree is only acceptable when the dirty files are exactly release files and intentional.
 
-### 2) Compute previous tag and next version
+### 2) Previous tags and change detection
 
-Use latest semver tag as `PREV_TAG` (for example `v0.8.0`).
-
-Compute next minor version from the engine package:
+For each publishable package (`DIR`, `NAME` from its `package.json`):
 
 ```bash
-npm version minor --no-git-tag-version --prefix packages/pg-workflows
-bun install
+PREV_TAG=$(git tag --list "$NAME@*" --sort=-version:refname | head -n 1)
+# Engine only: fall back to the legacy scheme
+[ -z "$PREV_TAG" ] && [ "$NAME" = "pg-workflows" ] && PREV_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
 ```
 
-Capture `NEW_VERSION` from `packages/pg-workflows/package.json` and `NEW_TAG="v$NEW_VERSION"`.
+- **Has `PREV_TAG`:** the package changed if files it ships differ. Test-only changes don't count:
+
+  ```bash
+  git diff --quiet "$PREV_TAG" HEAD -- "$DIR" \
+    ":(exclude,glob)$DIR/**/*.test.ts" ":(exclude,glob)$DIR/**/tests/**" \
+    || echo "$NAME changed"
+  ```
+
+  Unchanged packages are skipped: no bump, no changelog entry, no tag.
+
+- **No `PREV_TAG` (first release):** check the registry with `npm view "$NAME@$(node -p "require('./$DIR/package.json').version")" version`.
+  - If the version is **not** on npm, release the package at its current `package.json` version **without bumping**.
+  - If it **is** on npm, stop and ask the user.
+
+If no package changed, stop and tell the user there is nothing to release.
 
 ### 3) Collect key changes
 
-Collect commits since previous tag:
+For each changed package, collect the commits that touched it:
 
 ```bash
-git log --reverse --pretty=format:'%h %s' "${PREV_TAG}..HEAD"
+git log --reverse --pretty=format:'%h %s' "${PREV_TAG}..HEAD" -- "$DIR"
 ```
+
+For a first release, summarise what the package provides instead.
 
 Build concise user-facing bullets grouped into:
 
-- `Added` (typically `feat:`)
-- `Fixed` (typically `fix:`)
+- `Added` (new features and APIs)
+- `Fixed` (bug fixes)
 - `Documentation` (docs/readme/reorg changes)
-- `Changed` (other meaningful behavior/architecture updates)
+- `Changed` (other meaningful behavior/architecture updates). Prefix breaking changes with `**BREAKING —**` and include the migration.
 
-Skip noise-only items unless they matter to users.
+Skip noise-only items unless they matter to users. A commit that touches several packages contributes a bullet to each, worded for that package.
 
-### 4) Bump version files
+### 4) Bump versions
 
-After `npm version minor --no-git-tag-version --prefix packages/pg-workflows` and `bun install`, ensure:
+Per changed package (skip first releases, which keep their version):
 
-- `packages/pg-workflows/package.json` has `NEW_VERSION`
-- `bun.lock` is up to date
+- `minor` if it has any `Added` or `Changed` bullet, including breaking changes. The packages are pre-1.0. After 1.0, breaking changes are `major`.
+- `patch` if it has only `Fixed` / `Documentation` bullets.
+- The user may override the level for any package.
 
-### 5) Update `CHANGELOG.md`
+```bash
+npm version <minor|patch> --no-git-tag-version --prefix "$DIR"
+bun install
+```
+
+Capture each package's `NEW_VERSION` and `NEW_TAG="$NAME@$NEW_VERSION"`. Confirm `bun.lock` is up to date and only the released packages' versions changed.
+
+### 5) Check cross-package peer ranges
+
+For each released package that peers on `pg-workflows`, the peer floor must be satisfied by the engine version after this release. That's the new version if the engine is released in this run, otherwise its current version:
+
+```bash
+node -p "require('./packages/otel/package.json').peerDependencies['pg-workflows']"
+```
+
+If a floor points above that version (e.g. `>=0.16.0` while the engine only gets a patch to `0.15.1`), stop and ask. Usually the engine bump should be `minor`.
+
+### 6) Update `CHANGELOG.md`
 
 If missing, create with:
 
@@ -107,10 +161,10 @@ If missing, create with:
 All notable changes to this project will be documented in this file.
 ```
 
-Insert new entry at the top:
+Insert one entry per released package at the top, in release order:
 
 ```markdown
-## vX.Y.Z - YYYY-MM-DD
+## pg-workflows@X.Y.Z - YYYY-MM-DD
 
 ### Added
 - ...
@@ -124,7 +178,15 @@ Insert new entry at the top:
 ### Changed
 - ...
 
-[vX.Y.Z]: https://github.com/<owner>/<repo>/compare/vA.B.C...vX.Y.Z
+[pg-workflows@X.Y.Z]: https://github.com/SokratisVidros/pg-workflows/compare/<PREV_TAG>...pg-workflows@X.Y.Z
+```
+
+Link encoding: in compare/tree URLs, write `@pg-workflows/otel@0.1.0` as `%40pg-workflows/otel%400.1.0`.
+
+For a first release, open with `Initial release.` and link the tree instead:
+
+```markdown
+[@pg-workflows/otel@0.1.0]: https://github.com/SokratisVidros/pg-workflows/tree/%40pg-workflows/otel%400.1.0/packages/otel
 ```
 
 Changelog rules:
@@ -132,45 +194,48 @@ Changelog rules:
 - Keep section order: `Added`, `Fixed`, `Documentation`, `Changed`
 - Omit empty sections instead of leaving placeholders
 - Keep bullets short and user-centric
-- Add/update comparison link for the new version
+- Add a comparison (or tree) link for every released package
 
-### 6) Create deterministic release commit
+### 7) Create deterministic release commit
 
-Stage only:
+Stage only the release files:
 
 ```bash
-git add packages/pg-workflows/package.json bun.lock CHANGELOG.md
+git add bun.lock CHANGELOG.md packages/<released>/package.json ...
 ```
 
 Commit format (use HEREDOC):
 
 ```bash
 git commit -m "$(cat <<'EOF'
-Release vX.Y.Z
+Release pg-workflows@X.Y.Z, @pg-workflows/otel@A.B.C
 
-Align package metadata with the new release version and document the key user-facing changes since vA.B.C in a deterministic changelog format.
+Align package metadata with the new release versions and document the key user-facing changes per package in a deterministic changelog format.
 EOF
 )"
 ```
 
-### 7) Create deterministic tag
+### 8) Create deterministic tags
+
+One per released package:
 
 ```bash
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git tag -a "pg-workflows@X.Y.Z" -m "Release pg-workflows@X.Y.Z"
+git tag -a "@pg-workflows/otel@A.B.C" -m "Release @pg-workflows/otel@A.B.C"
 ```
 
-If tag already exists, stop and ask the user.
+If any tag already exists, stop and ask the user.
 
-### 8) Push commit and tag
+### 9) Push commit and tags
 
 ```bash
 git push origin main
-git push origin vX.Y.Z
+git push origin "pg-workflows@X.Y.Z" "@pg-workflows/otel@A.B.C"
 ```
 
-### 9) Create GitHub release
+### 10) Create GitHub releases
 
-Create release notes in a deterministic shape:
+One release per tag, in release order. Notes follow a deterministic shape:
 
 ```markdown
 ## Key changes
@@ -183,21 +248,28 @@ See `CHANGELOG.md` for full release notes.
 
 Command pattern:
 
+- The engine release is marked latest.
+- Other packages pass `--latest=false`, so the repo's "Latest" badge always points at the engine.
+- If the engine is skipped, pass `--latest=false` for every release.
+
 ```bash
-gh release create vX.Y.Z --title "vX.Y.Z" --notes "<notes>"
+gh release create "pg-workflows@X.Y.Z" --title "pg-workflows@X.Y.Z" --latest --notes "<notes>"
+gh release create "@pg-workflows/otel@A.B.C" --title "@pg-workflows/otel@A.B.C" --latest=false --notes "<notes>"
 ```
 
-### 10) Final handoff
+### 11) Final handoff
 
 Always end with:
 
 - release commit SHA
-- created tag
-- GitHub release URL
-- reminder that `npm publish` is intentionally not run
+- created tags, plus the packages skipped as unchanged
+- GitHub release URLs
+- reminder that publishing is intentionally not run
 
-Use exact guidance:
+Use `bun publish`, not `npm publish`: it rewrites the `catalog:` and `workspace:` protocols into real version ranges. Publish in release order, so the engine reaches npm before the packages that peer on it. List only the released packages:
 
 ```text
-Release prepared. Final step for you: npm publish --prefix packages/pg-workflows
+Release prepared. Final step for you, in order:
+(cd packages/pg-workflows && bun publish)
+(cd packages/otel && bun publish)
 ```

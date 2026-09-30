@@ -24,12 +24,13 @@
     }
   },
   "scripts": {
-    "build": "bun run --filter pg-workflows build && bun run --filter '@pg-workflows/ui' build",
+    "build": "bun run --filter pg-workflows build && bun run --filter '@pg-workflows/otel' --filter '@pg-workflows/ui' build",
     "build:ui": "bun run --filter '@pg-workflows/ui' build",
     "dev": "bun run --filter pg-workflows dev",
     "dev:ui": "bun run --filter pg-workflows-dashboard-example dev",
-    "test": "bun run test:unit && bun run test:ui && bun run test:integration",
+    "test": "bun run test:unit && bun run test:otel && bun run test:ui && bun run test:integration",
     "test:unit": "bun run --filter pg-workflows test:unit",
+    "test:otel": "bun run --filter '@pg-workflows/otel' test",
     "test:ui": "bun run --filter '@pg-workflows/ui' test",
     "test:integration": "bun run --filter pg-workflows test:integration",
     "test:watch": "bun run --filter pg-workflows test:watch",

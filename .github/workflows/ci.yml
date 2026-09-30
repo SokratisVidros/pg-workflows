@@ -59,6 +59,9 @@ jobs:
       - name: Run unit tests
         run: bun run test:unit
 
+      - name: Run OTel package tests
+        run: bun run test:otel
+
       - name: Run UI package tests
         run: bun run test:ui
 
