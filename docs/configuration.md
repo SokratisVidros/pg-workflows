@@ -1,29 +1,49 @@
 # Configuration
 
-## Environment Variables
+## Environment variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | *required* |
-| `WORKFLOW_RUN_WORKERS` | Number of worker processes | `3` |
-| `WORKFLOW_RUN_EXPIRE_IN_SECONDS` | Job expiration time in seconds | `300` |
+The engine reads these at startup. All are optional.
 
-## Database Setup
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WORKFLOW_RUN_WORKERS` | `3` | Number of concurrent workers each `WorkflowEngine` runs in-process. Each worker handles one run execution at a time. |
+| `WORKFLOW_RUN_EXPIRE_IN_SECONDS` | `300` | Maximum time for a single handler execution. An execution that runs longer is failed and retried. Override per call with `options.expireInSeconds` on `startWorkflow`, `resumeWorkflow`, and `triggerEvent`. |
+| `WORKFLOW_RUN_HEARTBEAT_SECONDS` | `30` | How often workers report that an execution is alive. If a worker process dies, its run is detected and retried after roughly this interval plus 60 seconds, instead of waiting for the full expiry. Minimum `10`. |
 
-The engine automatically runs migrations on startup to create the required tables:
+The engine does not read `DATABASE_URL`. Pass the connection string or a `pg.Pool` to the constructor:
 
-- `workflow_runs` — stores workflow execution state, step results, and timeline in the `public` schema. The optional `resource_id` column (indexed) associates each run with an external entity in your application (see [Resource ID](core-concepts.md#resource-id)). The optional `idempotency_key` column has a unique partial index for [idempotent starts](core-concepts.md#idempotency-key). Singleton workflows add a unique partial index on `workflow_id` for pending and running runs (see [Singleton Workflows](core-concepts.md#singleton-workflows)).
-- `pgboss_v12_pgworkflow.*` — pg-boss job queue tables for reliable task scheduling (isolated schema to avoid conflicts).
+```typescript
+import { WorkflowEngine } from 'pg-workflows'
+
+const engine = new WorkflowEngine({
+  connectionString: process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/postgres',
+})
+```
+
+## Database objects
+
+`engine.start()` runs migrations and creates:
+
+| Object | Purpose |
+|--------|---------|
+| `public.workflow_runs` | One row per run: status, input, output, error, and the `timeline` of step results. |
+| `workflow_runs.resource_id` index | Lookups by [resource ID](core-concepts.md#resource-id). |
+| `workflow_runs.idempotency_key` unique partial index | [Idempotent starts](core-concepts.md#idempotency-key). |
+| Unique partial index on `workflow_id` for pending and running singleton runs | [Singleton workflows](core-concepts.md#singleton-workflows). |
+| `pgboss_v12_pgworkflow` schema | pg-boss job queue tables. The schema is isolated so it does not collide with another pg-boss installation in the same database. |
+
+## Retries
+
+Retries are scheduled by pg-boss with exponential backoff: `2^retryCount` seconds (about 1s, 2s, 4s, 8s), with up to ±50% jitter. A failed attempt includes a thrown error, an execution that passes `WORKFLOW_RUN_EXPIRE_IN_SECONDS`, and a worker that stops sending heartbeats. When the last attempt fails, the run is marked `failed`. See [Retries and timeouts](core-concepts.md#retries-and-timeouts).
 
 ## Dependencies
 
-- `pg` is a peer dependency — you bring your own PostgreSQL driver.
-- `pg-boss` is bundled automatically as an internal dependency. You don't need to install or configure it. The engine creates pg-boss with an isolated schema (`pgboss_v12_pgworkflow`) so it never conflicts with other pg-boss installations in your project. Advanced users can pass their own `boss` instance to the engine constructor.
-- The engine manages its own retry logic with exponential backoff (`2^retryCount * 1000ms`), independent of pg-boss's retry settings.
+- `pg` is a peer dependency. Install it alongside `pg-workflows`.
+- `pg-boss` is a regular dependency. It is installed with the engine and needs no setup. To use your own pg-boss configuration, pass a `boss` instance to the `WorkflowEngine` or `WorkflowClient` constructor.
 
 ## Requirements
 
-- Node.js >= 18.0.0
+- Node.js >= 18
 - PostgreSQL >= 10
-- `pg` >= 8.0.0 (peer dependency)
-- A [Standard Schema](https://github.com/standard-schema/standard-schema)-compliant validation library (Zod, Valibot, ArkType, etc.) if using `inputSchema`
+- `pg` >= 8
+- A [Standard Schema](https://github.com/standard-schema/standard-schema) library (Zod, Valibot, ArkType) if you use `inputSchema`

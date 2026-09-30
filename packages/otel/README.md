@@ -1,34 +1,63 @@
 # @pg-workflows/otel
 
-OpenTelemetry tracing for [pg-workflows](https://github.com/SokratisVidros/pg-workflows). `otelPlugin` emits a span for each workflow execution and each step. It lives in its own package so the engine carries no OpenTelemetry code, and apps that don't trace never install it.
+OpenTelemetry tracing for [pg-workflows](https://github.com/SokratisVidros/pg-workflows). `otelPlugin` emits one span per workflow execution and one per step. It's a separate package so the engine has no OpenTelemetry dependency.
 
-## Quick start
+## Quickstart
+
+This prints spans to the console. It assumes a Postgres at `DATABASE_URL`. The [engine quickstart](https://github.com/SokratisVidros/pg-workflows#quickstart) has a Docker command for one.
 
 ```bash
-npm install @pg-workflows/otel @opentelemetry/api @opentelemetry/sdk-node
+npm install pg-workflows pg @pg-workflows/otel @opentelemetry/api @opentelemetry/sdk-node
+npm install -D tsx
 ```
 
-```ts
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { otelPlugin } from '@pg-workflows/otel';
-import { workflow } from 'pg-workflows';
+Save as `traced.ts`:
 
-// Initialize your OTel SDK however you normally do. NodeSDK registers an
-// AsyncHooks context manager, which is required for hierarchical (parent/child)
-// spans across `await` boundaries inside workflow handlers.
-new NodeSDK({ /* exporters, resource, ... */ }).start();
+```typescript
+import { NodeSDK, tracing } from '@opentelemetry/sdk-node'
+import { otelPlugin } from '@pg-workflows/otel'
+import { WorkflowEngine, WorkflowStatus, workflow } from 'pg-workflows'
 
-const tracedWorkflow = workflow.use(otelPlugin());
+const sdk = new NodeSDK({ traceExporter: new tracing.ConsoleSpanExporter() })
+sdk.start()
+
+const tracedWorkflow = workflow.use(otelPlugin())
 
 const checkout = tracedWorkflow('checkout', async ({ step }) => {
-  await step.run('charge', async () => { /* ... */ });
-  await step.waitFor('await-shipment', { eventName: 'shipped' });
-});
+  const charge = await step.run('charge', async () => ({ chargeId: 'ch_123' }))
+  await step.run('send-receipt', async () => ({ sentFor: charge.chargeId }))
+  return charge
+})
+
+async function main() {
+  const engine = new WorkflowEngine({
+    connectionString: process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/postgres',
+    workflows: [checkout],
+  })
+  await engine.start()
+
+  const run = await engine.startWorkflow({ workflowId: 'checkout', input: {} })
+
+  let result = await engine.getRun({ runId: run.id })
+  while (result.status === WorkflowStatus.PENDING || result.status === WorkflowStatus.RUNNING) {
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    result = await engine.getRun({ runId: run.id })
+  }
+
+  await engine.stop()
+  await sdk.shutdown()
+}
+
+main()
 ```
 
-## Span hierarchy
+```bash
+npx tsx traced.ts
+```
 
-Each worker execution of a workflow run produces one trace. A workflow that pauses (`step.waitFor`, `step.delay`, etc.) and resumes later produces a **new trace per resume cycle**. Traces are stitched together via the shared `workflow.id` and `workflow.run_id` attributes.
+The output includes a `pg_workflows.workflow.run` span and two `pg_workflows.step.run` spans. In production, replace `ConsoleSpanExporter` with your exporter, for example `OTLPTraceExporter` from `@opentelemetry/exporter-trace-otlp-http`.
+
+## Spans
 
 ```
 pg_workflows.workflow.run
@@ -41,89 +70,117 @@ pg_workflows.workflow.run
 └── pg_workflows.step.invokeChildWorkflow
 ```
 
-`step.sleep` is an alias for `step.delay`; calls to it emit a `pg_workflows.step.delay` span (semantic consistency — both represent a sleep).
+`step.sleep` is an alias for `step.delay` and emits `pg_workflows.step.delay`.
+
+**One trace per execution.** A run that pauses (`waitFor`, `delay`, `pause`, and so on) and later resumes produces a new trace for each execution. Correlate them with the `workflow.id` and `workflow.run_id` attributes.
+
+**Step spans are recorded when the step finishes.** Each step span gets its start time from when the step began, but the span object is created only after the step returns or throws. Spans your code creates inside a `step.run` callback, including auto-instrumented HTTP or database calls, are therefore children of `pg_workflows.workflow.run`, not of the step span.
 
 ## Attributes
 
-| Span                                 | Attributes                                                                                                                                |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `pg_workflows.workflow.run`          | `workflow.id`, `workflow.run_id`, `workflow.attempt` (= `run.retryCount`), `workflow.resource_id` (when set), plus any user-supplied attrs |
-| `pg_workflows.step.<kind>`           | `step.id`, `step.type` (matches the `StepType` enum value)                                                                                |
-| Any span on error                    | `recordException(err)`, `status.code = ERROR`, `status.message = err.message`                                                             |
-| Any span on success                  | `status.code = OK`                                                                                                                        |
+| Span | Attributes |
+|------|------------|
+| `pg_workflows.workflow.run` | `workflow.id`, `workflow.run_id`, `workflow.attempt` (same as `run.retryCount`), `workflow.resource_id` (when set), and anything returned by the `attributes` option |
+| `pg_workflows.step.<kind>` | `step.id`, `step.type` (a `StepType` value) |
 
-## Cache-hit suppression
+On success, a span's status is `OK`. On error, the plugin calls `recordException(error)` and sets the status to `ERROR` with the error message.
 
-When a workflow resumes after a pause, the handler re-runs from the top. Steps that completed in a prior execution return their cached output instantly. The plugin detects these cache-hit replays and **does not emit a span** for them.
+## Replayed steps
 
-Detection uses `isStepCached(context.timeline, stepId)`, exported by `pg-workflows`. A step counts as cached when:
+When a run resumes, the handler runs from the top, and completed steps return their saved output. The plugin emits no span for these replays. It uses `isStepCached(context.timeline, stepId)` from `pg-workflows`. A step counts as cached when:
 
-- its output is recorded in the timeline, or
-- it is a `step.invokeChildWorkflow` whose child run is already bound. That covers a parent that re-enters the step while the child is still running.
+- its output is in the timeline, or
+- it's a `step.invokeChildWorkflow` whose child run has already been created. This covers a parent that re-enters the step while the child is still running.
 
-Exception: `step.poll` does not use the cache-hit guard. Each handler invocation that reaches `step.poll` represents a meaningful poll attempt worth tracing.
+Two exceptions:
 
-## Plugin composition
-
-The OTel plugin uses the same `wrap(context, next)` middleware hook that any plugin can implement. If you register multiple plugins via `workflow.use(...)`, their wraps compose in registration order — the first plugin's wrap is outermost.
-
-```ts
-const w = workflow
-  .use(loggingPlugin)              // outermost wrap
-  .use(otelPlugin())               // inner wrap (workflow.run span opens inside loggingPlugin)
-  ('checkout', async ({ step }) => { /* ... */ });
-```
+- **`step.poll`** emits a span on every check, because each check is a real attempt.
+- **`step.run` returning `undefined`** emits no span. Return a value (for example `{ sent: true }`) from steps you want traced.
 
 ## Options
 
-```ts
+```typescript
+import { trace } from '@opentelemetry/api'
+import { otelPlugin } from '@pg-workflows/otel'
+
 otelPlugin({
-  // Tracer to use. Defaults to `trace.getTracer('pg-workflows')`.
-  tracer: trace.getTracer('my-app'),
-
-  // Span name prefix. Defaults to 'pg_workflows'.
-  spanNamePrefix: 'pg_workflows',
-
-  // Optional callback returning extra attributes for the workflow.run span.
-  // Receives the WorkflowContext so you can extract values from the input
-  // or the run's resourceId.
-  attributes: (ctx) => ({ tenant: ctx.resourceId }),
-});
+  tracer: trace.getTracer('billing-worker'),
+  spanNamePrefix: 'billing',
+  attributes: (ctx) => ({ 'tenant.id': ctx.resourceId ?? 'none' }),
+})
 ```
 
-## Error semantics
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `tracer` | `Tracer` | `trace.getTracer('pg-workflows')` | The tracer that creates spans. |
+| `spanNamePrefix` | `string` | `'pg_workflows'` | Replaces `pg_workflows` in every span name. |
+| `attributes` | `(ctx: WorkflowContext) => Record<string, AttributeValue>` | none | Extra attributes for the `workflow.run` span. Receives the handler context, including `input` and `resourceId`. |
 
-When a step or workflow handler throws:
+## Errors
 
-1. The span's exception is recorded via `span.recordException(error)`.
-2. The span status is set to `ERROR` with the error's message.
-3. The **original error** is re-thrown — engine retry/DLQ behaviour is unaffected.
+When a step or handler throws, the plugin records the exception, sets the span status to `ERROR`, and rethrows the original error. Retries and failure handling in the engine are unchanged.
 
-Non-`Error` throws (e.g., `throw 'msg'`) are coerced to an `Error` for the OTel API only; the original value is preserved on the re-throw path.
+A thrown non-`Error` value (`throw 'msg'`) is wrapped in an `Error` for the span only. The original value is rethrown.
 
-## Not in v1
+## Composing plugins
 
-These are deliberately out of scope for the initial release. They share a common requirement (durable storage of trace context) and will likely land together when the underlying schema work is done.
+`otelPlugin` uses the `wrap(context, next)` middleware hook that any plugin can implement. With several plugins, the first one passed to `.use()` is the outermost wrap:
 
-- **Metrics** (counters, histograms, gauges) — different OTel API surface; layers onto the same plugin hooks.
-- **Cross-execution trace context propagation** — paused workflows resume as a fresh root trace today. Linking the resume to the prior execution requires persisting the `traceparent` header.
-- **`step.invokeChildWorkflow` parent-trace continuation** — child runs start a fresh root trace. Same persistence question.
-- **Caller context propagation into `engine.startWorkflow`** — an incoming HTTP trace does not currently propagate into the workflow run.
-- **DLQ span emission** — `handleWorkflowRunDlq` runs outside the workflow's plugin chain. DLQ-induced FAILED states therefore don't produce a `workflow.run` span. The precipitating error is already recorded on the last per-execution span via the catch path.
-- **Sampling controls** — the plugin defers to your configured `TracerProvider` for sampling.
+```typescript
+import { otelPlugin } from '@pg-workflows/otel'
+import { type WorkflowPlugin, workflow } from 'pg-workflows'
 
-## Migrating from `pg-workflows` <= 0.15
+const timingPlugin: WorkflowPlugin = {
+  name: 'timing',
+  methods: () => ({}),
+  wrap: async (ctx, next) => {
+    const startedAt = Date.now()
+    try {
+      return await next()
+    } finally {
+      ctx.logger.log(`${ctx.workflowId} execution took ${Date.now() - startedAt}ms`)
+    }
+  },
+}
 
-`otelPlugin` used to be exported from `pg-workflows`. Install `@pg-workflows/otel` and change the import. The options and span output are unchanged.
+// timingPlugin wraps the whole execution, including the workflow.run span
+const instrumentedWorkflow = workflow.use(timingPlugin).use(otelPlugin())
+```
+
+## Context propagation
+
+Nested spans need a context manager that follows `await`. `NodeSDK` from `@opentelemetry/sdk-node` registers one. If you set up OpenTelemetry by hand, install `@opentelemetry/context-async-hooks` and register it:
+
+```typescript
+import { context } from '@opentelemetry/api'
+import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks'
+
+context.setGlobalContextManager(new AsyncHooksContextManager().enable())
+```
+
+## Not supported yet
+
+Most of these need the trace context stored with the run, and are expected to ship together.
+
+- **Metrics.** Only traces are emitted.
+- **Linking executions.** A resumed run starts a new root trace, not a continuation of the previous one.
+- **Child workflow traces.** A child run starts its own root trace.
+- **Caller context.** The trace of the request that called `startWorkflow` isn't propagated into the run.
+- **Dead-letter failures.** When retries run out, the run is marked failed outside the plugin chain, so that final transition has no span. The error is already on the last execution's span.
+- **Sampling.** The plugin uses your `TracerProvider`'s sampler.
+
+## Migrating from pg-workflows 0.15 and earlier
+
+`otelPlugin` used to be exported from `pg-workflows`. Install `@pg-workflows/otel` and change the import. Options and spans are unchanged.
 
 ```diff
--import { workflow, otelPlugin } from 'pg-workflows';
-+import { otelPlugin } from '@pg-workflows/otel';
-+import { workflow } from 'pg-workflows';
+-import { workflow, otelPlugin } from 'pg-workflows'
++import { otelPlugin } from '@pg-workflows/otel'
++import { workflow } from 'pg-workflows'
 ```
 
 ## Requirements
 
-- `pg-workflows` >= 0.16.0 (peer)
-- `@opentelemetry/api` ^1.9.0 (peer)
-- An OTel SDK that registers an AsyncHooks context manager. `@opentelemetry/sdk-node`'s `NodeSDK` does this automatically. If you're wiring OTel manually, install `@opentelemetry/context-async-hooks` and call `context.setGlobalContextManager(new AsyncHooksContextManager().enable())`.
+- `pg-workflows` >= 0.16.0 (peer dependency)
+- `@opentelemetry/api` ^1.9.0 (peer dependency)
+- An OpenTelemetry SDK with an async context manager. See [Context propagation](#context-propagation).

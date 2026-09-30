@@ -1,171 +1,249 @@
-# API Reference
+# API reference
+
+- [`WorkflowEngine`](#workflowengine)
+- [`WorkflowClient`](#workflowclient)
+- [`workflow()`](#workflow)
+- [`WorkflowRef`](#workflowref)
+- [`WorkflowContext`](#workflowcontext)
+- [Types](#types)
+- [Errors](#errors)
 
 ## WorkflowEngine
 
-The full engine — registers workflows, runs workers, and executes steps. Use in your **worker service** or in a **single-service** setup.
+Registers workflows, runs workers, and executes steps. Use it in a worker service or in a single service that both starts and runs workflows.
+
+```typescript
+import { WorkflowEngine } from 'pg-workflows'
+```
 
 ### Constructor
 
 ```typescript
-// With connection string (engine creates and owns the pool)
 const engine = new WorkflowEngine({
-  connectionString: string,          // PostgreSQL connection string
-  workflows?: WorkflowDefinition[],  // Optional: register workflows on init
-  logger?: WorkflowLogger,           // Optional: custom logger
-  boss?: PgBoss,                     // Optional: bring your own pg-boss instance
-})
-
-// With existing pool (you manage the pool lifecycle)
-const engine = new WorkflowEngine({
-  pool: pg.Pool,                     // Your pg.Pool instance
-  workflows?: WorkflowDefinition[],
-  logger?: WorkflowLogger,
-  boss?: PgBoss,
+  connectionString: 'postgres://postgres:postgres@localhost:5432/postgres',
+  workflows: [sendInvoice],
 })
 ```
 
-Pass either `connectionString` or `pool` (exactly one). When `connectionString` is used, the engine creates the pool internally and closes it on `stop()`.
+| Option | Type | Description |
+|--------|------|-------------|
+| `connectionString` | `string` | The engine creates a `pg.Pool` and closes it on `stop()`. |
+| `pool` | `pg.Pool` | Use an existing pool. You own its lifecycle. |
+| `workflows` | `WorkflowDefinition[]` | Registered when `start()` runs. |
+| `logger` | [`WorkflowLogger`](#workflowlogger) | Defaults to `console.warn` and `console.error`. |
+| `boss` | `PgBoss` | Your own pg-boss instance. When omitted, the engine creates one in the `pgboss_v12_pgworkflow` schema. |
 
-When `boss` is omitted, pg-boss is created automatically with an isolated schema (`pgboss_v12_pgworkflow`) to avoid conflicts with other pg-boss installations.
+Pass exactly one of `connectionString` and `pool`.
 
-### Methods
+### Lifecycle
 
 | Method | Description |
 |--------|-------------|
-| `start(asEngine?, options?)` | Start the engine and workers |
-| `stop()` | Stop the engine gracefully |
-| `registerWorkflow(definition)` | Register a workflow definition |
-| `startWorkflow(ref, input, options?)` | Start a top-level workflow run using a typed ref (see [WorkflowRef](#workflowref)) |
-| `startWorkflow({ workflowId, resourceId?, input, idempotencyKey?, options? })` | Start a top-level workflow run by ID. `resourceId` optionally ties the run to an external entity (see [Resource ID](core-concepts.md#resource-id)). `idempotencyKey` optionally deduplicates starts (see [Idempotency Key](core-concepts.md#idempotency-key)). A singleton workflow rejects a second start while a run is still in progress (see [Singleton Workflows](core-concepts.md#singleton-workflows)). |
-| `pauseWorkflow({ runId, resourceId? })` | Pause a running workflow |
-| `resumeWorkflow({ runId, resourceId?, options? })` | Resume a paused workflow. No-ops for `step.invokeChildWorkflow()` waits. |
-| `cancelWorkflow({ runId, resourceId? })` | Cancel a workflow |
-| `triggerEvent({ runId, resourceId?, eventName, data?, options? })` | Send an event to a workflow |
-| `fastForwardWorkflow({ runId, resourceId?, data? })` | Skip the current waiting step and resume execution. No-ops for `step.invokeChildWorkflow()` waits. |
-| `getRun({ runId, resourceId? })` | Get workflow run details |
-| `checkProgress({ runId, resourceId? })` | Get workflow progress |
-| `getRuns(filters)` | List workflow runs with pagination |
+| `start(asEngine = true, { batchSize = 1, heartbeatSeconds = 30 }?)` | Starts pg-boss, runs migrations, registers `workflows`, starts [`WORKFLOW_RUN_WORKERS`](configuration.md#environment-variables) workers, and registers schedules. With `asEngine: false`, it does everything except start workers and schedules. Calling it again is a no-op. |
+| `stop()` | Unschedules recurring workflows, stops pg-boss, and closes the pool if the engine created it. |
+| `registerWorkflow(definition)` | Parses the handler's steps and registers it. Throws if the ID is already registered or the schedule is invalid. |
+| `unregisterWorkflow(workflowId)` | Removes a definition and its schedule. |
+| `unregisterAllWorkflows()` | Removes every definition and schedule. |
+
+If you call `startWorkflow` before `start()`, the engine calls `start(false)`: the run is created and enqueued, but this engine runs no workers.
+
+### Runs
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `startWorkflow(ref, input, options?)` | `WorkflowRun` | Starts a run from a typed [`WorkflowRef`](#workflowref). |
+| `startWorkflow({ workflowId, input, resourceId?, idempotencyKey?, options? })` | `WorkflowRun` | Starts a run by ID. Throws `WorkflowRunInProgressError` for a [singleton](core-concepts.md#singleton-workflows) workflow that already has a run in progress. |
+| `pauseWorkflow({ runId, resourceId? })` | `WorkflowRun` | Pauses a pending or running run. |
+| `resumeWorkflow({ runId, resourceId?, options? })` | `WorkflowRun` | Resumes a paused run. Throws if the run is not paused. Does nothing while the run waits on a child workflow. |
+| `cancelWorkflow({ runId, resourceId? })` | `WorkflowRun` | Cancels a pending, running, or paused run. |
+| `triggerEvent({ runId, eventName, data?, resourceId?, options? })` | `WorkflowRun` | Delivers an event to a run waiting in `step.waitFor`. |
+| `fastForwardWorkflow({ runId, data?, resourceId? })` | `WorkflowRun` | Completes the step the run is paused on. See [Fast-forward](core-concepts.md#fast-forward). |
+
+`options` on `startWorkflow` is a [`StartWorkflowOptions`](#startworkflowoptions). `options` on `resumeWorkflow` and `triggerEvent` accepts `{ expireInSeconds }`.
+
+### Queries
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getRun({ runId, resourceId? })` | `WorkflowRun` | Throws `WorkflowRunNotFoundError` if the run doesn't exist or belongs to another resource. |
+| `getRuns({ resourceId?, workflowId?, statuses?, limit?, startingAfter?, endingBefore? })` | `{ items, nextCursor, prevCursor, hasMore, hasPrev }` | Lists runs, newest first. `limit` defaults to `20`. Pass `nextCursor` as `startingAfter` for the next page, and `prevCursor` as `endingBefore` for the previous one. |
+| `getWorkflowLastRun({ workflowId, resourceId? })` | `WorkflowRun \| null` | The most recently created run of any status. |
+| `getStats({ resourceId?, workflowId? })` | `WorkflowRunStats` | Run counts per status. |
+| `checkProgress({ runId, resourceId? })` | `WorkflowRunProgress` | The run plus `completedSteps`, `totalSteps`, and `completionPercentage`. Throws if the workflow is not registered on this engine. |
+
+Every method that takes `resourceId` also matches on it. See [Resource ID](core-concepts.md#resource-id).
 
 ## WorkflowClient
 
-A lightweight client for **API services** in a microservices setup. Starts and manages workflow runs without importing handler code. Import from `pg-workflows/client`.
-
-### Constructor
+Starts and manages runs without loading workflow handlers. Use it in API services that should not import worker code.
 
 ```typescript
 import { WorkflowClient } from 'pg-workflows/client'
 
 const client = new WorkflowClient({
-  connectionString: string,  // or pool: pg.Pool
-  logger?: WorkflowLogger,
+  connectionString: 'postgres://postgres:postgres@localhost:5432/postgres',
 })
 ```
 
-### Methods
+The constructor takes `connectionString` or `pool`, plus optional `logger` and `boss`, with the same meaning as on `WorkflowEngine`.
 
-| Method | Description |
-|--------|-------------|
-| `start()` | Connect to the database (called automatically on first use) |
-| `stop()` | Close the connection |
-| `startWorkflow(ref, input, options?)` | Start a top-level workflow run using a typed ref |
-| `startWorkflow({ workflowId, input, resourceId?, options? })` | Start a top-level workflow run by ID |
-| `pauseWorkflow({ runId, resourceId? })` | Pause a running workflow |
-| `resumeWorkflow({ runId, resourceId?, options? })` | Resume a paused workflow. No-ops for `step.invokeChildWorkflow()` waits. |
-| `cancelWorkflow({ runId, resourceId? })` | Cancel a workflow |
-| `triggerEvent({ runId, resourceId?, eventName, data?, options? })` | Send an event to a workflow |
-| `fastForwardWorkflow({ runId, resourceId?, data? })` | Skip the current waiting step. No-ops for `step.invokeChildWorkflow()` waits. |
-| `getRun({ runId, resourceId? })` | Get workflow run details |
-| `checkProgress({ runId, resourceId? })` | Get workflow progress |
-| `getRuns(filters)` | List workflow runs with pagination |
+The client has the same run and query methods as the engine, except `getWorkflowLastRun`. It never executes steps. It also has `start()`, which connects and runs migrations (called automatically on first use), and `stop()`.
+
+Differences from the engine:
+
+- **`checkProgress`** can't count a workflow's steps without the definition. It returns `totalSteps: 0` and `completionPercentage: 0` until the run completes, then `100`. `completedSteps` is accurate.
+- **`singleton`** must be set on the ref or in `startWorkflow` options, because the client can't read it from the definition. See [Singleton workflows](core-concepts.md#singleton-workflows).
+
+## workflow()
+
+```typescript
+import { workflow } from 'pg-workflows'
+
+const definition = workflow(id, handler, options)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | `string` | Unique workflow ID, up to 256 characters. |
+| `handler` | `(context: WorkflowContext) => Promise<unknown>` | The workflow body. Its return value becomes `run.output`. |
+| `options` | `WorkflowOptions` | `inputSchema`, `retries`, `timeout`, `priority`, `singleton`, `schedule`, `timezone`. See the [options table](core-concepts.md#workflows). |
+
+### workflow.use(plugin)
+
+Returns a new `workflow` factory whose handlers get the plugin's step methods and `wrap` middleware. Plugins compose in the order you call `.use()`. [`@pg-workflows/otel`](../packages/otel/README.md) is built on this.
+
+```typescript
+import { otelPlugin } from '@pg-workflows/otel'
+import { workflow } from 'pg-workflows'
+
+const tracedWorkflow = workflow.use(otelPlugin())
+```
+
+### workflow.ref(id, options?)
+
+Same as [`createWorkflowRef`](#workflowref), with the generics in `<TInput, TOutput>` order.
 
 ## WorkflowRef
 
-A lightweight, callable reference that carries a workflow's ID and input schema without any handler code. Created with `createWorkflowRef()` (importable from `pg-workflows/client`) or `workflow.ref()`.
+A workflow ID and input schema with no handler. Import refs in API services to start runs with typed input. Call a ref with a handler to get a full definition in the worker.
 
 ```typescript
 import { createWorkflowRef } from 'pg-workflows/client'
 import { z } from 'zod'
 
-// Create a ref — just an ID + schema, no handler
-const myWorkflow = createWorkflowRef('my-workflow', {
-  inputSchema: z.object({ email: z.string().email() }),
-})
-
-// Use in API service — type-safe input
-await client.startWorkflow(myWorkflow, { email: 'user@example.com' })
-
-// Use in worker service — call with a handler to get a full definition
-const definition = myWorkflow(async ({ step, input }) => {
-  await step.run('do-work', async () => {
-    /* ... */
-  })
+export const sendInvoiceRef = createWorkflowRef('send-invoice', {
+  inputSchema: z.object({ orderId: z.string(), total: z.number() }),
 })
 ```
 
-Refs can also carry an output type for `step.invokeChildWorkflow()`:
+`createWorkflowRef(id, options?)` is exported from both `pg-workflows` and `pg-workflows/client`.
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `inputSchema` | Standard Schema | Types and validates `input`. |
+| `singleton` | `boolean` | Applies the singleton constraint when starting from `WorkflowClient`. |
+
+API service:
 
 ```typescript
-type ChildOutput = { ok: true }
-const childWorkflow = createWorkflowRef<ChildOutput>('child-workflow')
-
-const output = await step.invokeChildWorkflow('call-child', childWorkflow, {})
-// output is ChildOutput
+await client.startWorkflow(sendInvoiceRef, { orderId: 'ord_1', total: 99 })
 ```
 
-## workflow()
+Worker service:
 
 ```typescript
-workflow<I extends Parameters>(
-  id: string,
-  handler: (context: WorkflowContext) => Promise<unknown>,
-  options?: {
-    inputSchema?: I,
-    timeout?: number,
-    retries?: number,
-    priority?: WorkflowPriority,
-    singleton?: boolean,
-    schedule?: Schedule,
-    timezone?: string,
-  }
-): WorkflowDefinition<I>
+const sendInvoice = sendInvoiceRef(
+  async ({ step, input }) => {
+    return step.run('create-invoice', async () => ({ id: `inv_${input.orderId}` }))
+  },
+  { retries: 3 },
+)
+```
+
+The second argument accepts every `workflow()` option except `inputSchema`.
+
+To type the output of `step.invokeChildWorkflow`, pass it as the first generic of `createWorkflowRef`. Explicit generics turn off inference for the others, so pass the schema type too:
+
+```typescript
+const receiptSchema = z.object({ orderId: z.string() })
+
+const sendReceiptRef = createWorkflowRef<{ receiptId: string }, typeof receiptSchema>('send-receipt', {
+  inputSchema: receiptSchema,
+})
 ```
 
 ## WorkflowContext
 
-The context object passed to workflow handlers:
+The object passed to a handler.
 
-```typescript
-{
-  input: T,                          // Validated input data
-  workflowId: string,                // Workflow ID
-  runId: string,                     // Unique run ID
-  timeline: Record<string, unknown>, // Step execution history
-  logger: WorkflowLogger,            // Logger instance
-  step: {
-    run: <T>(stepId, handler) => Promise<T>,
-    // without timeout: always returns event data T
-    waitFor: <T>(stepId, { eventName, schema? }) => Promise<T>,
-    // with timeout: returns event data T or undefined if timeout fires first
-    waitFor: <T>(stepId, { eventName, timeout, schema? }) => Promise<T | undefined>,
-    waitUntil: (stepId, date | dateString | { date }) => Promise<void>,
-    delay: (stepId, duration) => Promise<void>,
-    sleep: (stepId, duration) => Promise<void>,
-    pause: (stepId) => Promise<void>,
-    poll: <T>(stepId, conditionFn, { interval?, timeout? }) => Promise<{ timedOut: false; data: T } | { timedOut: true }>,
-    // invokeChildWorkflow has two overloads:
-    //   1) by typed `WorkflowRef<TInput, TOutput>` - return type is inferred
-    invokeChildWorkflow: <TInput, TOutput>(stepId, ref: WorkflowRef<TInput, TOutput>, input, options?) => Promise<TOutput>,
-    //   2) by workflow ID - explicit `<TOutput>` generic for the return
-    invokeChildWorkflow: <TOutput>(stepId, { workflowId, input, resourceId?, idempotencyKey?, options? }) => Promise<TOutput>,
-  }
-}
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| `input` | inferred from `inputSchema` | The run's input. `unknown` without a schema. |
+| `step` | `StepBaseContext` | Step methods, listed below. |
+| `runId` | `string` | The run's ID. |
+| `workflowId` | `string` | The workflow's ID. |
+| `resourceId` | `string \| undefined` | The run's resource ID, if set. |
+| `attempt` | `number` | Zero-based retry attempt. Same as `run.retryCount`. |
+| `timeline` | `Record<string, unknown>` | Saved step results, keyed by step ID. |
+| `logger` | `WorkflowLogger` | The engine's logger. |
+| `schedule` | `{ timestamp: Date } \| undefined` | Set only for runs started by a [schedule](core-concepts.md#recurring-schedules). |
 
-`startWorkflow()` creates a top-level run and returns immediately. `step.invokeChildWorkflow()` starts a child run from inside a workflow, pauses the parent, and resolves with the child output when the child reaches a terminal state.
+### Step methods
 
-`duration` is a string (e.g. `'3 days'`, `'2h'`) or an object (`{ weeks?, days?, hours?, minutes?, seconds? }`). See the `Duration` type exported from the package.
+| Method | Returns | Guide |
+|--------|---------|-------|
+| `step.run(stepId, fn)` | `Promise<T>` | [Steps](core-concepts.md#steps) |
+| `step.waitFor(stepId, { eventName, schema? })` | `Promise<T>` | [Events](core-concepts.md#events) |
+| `step.waitFor(stepId, { eventName, timeout, schema? })` | `Promise<T \| undefined>` | [Events](core-concepts.md#events) |
+| `step.waitUntil(stepId, date \| isoString \| { date })` | `Promise<void>` | [Timers](core-concepts.md#timers) |
+| `step.delay(stepId, duration)` | `Promise<void>` | [Timers](core-concepts.md#timers) |
+| `step.sleep(stepId, duration)` | `Promise<void>` | Alias for `delay` |
+| `step.pause(stepId)` | `Promise<void>` | [Pause and resume](core-concepts.md#pause-and-resume) |
+| `step.poll(stepId, fn, { interval?, timeout? })` | `Promise<{ timedOut: false, data: T } \| { timedOut: true }>` | [Polling](core-concepts.md#polling) |
+| `step.invokeChildWorkflow(stepId, ref, input, options?)` | `Promise<TOutput>` | [Child workflows](core-concepts.md#child-workflows) |
+| `step.invokeChildWorkflow<TOutput>(stepId, { workflowId, input, resourceId?, idempotencyKey?, options? })` | `Promise<TOutput>` | [Child workflows](core-concepts.md#child-workflows) |
 
-## WorkflowStatus
+A `duration` is a string (`'90s'`, `'2h'`, `'3 days'`) or `{ weeks?, days?, hours?, minutes?, seconds? }`.
+
+## Types
+
+### WorkflowRun
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Run ID (KSUID). |
+| `workflowId` | `string` | |
+| `resourceId` | `string \| null` | |
+| `status` | `'pending' \| 'running' \| 'paused' \| 'completed' \| 'failed' \| 'cancelled'` | Compare with `WorkflowStatus` values. |
+| `input` | `unknown` | |
+| `output` | `unknown \| null` | The handler's return value, once completed. |
+| `error` | `string \| null` | The last error message. |
+| `currentStepId` | `string` | |
+| `timeline` | `Record<string, unknown>` | Saved step results. |
+| `retryCount` / `maxRetries` | `number` | |
+| `priority` | `number` | Resolved priority. See [Priorities](core-concepts.md#priorities). |
+| `singleton` | `boolean` | |
+| `idempotencyKey` | `string \| null` | |
+| `parentRunId`, `parentStepId`, `parentResourceId` | `string \| null` | Set on child runs. |
+| `jobId` | `string \| null` | The pg-boss job ID. |
+| `createdAt`, `updatedAt` | `Date` | |
+| `pausedAt`, `resumedAt`, `completedAt`, `timeoutAt`, `scheduledAt` | `Date \| null` | |
+
+`WorkflowRunProgress` is `WorkflowRun` plus `completedSteps`, `totalSteps`, and `completionPercentage`.
+
+### StartWorkflowOptions
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `retries` | `number` | Overrides the definition's `retries`. |
+| `timeout` | `number` (ms) | Saved as `run.timeoutAt`. Not enforced. See [Retries and timeouts](core-concepts.md#retries-and-timeouts). |
+| `priority` | `WorkflowPriority` | Overrides the definition's `priority`. |
+| `expireInSeconds` | `number` | Per-execution limit for this run's first job. Defaults to `WORKFLOW_RUN_EXPIRE_IN_SECONDS`. |
+| `singleton` | `boolean` | For `WorkflowClient`, which can't read the definition. |
+| `resourceId` | `string` | Alternative to the top-level `resourceId`. |
+| `idempotencyKey` | `string` | Alternative to the top-level `idempotencyKey`. |
+
+### WorkflowStatus
 
 ```typescript
 enum WorkflowStatus {
@@ -178,8 +256,31 @@ enum WorkflowStatus {
 }
 ```
 
-## UI (`@pg-workflows/ui`)
+`WorkflowRunStats` is `Record<WorkflowStatus, number>`.
 
-React hooks and components for inspecting runs live in a **separate package**: [`@pg-workflows/ui`](../packages/ui/README.md).
+### WorkflowPriority
 
-Install it only in apps that render UI. The engine API above (`WorkflowEngine`, `WorkflowClient`, `getRun`, `getRuns`) is what that package talks to over HTTP — it does not replace those methods, and it is not exported from `pg-workflows`.
+`'high' | 'normal' | 'low' | number`. Named levels map to `100`, `0`, and `-100`.
+
+### WorkflowLogger
+
+```typescript
+interface WorkflowLogger {
+  log(message: string): void
+  error(message: string, ...args: unknown[]): void
+}
+```
+
+## Errors
+
+All three are exported from `pg-workflows` and `pg-workflows/client`.
+
+| Class | Thrown when |
+|-------|-------------|
+| `WorkflowEngineError` | Base class. Has `workflowId`, `runId`, `cause`, and `issues` (input validation failures). |
+| `WorkflowRunNotFoundError` | The run doesn't exist, or doesn't match the given `resourceId`. |
+| `WorkflowRunInProgressError` | A singleton workflow already has a pending or running run. |
+
+## UI
+
+React components and hooks for browsing runs are in the separate [`@pg-workflows/ui`](../packages/ui/README.md) package. They talk to your API over HTTP, which calls `getRuns` and `getRun`. Nothing from `@pg-workflows/ui` is exported by `pg-workflows`.

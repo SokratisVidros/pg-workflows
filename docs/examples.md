@@ -1,112 +1,176 @@
 # Examples
 
-Common patterns you can build with pg-workflows. See the [`examples/`](https://github.com/SokratisVidros/pg-workflows/tree/main/examples) directory in the repo for runnable code.
+Each snippet defines a workflow. To run one, pass it to `workflows: [...]` on an engine like the one in the [quickstart](../README.md#quickstart), then call `engine.startWorkflow`. Full runnable scripts are in [`examples/node`](../examples/node):
 
-## Conditional Steps
-
-```typescript
-const conditionalWorkflow = workflow('conditional', async ({ step }) => {
-  const data = await step.run('fetch-data', async () => {
-    return { isPremium: true }
-  })
-
-  await step.run('premium-action', async () => {
-    if (data.isPremium) {
-      // Only runs for premium users
-    }
-  })
-})
+```bash
+git clone https://github.com/SokratisVidros/pg-workflows.git
+cd pg-workflows && bun install
+cd examples/node
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres bun run example:basic
 ```
 
-## Batch Processing with Loops
+| Script | Shows |
+|--------|-------|
+| `example:basic` | Sequential steps and `checkProgress` |
+| `example:approval-flow` | `waitFor` with `triggerEvent` |
+| `example:timeout` | `waitFor` timing out, and bringing your own pg-boss |
+| `example:polling` | `step.poll` against a simulated payment API |
+| `example:cron` | A recurring schedule |
+| `example:microservices:worker` / `example:microservices:api` | The [API and worker](architecture.md#api-and-worker) layout |
+
+## Conditional steps
+
+Branch on a saved result outside the step. The engine detects steps inside `if` blocks and reports them as conditional when you register the workflow.
 
 ```typescript
-const batchWorkflow = workflow('batch-process', async ({ step }) => {
-  const items = await step.run('get-items', async () => {
-    return [1, 2, 3, 4, 5]
-  })
+import { workflow } from 'pg-workflows'
+import { z } from 'zod'
 
-  for (const item of items) {
-    await step.run(`process-${item}`, async () => {
-      // Each item is processed durably
-      return processItem(item)
-    })
-  }
-})
-```
-
-## Scheduled Reminder with Delay
-
-```typescript
-const reminderWorkflow = workflow(
-  'send-reminder',
+const upgradeAccount = workflow(
+  'upgrade-account',
   async ({ step, input }) => {
-    await step.run('send-initial', async () => {
-      return await sendEmail(input.email, 'Welcome!')
+    const account = await step.run('load-account', async () => {
+      return { id: input.accountId, plan: 'premium' as 'free' | 'premium' }
     })
-    // Pause for 3 days, then send follow-up (durable — survives restarts)
-    await step.delay('cool-off', '3 days')
-    await step.run('send-follow-up', async () => {
-      return await sendEmail(input.email, 'Here’s a reminder…')
-    })
+
+    if (account.plan === 'premium') {
+      await step.run('grant-premium-features', async () => {
+        return { granted: true }
+      })
+    }
+
+    return { plan: account.plan }
   },
-  { inputSchema: z.object({ email: z.string().email() }) },
+  { inputSchema: z.object({ accountId: z.string() }) },
 )
 ```
 
-## Polling Until a Condition Is Met
+## Loops
+
+Give each iteration its own step ID. A retry skips the items that already finished.
 
 ```typescript
-const paymentWorkflow = workflow('await-payment', async ({ step, input }) => {
-  const result = await step.poll(
-    'wait-for-payment',
-    async () => {
-      const payment = await getPaymentStatus(input.paymentId)
-      return payment.completed ? payment : false
-    },
-    { interval: '1 minute', timeout: '24 hours' },
-  )
+import { workflow } from 'pg-workflows'
+import { z } from 'zod'
 
-  if (result.timedOut) {
-    return { status: 'expired' }
-  }
-
-  return { status: 'paid', payment: result.data }
-})
-```
-
-## Error Handling with Retries
-
-```typescript
-const resilientWorkflow = workflow(
-  'resilient',
-  async ({ step }) => {
-    await step.run('risky-operation', async () => {
-      // Retries up to 3 times with exponential backoff
-      return await riskyApiCall()
+const resizeImages = workflow(
+  'resize-images',
+  async ({ step, input }) => {
+    const images = await step.run('list-images', async () => {
+      return input.imageIds.map((id) => ({ id, url: `https://cdn.example.com/${id}.png` }))
     })
+
+    const resized: string[] = []
+    for (const image of images) {
+      const result = await step.run(`resize-${image.id}`, async () => {
+        return { url: image.url.replace('.png', '@2x.png') }
+      })
+      resized.push(result.url)
+    }
+
+    return { resized }
   },
-  {
-    retries: 3,
-    timeout: 60000,
-  },
+  { inputSchema: z.object({ imageIds: z.array(z.string()) }) },
 )
 ```
 
-## Monitoring Workflow Progress
+Each handler execution is limited by [`WORKFLOW_RUN_EXPIRE_IN_SECONDS`](configuration.md#environment-variables) (default 300). For a long list, split the work across [child workflows](core-concepts.md#child-workflows) instead.
+
+## Follow-up after a delay
+
+`step.delay` pauses the run for a duration. The run holds no worker while it waits and survives restarts.
 
 ```typescript
-const progress = await engine.checkProgress({
-  runId: run.id,
-  resourceId: 'resource-123',
-})
+import { workflow } from 'pg-workflows'
+import { z } from 'zod'
 
-console.log({
-  status: progress.status,
-  completionPercentage: progress.completionPercentage,
-  completedSteps: progress.completedSteps,
-  totalSteps: progress.totalSteps,
-})
+const trialReminder = workflow(
+  'trial-reminder',
+  async ({ step, input }) => {
+    await step.run('send-welcome', async () => {
+      console.log(`Welcome email to ${input.email}`)
+      return { sent: true }
+    })
+
+    await step.delay('wait-for-trial-midpoint', '7 days')
+
+    await step.run('send-reminder', async () => {
+      console.log(`Reminder email to ${input.email}`)
+      return { sent: true }
+    })
+  },
+  { inputSchema: z.object({ email: z.email() }) },
+)
 ```
 
-To render runs in a React app, use the separate [`@pg-workflows/ui`](../packages/ui/README.md) package rather than calling the engine from the browser.
+## Poll an external API
+
+Return `false` to keep polling, or a value to finish. `result.timedOut` tells you which way it ended.
+
+```typescript
+import { workflow } from 'pg-workflows'
+import { z } from 'zod'
+
+const awaitPayment = workflow(
+  'await-payment',
+  async ({ step, input }) => {
+    const result = await step.poll(
+      'wait-for-payment',
+      async () => {
+        const response = await fetch(`https://payments.example.com/payments/${input.paymentId}`)
+        const payment = (await response.json()) as { status: string; amount: number }
+        return payment.status === 'succeeded' ? payment : false
+      },
+      { interval: '1 minute', timeout: '24 hours' },
+    )
+
+    if (result.timedOut) {
+      await step.run('cancel-order', async () => ({ cancelled: input.orderId }))
+      return { status: 'cancelled' }
+    }
+
+    return { status: 'paid', amount: result.data.amount }
+  },
+  { inputSchema: z.object({ orderId: z.string(), paymentId: z.string() }) },
+)
+```
+
+## Retry a flaky call
+
+A thrown error fails the attempt. With `retries: 3`, the run is retried up to three times with exponential backoff, and steps that already succeeded are not repeated.
+
+```typescript
+import { workflow } from 'pg-workflows'
+import { z } from 'zod'
+
+const syncInventory = workflow(
+  'sync-inventory',
+  async ({ step, input, attempt }) => {
+    const stock = await step.run('fetch-stock', async () => {
+      const response = await fetch(`https://warehouse.example.com/sku/${input.sku}`)
+      if (!response.ok) throw new Error(`Warehouse returned ${response.status} on attempt ${attempt}`)
+      return (await response.json()) as { available: number }
+    })
+
+    return { sku: input.sku, available: stock.available }
+  },
+  { inputSchema: z.object({ sku: z.string() }), retries: 3 },
+)
+```
+
+## Check progress
+
+`checkProgress` returns the run plus step counts. Call it on an engine that has the workflow registered.
+
+```typescript
+const run = await engine.startWorkflow({
+  workflowId: 'resize-images',
+  input: { imageIds: ['a', 'b', 'c'] },
+})
+
+const progress = await engine.checkProgress({ runId: run.id })
+
+console.log(progress.status, `${progress.completedSteps}/${progress.totalSteps}`, `${progress.completionPercentage}%`)
+```
+
+To show runs in a React app, use [`@pg-workflows/ui`](../packages/ui/README.md) behind your own API. Don't call the engine from the browser.

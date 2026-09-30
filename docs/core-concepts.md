@@ -1,48 +1,87 @@
 # Core Concepts
 
+The snippets on this page assume an `engine` like the one in the [quickstart](../README.md#quickstart), with each workflow passed to `workflows: [...]`.
+
+- [Workflows](#workflows)
+- [Steps](#steps)
+- [Events](#events)
+- [Timers](#timers)
+- [Polling](#polling)
+- [Pause and resume](#pause-and-resume)
+- [Fast-forward](#fast-forward)
+- [Child workflows](#child-workflows)
+- [Retries and timeouts](#retries-and-timeouts)
+- [Recurring schedules](#recurring-schedules)
+- [Priorities](#priorities)
+- [Singleton workflows](#singleton-workflows)
+- [Resource ID](#resource-id)
+- [Idempotency key](#idempotency-key)
+- [Input validation](#input-validation)
+
 ## Workflows
 
-A workflow is a durable function that breaks complex operations into discrete, resumable steps. Define workflows using the `workflow()` function:
+A workflow is an async function with an ID. Every durable operation inside it goes through `step`.
 
 ```typescript
-const myWorkflow = workflow(
-  'workflow-id',
+import { workflow } from 'pg-workflows'
+import { z } from 'zod'
+
+export const sendInvoice = workflow(
+  'send-invoice',
   async ({ step, input }) => {
-    // Your workflow logic here
+    const invoice = await step.run('create-invoice', async () => {
+      return { id: `inv_${input.orderId}`, total: input.total }
+    })
+    return invoice
   },
   {
-    inputSchema: mySchema, // any Standard Schema-compliant schema
-    timeout: 60000,        // milliseconds
+    inputSchema: z.object({ orderId: z.string(), total: z.number() }),
     retries: 3,
   },
 )
 ```
 
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `inputSchema` | Standard Schema | none | Validates `input` at `startWorkflow` and types it in the handler. See [Input validation](#input-validation). |
+| `retries` | `number` | `0` | Retry attempts after a failure. See [Retries and timeouts](#retries-and-timeouts). |
+| `timeout` | `number` (ms) | none | Recorded as `run.timeoutAt`. See [Retries and timeouts](#retries-and-timeouts). |
+| `priority` | `'high' \| 'normal' \| 'low' \| number` | `'normal'` | Queue priority. See [Priorities](#priorities). |
+| `singleton` | `boolean` | `false` | At most one pending or running run. See [Singleton workflows](#singleton-workflows). |
+| `schedule` | cron string, duration string, or duration object | none | Starts runs on a recurring schedule. See [Recurring schedules](#recurring-schedules). |
+| `timezone` | IANA zone | `'UTC'` | Time zone for cron schedules. |
+
+The handler receives `input`, `step`, `runId`, `workflowId`, `resourceId`, `attempt` (zero-based retry count), `timeline`, `logger`, and `schedule`. The full type is in the [API reference](api-reference.md#workflowcontext).
+
+The handler runs from the top each time the run resumes after a pause or a retry. Completed steps return their saved result without running again, so the code between steps must be deterministic. Put anything with side effects, randomness, or the current time inside a step.
+
 ## Steps
 
-Steps are the building blocks of durable workflows. Each step is executed **exactly once**, even if the workflow is retried:
+`step.run` executes a function once and saves its return value on the run.
 
 ```typescript
-await step.run('step-id', async () => {
-  // This will only execute once — the result is persisted in Postgres
-  return { result: 'data' }
+const user = await step.run('create-user', async () => {
+  return { id: 'usr_123', email: input.email }
 })
 ```
 
-**Step IDs must be unique within a workflow.** When using loops, use dynamic IDs: `step.run(\`process-${item.id}\`, ...)`.
+- **IDs must be unique within a workflow.** In loops, build the ID from the item: `` step.run(`charge-${order.id}`, ...) ``.
+- **Return JSON-serializable values.** Results are stored as `jsonb`. A `Date` comes back as an ISO string when the step is replayed, and class instances lose their prototype. Return plain objects, and use `toISOString()` for dates.
+- **A step can run more than once if the process crashes mid-step**, before its result is saved. Make external side effects idempotent, for example by passing an idempotency key to your payment provider.
 
-## Event-Driven Steps
+## Events
 
-Wait for external events to pause and resume workflows without consuming resources:
+`step.waitFor` pauses the run until an event with the matching name arrives. The paused run holds no worker.
 
 ```typescript
-const eventData = await step.waitFor('wait-step', {
+const payment = await step.waitFor('wait-for-payment', {
   eventName: 'payment-completed',
-  timeout: 5 * 60 * 1000, // 5 minutes
+  schema: z.object({ amount: z.number() }),
 })
+// payment: { amount: number }
 ```
 
-Send events from outside the workflow:
+Send the event from anywhere that has an engine or client:
 
 ```typescript
 await engine.triggerEvent({
@@ -52,289 +91,380 @@ await engine.triggerEvent({
 })
 ```
 
-## Scheduled & Delay Steps
-
-Wait until a specific time, or delay for a duration (sugar over `waitUntil`). If the date is in the past, the step runs immediately.
+With `timeout` (in milliseconds), the step resolves to `undefined` if no event arrives in time:
 
 ```typescript
-// Wait until a specific date (Date, ISO string, or { date })
-await step.waitUntil('scheduled-step', new Date('2025-06-01'))
-await step.waitUntil('scheduled-step', '2025-06-01T12:00:00.000Z')
-await step.waitUntil('scheduled-step', { date: new Date('2025-06-01') })
+const payment = await step.waitFor('wait-for-payment', {
+  eventName: 'payment-completed',
+  timeout: 24 * 60 * 60 * 1000,
+})
 
-// Delay for a duration (string or object). sleep is an alias of delay.
+if (!payment) {
+  return { status: 'expired' }
+}
+```
+
+`schema` sets the TypeScript type of the result. It is not checked at runtime, so validate `data` before calling `triggerEvent` if it comes from an untrusted source. Without `schema`, the result is `unknown`.
+
+## Timers
+
+`step.waitUntil` pauses until a date. `step.delay` pauses for a duration, and `step.sleep` is an alias for it. A date in the past resumes immediately.
+
+```typescript
+await step.waitUntil('send-at-launch', new Date('2026-12-01T09:00:00Z'))
+await step.waitUntil('send-at-launch', '2026-12-01T09:00:00Z')
+await step.waitUntil('send-at-launch', { date: new Date('2026-12-01T09:00:00Z') })
+
 await step.delay('cool-off', '3 days')
 await step.delay('cool-off', { days: 3 })
 await step.delay('ramp-up', '2 days 12 hours')
 await step.sleep('backoff', '1 hour')
 ```
 
-## Polling Steps
+A duration is a string (`'90s'`, `'2h'`, `'3 days'`) or an object with any of `weeks`, `days`, `hours`, `minutes`, and `seconds`.
 
-Repeatedly check a condition until it returns a truthy value or a timeout expires:
+## Polling
+
+`step.poll` calls a function on an interval until it returns a truthy value or the timeout passes. Return `false` to keep polling.
 
 ```typescript
-const result = await step.poll(
-  'wait-for-payment',
-  async () => {
-    const payment = await getPaymentStatus(input.paymentId)
-    return payment.completed ? payment : false
+const exportJob = workflow(
+  'wait-for-export',
+  async ({ step, input }) => {
+    const result = await step.poll(
+      'wait-for-file',
+      async () => {
+        const response = await fetch(`https://api.example.com/exports/${input.exportId}`)
+        const body = (await response.json()) as { status: string; url?: string }
+        return body.status === 'ready' ? { url: body.url } : false
+      },
+      { interval: '1 minute', timeout: '24 hours' },
+    )
+
+    if (result.timedOut) {
+      return { status: 'expired' }
+    }
+    return { status: 'ready', url: result.data.url }
   },
-  { interval: '1 minute', timeout: '24 hours' },
+  { inputSchema: z.object({ exportId: z.string() }) },
 )
-
-if (result.timedOut) {
-  return { status: 'expired' }
-}
-
-return { status: 'paid', payment: result.data }
 ```
 
-`conditionFn` returns `false` to keep polling, or a truthy value to resolve the step. The minimum interval is 30s (default). If `timeout` is omitted the step polls indefinitely.
+| Option | Default | Description |
+|--------|---------|-------------|
+| `interval` | `'30s'` | Time between checks. The minimum is 30 seconds. |
+| `timeout` | none | Stops polling and returns `{ timedOut: true }`. Omit it to poll indefinitely. |
 
-## Child Workflows
+The run is paused between checks and holds no worker.
 
-Start a child workflow from inside a parent workflow and wait for it to complete without keeping a worker busy:
+## Pause and resume
 
-```typescript
-const parent = workflow('parent-workflow', async ({ step, input }) => {
-  const childOutput = await step.invokeChildWorkflow('run-child', childWorkflowRef, {
-    userId: input.userId,
-  });
-
-  return { childOutput };
-});
-```
-
-`step.invokeChildWorkflow` is durable. Unlike `startWorkflow()`, which creates a top-level run and returns immediately, `invokeChildWorkflow()` is a child call: the child run is started once for the parent step, the parent pauses while the child runs, and the child output is cached on the parent timeline when it completes. If the child fails or is cancelled, the parent step throws and follows the parent workflow's normal retry/failure behavior.
-
-You can also invoke by workflow ID:
+`step.pause` pauses the run at that point until something calls `resumeWorkflow`:
 
 ```typescript
-const result = await step.invokeChildWorkflow<{ ok: true }>('run-child', {
-  workflowId: 'child-workflow',
-  input: { userId: input.userId },
-});
-```
-
-### Behavioral notes
-
-- **Cancellation does not propagate to children.** Cancelling a parent (via `cancelWorkflow` or a parent timeout) does not cancel any in-flight child workflows started via `invokeChildWorkflow`. Children run to their own terminal state; the wakeup event the child would normally send to the parent is dropped because the parent is no longer in `paused`. The same applies if the parent reaches any other terminal state (failed or completed) while a child is in flight.
-- **Manual resume and fast-forward do not skip child waits.** `resumeWorkflow()` and `fastForwardWorkflow()` are no-ops while a parent is paused on `step.invokeChildWorkflow()`. The parent only moves forward when the child completes, fails, or is cancelled.
-
-## Resource ID
-
-The optional `resourceId` associates a workflow run with an external entity in your application — a user, an order, a subscription, or any domain object the workflow operates on. It serves two purposes:
-
-1. **Association** — links each workflow run to the business entity it belongs to, so you can query all runs for a given resource.
-2. **Scoping** — when provided, all read and write operations (get, update, pause, resume, cancel, trigger events) include `resource_id` in their database queries, ensuring you only access workflow runs that belong to that resource. Useful for enforcing tenant isolation or ownership checks.
-
-`resourceId` is optional on every API method. If you don't need to group or scope runs by an external entity, you can omit it entirely and use `runId` alone.
-
-```typescript
-// Start a workflow scoped to a specific user
-const run = await engine.startWorkflow({
-  workflowId: 'send-welcome-email',
-  resourceId: 'user-123', // ties this run to user-123
-  input: { email: 'user@example.com' },
-})
-
-// Later, list all workflow runs for that user
-const { items } = await engine.getRuns({
-  resourceId: 'user-123',
+const publishPost = workflow('publish-post', async ({ step }) => {
+  await step.run('render-preview', async () => ({ rendered: true }))
+  await step.pause('editor-approval')
+  await step.run('publish', async () => ({ published: true }))
 })
 ```
 
-## Idempotency Key
+```typescript
+await engine.resumeWorkflow({ runId: run.id })
+```
 
-Pass an optional `idempotencyKey` to `startWorkflow()` when the same logical start might be requested more than once (user double-clicks, API retries, or at-least-once webhooks). The engine stores the key on the run; a second `startWorkflow` with the **same** key returns the **existing** run and does **not** enqueue a second job.
+`engine.pauseWorkflow({ runId })` pauses a pending or running run from outside. `engine.cancelWorkflow({ runId })` cancels a pending, running, or paused run.
 
-Keys are **globally unique** in the database (up to 256 characters), not scoped per workflow or resource. Prefer stable, namespaced strings so different workflows never collide — for example `send-welcome-email:order-123` instead of a bare order id.
+## Fast-forward
+
+`fastForwardWorkflow` completes whatever step the run is paused on. It's intended for tests, debugging, and support tooling. It does nothing if the run isn't paused.
 
 ```typescript
-const run = await engine.startWorkflow({
-  workflowId: 'send-welcome-email',
-  input: { email: 'user@example.com' },
-  idempotencyKey: 'send-welcome-email:checkout-session_cs_abc123',
+// Paused on waitFor: `data` becomes the event payload (default `{}`)
+await engine.fastForwardWorkflow({ runId: run.id, data: { approved: true } })
+
+// Paused on delay or waitUntil: skips the wait
+await engine.fastForwardWorkflow({ runId: run.id })
+```
+
+| Paused on | Effect |
+|-----------|--------|
+| `step.waitFor()` | Sends the event with `data` (default `{}`). |
+| `step.delay()` / `step.waitUntil()` | Ends the wait. |
+| `step.poll()` | Resolves the poll with `data` as its result. |
+| `step.pause()` | Same as `resumeWorkflow()`. |
+| `step.invokeChildWorkflow()` | Nothing. The child's outcome decides when the parent continues. |
+
+## Child workflows
+
+`step.invokeChildWorkflow` starts another workflow, pauses the parent, and returns the child's output when the child completes. The parent holds no worker while it waits.
+
+```typescript
+import { createWorkflowRef, workflow } from 'pg-workflows'
+import { z } from 'zod'
+
+type ReceiptOutput = { receiptId: string }
+const receiptInput = z.object({ orderId: z.string() })
+
+// Explicit generics turn off inference, so pass the schema type as the second one
+const sendReceiptRef = createWorkflowRef<ReceiptOutput, typeof receiptInput>('send-receipt', {
+  inputSchema: receiptInput,
 })
 
-// Idempotent: returns the same run and run.id as above
-const again = await engine.startWorkflow({
-  workflowId: 'send-welcome-email',
-  input: { email: 'other@example.com' }, // ignored for deduplication
-  idempotencyKey: 'send-welcome-email:checkout-session_cs_abc123',
+export const sendReceipt = sendReceiptRef(async ({ step, input }) => {
+  return step.run('email-receipt', async () => ({ receiptId: `rcpt_${input.orderId}` }))
+})
+
+export const checkout = workflow(
+  'checkout',
+  async ({ step, input }) => {
+    const receipt = await step.invokeChildWorkflow('send-receipt', sendReceiptRef, {
+      orderId: input.orderId,
+    })
+    return { receiptId: receipt.receiptId } // receipt: ReceiptOutput
+  },
+  { inputSchema: z.object({ orderId: z.string() }) },
+)
+```
+
+Register both `checkout` and `sendReceipt` with the engine. You can also invoke by ID and type the output with a generic:
+
+```typescript
+const receipt = await step.invokeChildWorkflow<ReceiptOutput>('send-receipt', {
+  workflowId: 'send-receipt',
+  input: { orderId: input.orderId },
 })
 ```
 
-The returned `WorkflowRun` includes `idempotencyKey` (or `null` if omitted).
+Behavior:
 
-## Singleton Workflows
+- The child starts once per parent step. Its output is saved on the parent like any step result.
+- If the child fails or is cancelled, the parent step throws, and the parent's own `retries` apply.
+- The child inherits the parent's priority unless the call or the child's definition sets one.
+- **Cancelling the parent does not cancel the child.** The child runs to its own end state. The same applies when the parent fails, completes, or times out while the child is running.
+- `resumeWorkflow()` and `fastForwardWorkflow()` do nothing while the parent waits on a child.
 
-Set `singleton: true` on a workflow to allow at most one **pending or running** run of that workflow ID. A second `startWorkflow` throws `WorkflowRunInProgressError` until the current run **pauses, completes, fails, or is cancelled**. Paused runs (`waitFor`, `pause`, `waitUntil`, `poll`) release the slot so another run can start.
+## Retries and timeouts
+
+When a handler throws, the run is retried up to `retries` times (default `0`). Each retry runs the handler from the top, and completed steps return their saved result, so only the failed step and the steps after it run again. The number of the current attempt is `attempt` on the handler context and `retryCount` on the run.
+
+Retries are scheduled by pg-boss with exponential backoff: roughly 1s, 2s, 4s, 8s, and so on, with up to ±50% jitter. After the last attempt fails, the run's status is `failed` and `error` holds the message.
 
 ```typescript
+const syncCustomer = workflow(
+  'sync-customer',
+  async ({ step, input, attempt }) => {
+    return step.run('push-to-crm', async () => {
+      const response = await fetch('https://crm.example.com/customers', {
+        method: 'POST',
+        body: JSON.stringify({ id: input.customerId, attempt }),
+      })
+      if (!response.ok) throw new Error(`CRM returned ${response.status}`)
+      return { synced: true }
+    })
+  },
+  { inputSchema: z.object({ customerId: z.string() }), retries: 5 },
+)
+```
+
+Override `retries` for a single run with `startWorkflow({ options: { retries } })`.
+
+`timeout` (milliseconds, on the workflow or in `startWorkflow` options) is saved on the run as `timeoutAt`. The engine does not currently fail a run that passes `timeoutAt`. To bound a wait, use the `timeout` option of `step.waitFor` or `step.poll`.
+
+A single execution of the handler is also bounded by the job expiry, `WORKFLOW_RUN_EXPIRE_IN_SECONDS` (default 300). Split work that takes longer into several steps. See [Configuration](configuration.md#environment-variables).
+
+## Recurring schedules
+
+Set `schedule` to start a run on a recurring basis. It accepts a cron expression, a duration string, or a duration object.
+
+```typescript
+workflow('weekday-report', handler, { schedule: '0 9 * * 1-5', timezone: 'America/New_York' })
+workflow('every-5-minutes', handler, { schedule: '5m' })
+workflow('hourly', handler, { schedule: '1 hour' })
+workflow('daily', handler, { schedule: { days: 1 } })
+```
+
+- **Cron vs. duration.** A string of 5 or 6 space-separated fields that uses only cron characters (`0-9 * / , - ? L W #`) is parsed as cron. Anything else is parsed as a duration.
+- **Durations must divide evenly.** A duration is converted to cron, so it must be whole minutes that divide 60, whole hours that divide 24, or exactly one day. `'23m'` and `'7h'` throw at registration. Use a cron expression for those.
+- **`timezone`** applies to cron only. The default is UTC.
+- **A worker must be running.** Scheduled runs are started by an engine that has the workflow registered and has called `engine.start()`.
+
+A scheduled run has `ctx.schedule.timestamp`, the time the schedule fired. A run started with `startWorkflow` has `ctx.schedule === undefined`. For incremental syncs, use the last completed run as a cursor. Read it inside a step so the value stays fixed when the run resumes or retries:
+
+```typescript
+import { WorkflowStatus, workflow } from 'pg-workflows'
+
+const syncOrders = workflow(
+  'sync-orders',
+  async ({ step, schedule, workflowId }) => {
+    const since = await step.run('read-cursor', async () => {
+      const { items } = await engine.getRuns({
+        workflowId,
+        statuses: [WorkflowStatus.COMPLETED],
+        limit: 1,
+      })
+      return (items[0]?.completedAt ?? new Date(0)).toISOString()
+    })
+
+    const orders = await step.run('fetch-orders', async () => {
+      const response = await fetch(`https://shop.example.com/orders?updated_since=${since}`)
+      return (await response.json()) as { id: string }[]
+    })
+
+    return { firedAt: schedule?.timestamp.toISOString(), since, synced: orders.length }
+  },
+  { schedule: '5m', singleton: true },
+)
+```
+
+Don't use `getWorkflowLastRun` for this. It returns the most recently created run of any status, which inside a scheduled run is the current run.
+
+**Overlap.** With `singleton: true`, a scheduled fire is skipped while a previous run is pending or running. Without it, scheduled runs can overlap.
+
+## Priorities
+
+`priority` orders runs in the queue. Higher values run first.
+
+| Value | Integer |
+|-------|---------|
+| `'high'` | `100` |
+| `'normal'` | `0` (default) |
+| `'low'` | `-100` |
+| any integer | as given |
+
+Set a default on the workflow, and override it for a single run:
+
+```typescript
+const billing = workflow('billing', handler, { priority: 'high' })
+
+await engine.startWorkflow({
+  workflowId: 'billing',
+  input: {},
+  options: { priority: 'low' },
+})
+```
+
+The effective priority is `startWorkflow` option, then the workflow's `priority`, then `'normal'`. It's resolved once when the run is created and saved as `run.priority`. Resumes, retries, and poll checks reuse the saved value.
+
+Child workflows use the call's `options.priority`, then the child definition's `priority`, then the parent run's priority.
+
+## Singleton workflows
+
+`singleton: true` allows at most one pending or running run of a workflow ID. Starting a second run throws `WorkflowRunInProgressError`.
+
+```typescript
+import { WorkflowRunInProgressError, workflow } from 'pg-workflows'
+
 const nightlySync = workflow(
   'nightly-sync',
   async ({ step }) => {
-    await step.run('pull', async () => syncAll())
+    await step.run('pull', async () => ({ pulled: true }))
   },
   { singleton: true },
 )
 
-const run = await engine.startWorkflow({ workflowId: 'nightly-sync', input: {} })
-
-// Throws WorkflowRunInProgressError while `run` is pending or running
 await engine.startWorkflow({ workflowId: 'nightly-sync', input: {} })
+
+try {
+  await engine.startWorkflow({ workflowId: 'nightly-sync', input: {} })
+} catch (error) {
+  if (error instanceof WorkflowRunInProgressError) {
+    // the first run is still pending or running
+  }
+}
 ```
 
-Paused, failed, and cancelled runs release the slot. Resuming a paused run while another run is still pending or running throws `WorkflowRunInProgressError`. Non-singleton workflows are unchanged: many runs of the same ID may be active at once.
+A run releases the slot when it pauses (`waitFor`, `pause`, `delay`, `waitUntil`, `poll`), completes, fails, or is cancelled. Resuming a paused run while another run holds the slot also throws `WorkflowRunInProgressError`.
 
-`WorkflowClient` does not load workflow definitions. Pass the flag on a ref or on start options so the constraint is applied:
+`WorkflowClient` doesn't load workflow definitions, so it can't see `singleton` on the definition. Set it on the ref instead:
 
 ```typescript
-const nightlySync = workflow.ref('nightly-sync', { singleton: true })
-await client.startWorkflow(nightlySync, {})
+const nightlySyncRef = workflow.ref('nightly-sync', { singleton: true })
+await client.startWorkflow(nightlySyncRef, {})
 ```
 
-## Pause and Resume
+## Resource ID
 
-Manually pause a workflow and resume it later:
+`resourceId` ties a run to an entity in your app, such as a user, tenant, or order.
+
+- **Query.** `getRuns({ resourceId })` lists the runs for that entity.
+- **Scope.** When you pass `resourceId` to `getRun`, `pauseWorkflow`, `resumeWorkflow`, `cancelWorkflow`, `triggerEvent`, and the other run methods, the query also matches on `resource_id`. A run that belongs to a different resource returns `WorkflowRunNotFoundError`. Use this for tenant isolation.
 
 ```typescript
-// Pause inside a workflow
-await step.pause('pause-step')
-
-// Resume from outside the workflow
-await engine.resumeWorkflow({
-  runId: run.id,
-  resourceId: 'resource-123',
+const run = await engine.startWorkflow({
+  workflowId: 'send-invoice',
+  resourceId: 'tenant_42',
+  input: { orderId: 'ord_1', total: 99 },
 })
+
+const { items } = await engine.getRuns({ resourceId: 'tenant_42' })
 ```
 
-`resumeWorkflow()` does not force a parent past a `step.invokeChildWorkflow()` wait. Child workflow waits resume only when the child completes, fails, or is cancelled.
+`resourceId` is optional everywhere. Omit it to address runs by `runId` alone.
 
-## Fast-Forward
+## Idempotency key
 
-Skip the current waiting step and immediately resume execution. `fastForwardWorkflow` inspects the paused step and dispatches the right internal action — `triggerEvent` for `waitFor`, timeout triggers for `delay`/`waitUntil`, resume for `pause`, and direct output writes for `poll`. If the workflow is not paused or is paused on `step.invokeChildWorkflow()`, it's a no-op.
-
-Useful for testing, debugging, or manually advancing workflows past long waits.
+Pass `idempotencyKey` when the same start can be requested twice, for example on a double click, a client retry, or an at-least-once webhook. A second `startWorkflow` with the same key returns the existing run and enqueues nothing.
 
 ```typescript
-// Fast-forward a waitFor step, providing mock event data
-await engine.fastForwardWorkflow({
-  runId: run.id,
-  resourceId: 'user-123',
-  data: { approved: true, reviewer: 'admin' },
+const first = await engine.startWorkflow({
+  workflowId: 'send-invoice',
+  input: { orderId: 'ord_1', total: 99 },
+  idempotencyKey: 'send-invoice:ord_1',
 })
 
-// Fast-forward a delay/waitUntil step (no data needed)
-await engine.fastForwardWorkflow({
-  runId: run.id,
-  resourceId: 'user-123',
+const second = await engine.startWorkflow({
+  workflowId: 'send-invoice',
+  input: { orderId: 'ord_1', total: 99 },
+  idempotencyKey: 'send-invoice:ord_1',
 })
 
-// Fast-forward a poll step with mock result data
-await engine.fastForwardWorkflow({
-  runId: run.id,
-  resourceId: 'user-123',
-  data: { paymentId: 'pay_123', status: 'completed' },
-})
+second.id === first.id // true
 ```
 
-| Paused step type                    | Behavior                                                                     |
-| ----------------------------------- | ---------------------------------------------------------------------------- |
-| `step.waitFor()`                    | Triggers the event with `data` (defaults to `{}`)                            |
-| `step.delay()` / `step.waitUntil()` | Triggers the timeout event to skip the wait                                  |
-| `step.poll()`                       | Writes `data` as the poll result and triggers resolution                     |
-| `step.pause()`                      | Delegates to `resumeWorkflow()`                                              |
-| `step.invokeChildWorkflow()`        | No-op; child completion, failure, or cancellation controls the parent result |
+Keys are unique across the whole table, not per workflow or resource, and can be up to 256 characters. Prefix them with the workflow ID. The input of a duplicate call is ignored.
 
-## Input Validation
+## Input validation
 
-pg-workflows supports any [Standard Schema](https://github.com/standard-schema/standard-schema)-compliant validation library for `inputSchema` — Zod, Valibot, ArkType, or any library that implements the spec. When a schema is provided, the workflow input is validated before execution and the handler's `input` parameter is fully typed.
+`inputSchema` accepts any [Standard Schema](https://github.com/standard-schema/standard-schema) validator, including Zod, Valibot, and ArkType. `startWorkflow` validates the input before creating the run, and the handler's `input` is typed from the schema.
 
-### With Zod
+**Zod:**
 
 ```typescript
 import { workflow } from 'pg-workflows'
 import { z } from 'zod'
 
-const myWorkflow = workflow(
+const onboarding = workflow(
   'user-onboarding',
   async ({ step, input }) => {
-    // input is typed as { email: string; name: string }
-    await step.run('send-welcome', async () => {
-      return await sendEmail(input.email, `Welcome, ${input.name}!`)
-    })
+    // input: { email: string; name: string }
+    await step.run('greet', async () => `Welcome, ${input.name}`)
   },
-  {
-    inputSchema: z.object({
-      email: z.string().email(),
-      name: z.string(),
-    }),
-  },
+  { inputSchema: z.object({ email: z.email(), name: z.string() }) },
 )
 ```
 
-### With Valibot
+**Valibot:**
 
 ```typescript
 import { workflow } from 'pg-workflows'
 import * as v from 'valibot'
 
-const myWorkflow = workflow(
+const onboarding = workflow(
   'user-onboarding',
   async ({ step, input }) => {
-    // input is typed as { email: string; name: string }
-    await step.run('send-welcome', async () => {
-      return await sendEmail(input.email, `Welcome, ${input.name}!`)
-    })
+    // input: { email: string; name: string }
+    await step.run('greet', async () => `Welcome, ${input.name}`)
   },
-  {
-    inputSchema: v.object({
-      email: v.pipe(v.string(), v.email()),
-      name: v.string(),
-    }),
-  },
+  { inputSchema: v.object({ email: v.pipe(v.string(), v.email()), name: v.string() }) },
 )
 ```
 
-### Without a Schema
-
-When no `inputSchema` is provided, input is not validated and `input` is typed as `unknown`. The engine has no guarantee about the shape of the data — it passes through whatever was provided to `startWorkflow()`. You are responsible for narrowing the type yourself:
+**No schema.** `input` is `unknown` and isn't validated, so narrow it yourself:
 
 ```typescript
-import { workflow } from 'pg-workflows'
-
-const myWorkflow = workflow(
-  'process-order',
-  async ({ step, input }) => {
-    // Option 1: Type assertion - you trust the caller
-    const { orderId, amount } = input as { orderId: string; amount: number }
-
-    await step.run('charge', async () => {
-      return await chargeOrder(orderId, amount)
-    })
-  },
-)
-
-const myDefensiveWorkflow = workflow(
-  'process-order-safe',
-  async ({ step, input }) => {
-    // Option 2: Runtime checks - you verify before using
-    if (typeof input !== 'object' || input === null) {
-      throw new Error('Expected input to be an object')
-    }
-    const { orderId, amount } = input as Record<string, unknown>
-    if (typeof orderId !== 'string' || typeof amount !== 'number') {
-      throw new Error('Invalid input shape')
-    }
-
-    await step.run('charge', async () => {
-      return await chargeOrder(orderId, amount)
-    })
-  },
-)
+const refund = workflow('refund', async ({ step, input }) => {
+  const { orderId } = input as { orderId: string }
+  await step.run('refund-order', async () => ({ refunded: orderId }))
+})
 ```
-
-Using an `inputSchema` is recommended — it validates input at the engine boundary before your handler runs, and gives you full type inference with no manual work.

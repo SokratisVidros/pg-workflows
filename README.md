@@ -1,205 +1,200 @@
 # pg-workflows
 
-**The simplest Postgres workflow engine for TypeScript.** Durable execution, event-driven orchestration, and automatic retries - powered entirely by PostgreSQL. No Redis, no message broker, no new infrastructure.
+Durable workflows for TypeScript, backed by PostgreSQL. Each step's result is saved, a retried run skips the steps that already finished, and a run can pause for an event, a timer, or a polled condition. There's no Redis, broker, or scheduler to run.
 
 [![npm version](https://img.shields.io/npm/v/pg-workflows.svg)](https://www.npmjs.com/package/pg-workflows)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-%3E%3D10-336791.svg)](https://www.postgresql.org/)
 
-```bash
-npm install pg-workflows pg
-```
+## Quickstart
 
----
-
-## A complete workflow
-
-```typescript
-import { WorkflowEngine, workflow } from 'pg-workflows'
-import { z } from 'zod'
-
-const onboardUser = workflow(
-  'onboard-user',
-  async ({ step, input }) => {
-    const user = await step.run('create-account', () => db.users.create(input))
-    await step.run('send-welcome', () => sendEmail(user.email, 'Welcome!'))
-    return { userId: user.id }
-  },
-  { inputSchema: z.object({ email: z.string().email() }) },
-)
-
-const engine = new WorkflowEngine({
-  connectionString: process.env.DATABASE_URL,
-  workflows: [onboardUser],
-})
-await engine.start()
-
-await engine.startWorkflow({
-  workflowId: 'onboard-user',
-  input: { email: 'alice@example.com' },
-})
-```
-
-That's it. Each step runs **exactly once**. Crash, redeploy, or retry - the workflow resumes from where it left off. State lives in your existing PostgreSQL database.
-
----
-
-## Why pg-workflows
-
-- **Zero new infrastructure** - if you have Postgres, you're done. No Redis, no Temporal server, no SaaS bill.
-- **Feels like plain TypeScript** - workflows are async functions. No DSL, no YAML, no DAG builder.
-- **Durable by default** - step results are persisted. Process crashes don't lose work or repeat expensive calls.
-- **Pause, wait, resume** - `step.waitFor('event-name')` pauses the workflow until your API fires an event. Zero resources consumed while waiting.
-- **Schedules & polling built in** - `step.delay('3 days')`, `step.waitUntil('2025-01-01')`, `step.poll(...)` - no cron, no external scheduler.
-- **Built for AI agents** - cache expensive LLM calls, retry on 429s, pause for human review. [See AI patterns →](docs/ai-agents.md)
-- **Client/worker separation** - keep your API service light; run handlers in a worker. [See architecture →](docs/architecture.md)
-- **Optional React UI** - browse runs and step timelines with [`@pg-workflows/ui`](packages/ui/README.md). The default dashboard also runs locally with `npx @pg-workflows/ui` against the same Postgres as your engine. Separate package, so workers never take a React peer.
-- **Idempotent starts** - pass an `idempotencyKey` and duplicate calls safely return the same run.
-
----
-
-## Quick start
-
-### 1. Install
+**1. Start Postgres** (skip if you already have one):
 
 ```bash
-npm install pg-workflows pg
+docker run -d --name pg-workflows-db -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:17
 ```
 
-> `pg` is a peer dependency. `pg-boss` is bundled - nothing else to configure. The engine runs migrations automatically on start.
+**2. Create a project:**
 
-### 2. Define a workflow
+```bash
+mkdir workflows-demo && cd workflows-demo
+npm init -y
+npm install pg-workflows pg zod
+npm install -D tsx
+```
+
+**3. Save this as `index.ts`:**
 
 ```typescript
-import { workflow } from 'pg-workflows'
+import { WorkflowEngine, WorkflowStatus, workflow } from 'pg-workflows'
 import { z } from 'zod'
 
-export const sendWelcome = workflow(
-  'send-welcome',
+const greetUser = workflow(
+  'greet-user',
   async ({ step, input }) => {
-    const user = await step.run('create-user', async () => {
-      return { id: '123', email: input.email }
+    const user = await step.run('load-user', async () => {
+      return { name: input.name, signedUpAt: new Date().toISOString() }
     })
 
-    await step.run('send-email', async () => {
-      await sendEmail(user.email, 'Welcome!')
+    const message = await step.run('build-message', async () => {
+      return `Welcome, ${user.name}!`
     })
 
-    // Pause until your API confirms the user. Zero cost while waiting.
-    const confirmation = await step.waitFor('await-confirmation', {
-      eventName: 'user-confirmed',
-      timeout: 24 * 60 * 60 * 1000, // 24 hours
-    })
-
-    return { success: true, user, confirmation }
+    return { message }
   },
-  {
-    inputSchema: z.object({ email: z.string().email() }),
-    retries: 3,
-  },
+  { inputSchema: z.object({ name: z.string() }) },
 )
+
+async function main() {
+  const engine = new WorkflowEngine({
+    connectionString: process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/postgres',
+    workflows: [greetUser],
+  })
+  await engine.start()
+
+  const run = await engine.startWorkflow({
+    workflowId: 'greet-user',
+    input: { name: 'Ada' },
+  })
+
+  let result = await engine.getRun({ runId: run.id })
+  while (result.status === WorkflowStatus.PENDING || result.status === WorkflowStatus.RUNNING) {
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    result = await engine.getRun({ runId: run.id })
+  }
+
+  console.log(result.status, result.output)
+  await engine.stop()
+}
+
+main()
 ```
 
-### 3. Start the engine and run it
+**4. Run it:**
+
+```bash
+npx tsx index.ts
+```
+
+After the engine's startup logs, you should see:
+
+```
+completed { message: 'Welcome, Ada!' }
+```
+
+`engine.start()` creates its tables on first run. Each `step.run` result is saved on the run's row in `workflow_runs`. When a run is retried (set `retries` on the workflow), completed steps return their saved result instead of running again.
+
+## Wait for an event
+
+`step.waitFor` pauses the run until your code calls `triggerEvent`. A paused run holds no worker and no connection.
 
 ```typescript
-import { WorkflowEngine } from 'pg-workflows'
-import { sendWelcome } from './workflows'
+import { WorkflowEngine, WorkflowStatus, workflow } from 'pg-workflows'
+import { z } from 'zod'
 
-const engine = new WorkflowEngine({
-  connectionString: process.env.DATABASE_URL,
-  workflows: [sendWelcome],
-})
-await engine.start()
+const approveExpense = workflow(
+  'approve-expense',
+  async ({ step, input }) => {
+    await step.run('notify-manager', async () => {
+      return { notified: `manager of ${input.employee}` }
+    })
 
-const run = await engine.startWorkflow({
-  workflowId: 'send-welcome',
-  input: { email: 'user@example.com' },
-})
+    const review = await step.waitFor('wait-for-review', {
+      eventName: 'expense-reviewed',
+      schema: z.object({ approved: z.boolean() }),
+    })
 
-// Later - resume the workflow with an event:
-await engine.triggerEvent({
-  runId: run.id,
-  eventName: 'user-confirmed',
-  data: { confirmedAt: new Date() },
-})
+    return { amount: input.amount, approved: review.approved }
+  },
+  { inputSchema: z.object({ employee: z.string(), amount: z.number() }) },
+)
 
-// Track progress anytime:
-const progress = await engine.checkProgress({ runId: run.id })
-console.log(`${progress.completionPercentage}% complete`)
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+async function main() {
+  const engine = new WorkflowEngine({
+    connectionString: process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/postgres',
+    workflows: [approveExpense],
+  })
+  await engine.start()
+
+  const run = await engine.startWorkflow({
+    workflowId: 'approve-expense',
+    input: { employee: 'ada', amount: 120 },
+  })
+
+  // In a real app, this is a separate request: an approval button, a webhook, and so on.
+  while ((await engine.getRun({ runId: run.id })).status !== WorkflowStatus.PAUSED) await sleep(200)
+
+  await engine.triggerEvent({
+    runId: run.id,
+    eventName: 'expense-reviewed',
+    data: { approved: true },
+  })
+
+  let result = await engine.getRun({ runId: run.id })
+  while (result.status !== WorkflowStatus.COMPLETED && result.status !== WorkflowStatus.FAILED) {
+    await sleep(200)
+    result = await engine.getRun({ runId: run.id })
+  }
+
+  console.log(result.status, result.output) // completed { amount: 120, approved: true }
+  await engine.stop()
+}
+
+main()
 ```
 
-That's the whole loop. No extra services. Everything durable. Everything queryable with plain SQL.
+## Features
 
----
-
-## What can you build?
-
-- **AI agents & LLM pipelines** - durable multi-step agents, cached expensive calls, human-in-the-loop
-- **User onboarding** - signup flows with email verification and conditional paths
-- **Payment & checkout** - retry-safe payment processing with event-driven confirmations
-- **Background job orchestration** - replace fragile cron jobs with observable workflows
-- **Approval workflows** - pause indefinitely until a human reviews
-- **Data pipelines** - ETL with step-by-step durability and progress tracking
-
-See [runnable examples](https://github.com/SokratisVidros/pg-workflows/tree/main/examples) and [common patterns →](docs/examples.md)
-
----
+| Feature | API |
+|---------|-----|
+| Durable steps | `step.run(id, fn)` |
+| Wait for external events | `step.waitFor(id, { eventName, timeout?, schema? })` + `engine.triggerEvent()` |
+| Timers | `step.delay(id, '3 days')`, `step.waitUntil(id, date)` |
+| Polling | `step.poll(id, fn, { interval, timeout })` |
+| Manual pause and resume | `step.pause(id)`, `engine.resumeWorkflow()` |
+| Child workflows | `step.invokeChildWorkflow(id, ref, input)` |
+| Recurring schedules | `workflow(id, fn, { schedule: '0 9 * * 1-5' })` |
+| Retries | `workflow(id, fn, { retries: 3 })` |
+| Priorities | `workflow(id, fn, { priority: 'high' })` |
+| One run at a time | `workflow(id, fn, { singleton: true })` |
+| Deduplicated starts | `startWorkflow({ idempotencyKey })` |
+| Tenant scoping | `resourceId` on every run and every API call |
+| Typed input | Any [Standard Schema](https://github.com/standard-schema/standard-schema) library (Zod, Valibot, ArkType) |
+| API/worker split | `WorkflowClient` from `pg-workflows/client` |
 
 ## Documentation
 
-- **[Architecture](docs/architecture.md)** - single-service and microservices (client/worker) setups
-- **[Core Concepts](docs/core-concepts.md)** - workflows, steps, events, delays, polling, pause/resume, idempotency, input validation
-- **[AI & Agent Workflows](docs/ai-agents.md)** - durable LLM pipelines, human-in-the-loop, RAG
-- **[Examples](docs/examples.md)** - conditional steps, batch loops, scheduled reminders, retries, monitoring
-- **[API Reference](docs/api-reference.md)** - `WorkflowEngine`, `WorkflowClient`, `WorkflowRef`, types
-- **[Configuration](docs/configuration.md)** - env vars, database setup, requirements
-- **[Observability](packages/otel/README.md)** - `@pg-workflows/otel`: OpenTelemetry tracing via `otelPlugin`
-- **[UI](packages/ui/README.md)** - `@pg-workflows/ui`: hooks, components, styling, and [running the default dashboard with `npx`](packages/ui/README.md#try-the-dashboard)
+| Guide | Covers |
+|-------|--------|
+| [Core concepts](docs/core-concepts.md) | Steps, events, timers, polling, child workflows, schedules, retries, priorities, singletons, idempotency, input validation |
+| [Architecture](docs/architecture.md) | Single-service and API/worker deployments, how execution works |
+| [Examples](docs/examples.md) | Conditional steps, fan-out loops, reminders, polling, retries, progress |
+| [AI and agent workflows](docs/ai-agents.md) | Durable LLM pipelines, human review, retrieval |
+| [API reference](docs/api-reference.md) | `WorkflowEngine`, `WorkflowClient`, `WorkflowRef`, `workflow()`, types |
+| [Configuration](docs/configuration.md) | Environment variables, database objects, requirements |
 
----
+### Packages
 
-## Observability with OpenTelemetry
+| Package | Purpose |
+|---------|---------|
+| [`pg-workflows`](https://www.npmjs.com/package/pg-workflows) | The engine and client |
+| [`@pg-workflows/otel`](packages/otel/README.md) | OpenTelemetry spans for workflow runs and steps |
+| [`@pg-workflows/ui`](packages/ui/README.md) | React dashboard, components, and hooks. Try it with `npx @pg-workflows/ui` |
 
-`@pg-workflows/otel` is a first-party plugin that emits OTel spans for workflow and step execution. It's a separate package, so the engine itself has no OpenTelemetry dependency. Install it only if you want tracing.
-
-```bash
-npm install @pg-workflows/otel @opentelemetry/api @opentelemetry/sdk-node
-```
-
-```ts
-import { NodeSDK } from '@opentelemetry/sdk-node'
-import { otelPlugin } from '@pg-workflows/otel'
-import { workflow } from 'pg-workflows'
-
-// Initialize your OTel SDK however you normally do — for Node apps the
-// NodeSDK registers an AsyncHooks context manager, which is required for
-// hierarchical (parent/child) spans across async boundaries.
-new NodeSDK({ /* exporters, resource, ... */ }).start()
-
-const tracedWorkflow = workflow.use(otelPlugin())
-
-const myWorkflow = tracedWorkflow('checkout', async ({ step }) => {
-  await step.run('charge', async () => { /* ... */ })
-  await step.waitFor('await-shipment', { eventName: 'shipped' })
-})
-```
-
-The plugin emits a `pg_workflows.workflow.run` span per worker execution (one per resume cycle), with child spans per step kind (`pg_workflows.step.run`, `pg_workflows.step.waitFor`, etc.). Spans carry `workflow.id`, `workflow.run_id`, `workflow.attempt` and, where set, `workflow.resource_id`. Steps replayed from cache after a pause emit no spans.
-
-Options (custom tracer, span prefix, extra attributes) and what's not in v1 are covered in the [`@pg-workflows/otel` README](packages/otel/README.md).
-
----
+Runnable scripts live in [`examples/`](https://github.com/SokratisVidros/pg-workflows/tree/main/examples).
 
 ## Requirements
 
 - Node.js >= 18
 - PostgreSQL >= 10
+- `pg` >= 8 (peer dependency). `pg-boss` ships with the engine and needs no setup.
 
 ## Acknowledgments
 
-Special thanks to the teams behind [Temporal](https://temporal.io/), [Inngest](https://www.inngest.com/), [Trigger.dev](https://trigger.dev/), and [DBOS](https://www.dbos.dev/) for pioneering durable execution patterns and inspiring this project.
+[Temporal](https://temporal.io/), [Inngest](https://www.inngest.com/), [Trigger.dev](https://trigger.dev/), and [DBOS](https://www.dbos.dev/) pioneered the durable execution patterns this project builds on.
 
 ## License
 

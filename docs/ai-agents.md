@@ -1,160 +1,195 @@
-# AI & Agent Workflows
+# AI and agent workflows
 
-AI agents and LLM pipelines are one of the best use cases for durable execution. LLM calls are **slow**, **expensive**, and **unreliable** — exactly the kind of work that should never be repeated unnecessarily.
+LLM calls are slow, cost money, and fail with 429s and 500s. Running them as workflow steps gives you:
 
-pg-workflows gives you:
+- **Saved results.** Each `step.run` result is saved. If the process crashes or the run retries, completed LLM calls are not repeated.
+- **Retries.** A thrown error retries the run with exponential backoff, resuming at the failed step.
+- **Human review.** `step.waitFor` pauses the run until a reviewer responds. A paused run holds no worker or connection, whether it waits minutes or days.
+- **Inspectable state.** Every step's output is in the run's `timeline`, so you can see what the agent produced up to the point it failed.
 
-- **Cached step results** — if your process crashes after a $0.50 GPT-4 call, the result is already persisted. On retry, it skips the LLM call and picks up where it left off.
-- **Automatic retries** — LLM APIs return 429s and 500s. Built-in exponential backoff handles transient failures without custom retry logic.
-- **Human-in-the-loop** — pause an AI pipeline with `step.waitFor()` to wait for human review, approval, or feedback before continuing.
-- **Observable progress** — track which step your agent is on, how far along it is, and inspect intermediate results with `checkProgress()`.
-- **Long-running agents** — multi-step agents that run for minutes or hours don't need to hold a connection open. They persist state and resume.
+## Setup
 
-## Why durable execution matters for AI
-
-| Problem | Without pg-workflows | With pg-workflows |
-|---------|---------------------|-------------------|
-| Process crashes mid-pipeline | All LLM calls re-run from scratch | Resumes from the last completed step |
-| LLM API returns 429/500 | Manual retry logic everywhere | Automatic retries with exponential backoff |
-| Human review needed | Custom polling/webhook infrastructure | `step.waitFor()` — zero resource consumption while waiting |
-| Debugging failed agents | Lost intermediate state | Full timeline of every step's input/output in PostgreSQL |
-| Cost control | Repeated expensive LLM calls on failure | Each LLM call runs exactly once, result cached |
-| Long-running pipelines | Timeout or lost connections | Runs for hours/days, state persisted in Postgres |
-
-## Multi-Step AI Agent
+The snippets call an `llm` helper that wraps your model provider's SDK and returns the reply as a string. Declare it once:
 
 ```typescript
+// llm.ts
+export declare const llm: {
+  chat(params: { model: string; messages: { role: 'system' | 'user'; content: string }[] }): Promise<string>
+  embed(text: string): Promise<number[]>
+}
+
+export declare const vectorStore: {
+  search(embedding: number[], options: { topK: number }): Promise<{ id: string; text: string }[]>
+}
+```
+
+Return plain strings and objects from LLM steps. Results are stored as `jsonb`, so an SDK response object with class instances or methods doesn't round-trip.
+
+## Multi-step agent
+
+A planning call produces a list of tasks. Each task is its own step, so a crash after task 3 of 5 resumes at task 4.
+
+```typescript
+import { workflow } from 'pg-workflows'
+import { z } from 'zod'
+import { llm } from './llm'
+
 const researchAgent = workflow(
   'research-agent',
   async ({ step, input }) => {
-    // Step 1: Plan the research (persisted - never re-runs on retry)
-    const plan = await step.run('create-plan', async () => {
-      return await llm.chat({
+    const tasks = await step.run('create-plan', async () => {
+      const reply = await llm.chat({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: `Create a research plan for: ${input.topic}` }],
+        messages: [
+          {
+            role: 'user',
+            content: `Return a JSON array of {"id": string, "description": string} research tasks for: ${input.topic}`,
+          },
+        ],
       })
+      return JSON.parse(reply) as { id: string; description: string }[]
     })
 
-    // Step 2: Execute each research task durably
-    const findings = []
-    for (const task of plan.tasks) {
-      const result = await step.run(`research-${task.id}`, async () => {
-        return await llm.chat({
+    const findings: string[] = []
+    for (const task of tasks) {
+      const finding = await step.run(`research-${task.id}`, async () => {
+        return llm.chat({
           model: 'gpt-4o',
           messages: [{ role: 'user', content: `Research: ${task.description}` }],
         })
       })
-      findings.push(result)
+      findings.push(finding)
     }
 
-    // Step 3: Synthesize results
     const report = await step.run('synthesize', async () => {
-      return await llm.chat({
+      return llm.chat({
         model: 'gpt-4o',
-        messages: [{ role: 'user', content: `Synthesize these findings: ${JSON.stringify(findings)}` }],
+        messages: [{ role: 'user', content: `Synthesize these findings:\n\n${findings.join('\n\n')}` }],
       })
     })
 
-    return { plan, findings, report }
+    return { tasks, report }
   },
-  {
-    retries: 3,
-    timeout: 30 * 60 * 1000, // 30 minutes
-  },
+  { inputSchema: z.object({ topic: z.string() }), retries: 3 },
 )
 ```
 
-If the process crashes after completing 3 of 5 research tasks, the agent **resumes from task 4** — no LLM calls are wasted.
+## Human review
 
-## Human-in-the-Loop AI Pipeline
+Generate a draft, wait for a reviewer, then publish or revise.
 
 ```typescript
+import { workflow } from 'pg-workflows'
+import { z } from 'zod'
+import { llm } from './llm'
+
 const contentPipeline = workflow(
   'ai-content-pipeline',
   async ({ step, input }) => {
-    // Step 1: Generate draft with AI
     const draft = await step.run('generate-draft', async () => {
-      return await llm.chat({
+      return llm.chat({
         model: 'gpt-4o',
         messages: [{ role: 'user', content: `Write a blog post about: ${input.topic}` }],
       })
     })
 
-    // Step 2: Pause for human review — costs nothing while waiting
     const review = await step.waitFor('human-review', {
       eventName: 'content-reviewed',
-      timeout: 7 * 24 * 60 * 60 * 1000, // 7 days
+      timeout: 7 * 24 * 60 * 60 * 1000,
+      schema: z.object({ approved: z.boolean(), feedback: z.string().optional() }),
     })
 
-    // Step 3: Revise based on feedback
+    if (!review) {
+      return { status: 'expired', content: draft }
+    }
+
     if (review.approved) {
       return { status: 'published', content: draft }
     }
 
     const revision = await step.run('revise-draft', async () => {
-      return await llm.chat({
+      return llm.chat({
         model: 'gpt-4o',
         messages: [
-          { role: 'user', content: `Revise this draft based on feedback:\n\nDraft: ${draft}\n\nFeedback: ${review.feedback}` },
+          {
+            role: 'user',
+            content: `Revise this draft based on the feedback.\n\nDraft:\n${draft}\n\nFeedback:\n${review.feedback}`,
+          },
         ],
       })
     })
 
     return { status: 'revised', content: revision }
   },
-  { retries: 3 },
+  { inputSchema: z.object({ topic: z.string() }), retries: 3 },
 )
+```
 
-// A reviewer approves or requests changes via your API
+Send the reviewer's decision from your API:
+
+```typescript
 await engine.triggerEvent({
-  runId: run.id,
+  runId,
   eventName: 'content-reviewed',
   data: { approved: false, feedback: 'Make the intro more engaging' },
 })
 ```
 
-## RAG Pipeline with Tool Use
+With `timeout`, `review` is `undefined` if no event arrives within 7 days. `schema` types the event data but doesn't validate it, so check untrusted input before calling `triggerEvent`.
+
+## Retrieval-augmented generation
+
+Embed the query, retrieve documents, answer, then check the answer against the sources.
 
 ```typescript
+import { workflow } from 'pg-workflows'
+import { z } from 'zod'
+import { llm, vectorStore } from './llm'
+
 const ragAgent = workflow(
   'rag-agent',
   async ({ step, input }) => {
-    // Step 1: Generate embeddings (cached on retry)
     const embedding = await step.run('embed-query', async () => {
-      return await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: input.query,
-      })
+      return llm.embed(input.query)
     })
 
-    // Step 2: Search vector store
     const documents = await step.run('search-docs', async () => {
-      return await vectorStore.search(embedding, { topK: 10 })
+      return vectorStore.search(embedding, { topK: 10 })
     })
 
-    // Step 3: Generate answer with context
+    const context = documents.map((doc) => doc.text).join('\n')
+
     const answer = await step.run('generate-answer', async () => {
-      return await llm.chat({
+      return llm.chat({
         model: 'gpt-4o',
         messages: [
-          { role: 'system', content: `Answer using these documents:\n${documents.map((d) => d.text).join('\n')}` },
+          { role: 'system', content: `Answer using only these documents:\n${context}` },
           { role: 'user', content: input.query },
         ],
       })
     })
 
-    // Step 4: Validate and fact-check
-    const validation = await step.run('fact-check', async () => {
-      return await llm.chat({
+    const factCheck = await step.run('fact-check', async () => {
+      return llm.chat({
         model: 'gpt-4o',
         messages: [
-          { role: 'user', content: `Fact-check this answer against the source documents. Answer: ${answer}` },
+          {
+            role: 'user',
+            content: `Documents:\n${context}\n\nAnswer:\n${answer}\n\nList any claims in the answer that the documents don't support.`,
+          },
         ],
       })
     })
 
-    return { answer, validation, sources: documents }
+    return { answer, factCheck, sources: documents.map((doc) => doc.id) }
   },
-  { retries: 3, timeout: 5 * 60 * 1000 },
+  { inputSchema: z.object({ query: z.string() }), retries: 3 },
 )
 ```
+
+## Limits to plan for
+
+- **A step can repeat after a crash.** If the process dies after an LLM call returns but before its result is saved, the call runs again on retry. Pass an idempotency key to APIs that charge or send.
+- **Execution time is capped.** A single handler execution is limited by [`WORKFLOW_RUN_EXPIRE_IN_SECONDS`](configuration.md#environment-variables) (default 300). The limit resets at every pause, so an agent that waits for review is unaffected, but a long chain of slow calls without a pause can hit it. Raise the limit or split the chain into [child workflows](core-concepts.md#child-workflows).
+- **The workflow `timeout` isn't enforced.** It's saved as `run.timeoutAt`. To bound a wait, use `timeout` on `step.waitFor` or `step.poll`.
+- **Code between steps must be deterministic.** The handler runs from the top on every resume. Keep LLM calls, randomness, and `Date.now()` inside steps.
