@@ -6,7 +6,7 @@ This file is the single source of truth for AI coding agents (Claude Code, Codex
 
 pg-workflows is a TypeScript workflow engine that uses PostgreSQL for durable execution, event-driven orchestration, and automatic retries. It requires no extra infrastructure beyond PostgreSQL. Built on top of pg-boss for reliable job scheduling.
 
-- **Packages:** `pg-workflows` (engine) and `@pg-workflows/ui` (React dashboard)
+- **Packages:** `pg-workflows` (engine), `@pg-workflows/otel` (OpenTelemetry plugin), and `@pg-workflows/ui` (React dashboard)
 - **Language:** TypeScript (ESM + CJS dual output)
 - **Runtime:** Node.js >= 18
 - **Database:** PostgreSQL >= 10
@@ -28,6 +28,7 @@ packages/
 │   │   ├── db/             # Database queries, migrations, types
 │   │   └── tests/          # Test utilities
 │   └── bunup.config.ts
+├── otel/                   # npm: @pg-workflows/otel (plugin built on workflow.use)
 └── ui/                     # npm: @pg-workflows/ui
 examples/
 ├── node/                   # CLI examples
@@ -36,10 +37,11 @@ examples/
 
 ## Commands
 
-- `bun run build` - Build engine then UI
+- `bun run build` - Build engine, then the OTel plugin, then UI
 - `bun run dev` - Watch-mode engine build
-- `bun run test` - Run unit, UI, and integration tests
+- `bun run test` - Run unit, OTel, UI, and integration tests
 - `bun run test:unit` - Engine unit tests (PGlite, no PostgreSQL needed)
+- `bun run test:otel` - OTel plugin tests (PGlite, no PostgreSQL needed)
 - `bun run test:ui` - UI package tests
 - `bun run test:integration` - Engine integration tests (requires real PostgreSQL)
 - `bun run lint` - Lint with Biome
@@ -208,12 +210,14 @@ await engine.stop();            // graceful shutdown (also closes pool if engine
 
 **Dependencies**: `pg` is a peer dependency (you install it); `pg-boss` is a regular dependency (bundled, no install needed).
 
-### `otelPlugin(options?)` - OpenTelemetry tracing
+### `otelPlugin(options?)` - OpenTelemetry tracing (`@pg-workflows/otel`)
 
 ```typescript
-import { workflow, otelPlugin } from 'pg-workflows';
+import { otelPlugin } from '@pg-workflows/otel';
+import { workflow } from 'pg-workflows';
 
-// Optional peer dep: install `@opentelemetry/api` and an OTel SDK (e.g. NodeSDK).
+// Separate package: install `@pg-workflows/otel`, `@opentelemetry/api`, and an OTel SDK (e.g. NodeSDK).
+// The engine has no OTel dependency; plugins build on `workflow.use()` and the `wrap` hook.
 // One `pg_workflows.workflow.run` span per worker execution, with child spans
 // per step kind. Spans replayed from cache after a pause are suppressed.
 const tracedWorkflow = workflow.use(otelPlugin({

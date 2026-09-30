@@ -84,19 +84,10 @@
     "pg-boss": "catalog:"
   },
   "peerDependencies": {
-    "@opentelemetry/api": "^1.9.0",
     "pg": "^8.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@opentelemetry/api": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.14",
-    "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/context-async-hooks": "^1.27.0",
-    "@opentelemetry/sdk-trace-base": "^1.27.0",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "bunup": "^0.16.11",

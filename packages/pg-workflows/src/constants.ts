@@ -29,3 +29,14 @@ export const isInvokeChildWorkflowTimelineEntry = (
   entry: unknown,
 ): entry is { invokeChildWorkflow: { childRunId: string; childWorkflowId: string } } =>
   !!entry && typeof entry === 'object' && 'invokeChildWorkflow' in entry;
+
+/**
+ * True when a re-executed handler will replay `stepId` from `timeline` instead
+ * of running it: the step has a recorded output, or it is an
+ * `invokeChildWorkflow` step whose child is already bound. Public so plugins
+ * (e.g. tracing) can tell replays from real executions without depending on
+ * the timeline shape.
+ */
+export const isStepCached = (timeline: Record<string, unknown>, stepId: string): boolean =>
+  (timeline[stepId] as { output?: unknown } | undefined)?.output !== undefined ||
+  isInvokeChildWorkflowTimelineEntry(timeline[invokeChildWorkflowTimelineKey(stepId)]);

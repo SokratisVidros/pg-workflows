@@ -1,0 +1,75 @@
+{
+  "name": "@pg-workflows/otel",
+  "description": "OpenTelemetry tracing plugin for pg-workflows: one span per workflow execution and per step",
+  "version": "0.1.0",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "module": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "bunup",
+    "test": "vitest run",
+    "check-types": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "bun run clean && bun run build"
+  },
+  "keywords": [
+    "pg-workflows",
+    "opentelemetry",
+    "otel",
+    "tracing",
+    "observability",
+    "workflow",
+    "durable-execution"
+  ],
+  "author": "sokratisvidros<sokratis.vidros@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SokratisVidros/pg-workflows.git",
+    "directory": "packages/otel"
+  },
+  "bugs": {
+    "url": "https://github.com/SokratisVidros/pg-workflows/issues"
+  },
+  "homepage": "https://github.com/SokratisVidros/pg-workflows/tree/main/packages/otel#readme",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "pg-workflows": ">=0.16.0"
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/context-async-hooks": "^2.11.0",
+    "@opentelemetry/sdk-trace-base": "^2.11.0",
+    "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "bunup": "^0.16.32",
+    "pg-boss": "catalog:",
+    "pg-workflows": "workspace:*",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
