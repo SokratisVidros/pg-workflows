@@ -5,6 +5,8 @@ description: Browse and control runs with the @pg-workflows/ui React dashboard.
 
 React components, hooks, and HTTP adapters for [pg-workflows](https://github.com/SokratisVidros/pg-workflows). Render the full dashboard, compose the individual components, or build your own UI on the hooks.
 
+All components are built with [Base UI](https://base-ui.com/), so they are accessible and accept a `render` prop to swap the underlying element. See [Styling & customization](/docs/ui/reference#styling--customization).
+
 ![Workflow runs dashboard](/images/dashboard.png)
 
 ## Quickstart
@@ -21,7 +23,7 @@ The CLI connects to `postgres://localhost:5432/postgres`. To use another databas
 npx @pg-workflows/ui --database-url=postgres://user:pass@localhost:5432/mydb
 ```
 
-The dashboard lists runs and sends lifecycle actions (cancel, pause, resume, fast-forward, trigger). It registers no workflows of its own. On start it runs the engine migrations, so it creates the pg-workflows tables and pg-boss schema in the target database if they are missing. See [CLI](/docs/ui/reference#cli) for every flag and caveat.
+The dashboard lists runs and sends lifecycle actions (cancel, pause, resume, fast-forward, trigger). It registers no workflows of its own. On start it runs the engine migrations, so it creates the pg-workflows tables and [pg-boss](https://pgboss.io/) schema in the target database if they are missing. See [CLI](/docs/ui/reference#cli) for every flag and caveat.
 
 ---
 

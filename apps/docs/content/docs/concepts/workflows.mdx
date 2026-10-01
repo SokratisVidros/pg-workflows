@@ -53,3 +53,14 @@ const user = await step.run('create-user', async () => {
 - **IDs must be unique within a workflow.** In loops, build the ID from the item: `` step.run(`charge-$\{order.id\}`, ...) ``.
 - **Return JSON-serializable values.** Results are stored as `jsonb`. A `Date` comes back as an ISO string when the step is replayed, and class instances lose their prototype. Return plain objects, and use `toISOString()` for dates.
 - **A step can run more than once if the process crashes mid-step**, before its result is saved. Make external side effects idempotent, for example by passing an idempotency key to your payment provider.
+
+## How a run executes
+
+PostgreSQL is both the job queue (through [pg-boss](https://pgboss.io/)) and the state store (`workflow_runs`).
+
+1. **Start.** `startWorkflow` inserts a `workflow_runs` row with status `running` and enqueues a job.
+2. **Execute.** A worker picks up the job and calls the handler.
+3. **Save each step.** Each `step.run` result is written to the run's `timeline` before the handler moves on.
+4. **Pause.** `waitFor`, `pause`, `delay`, `waitUntil`, `poll`, and `invokeChildWorkflow` save the run as `paused` and end the execution. No worker or connection is held while it waits.
+5. **Resume.** An event, `resumeWorkflow`, a timer, or a finished child enqueues a new job. The handler runs from the top, and completed steps return their saved results.
+6. **Finish.** The handler's return value is saved as `output` and the run is `completed`. If the handler throws, the run is retried up to `retries` times, then marked `failed`.

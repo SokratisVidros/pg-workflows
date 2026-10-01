@@ -3,7 +3,7 @@ title: Install with an agent
 description: Hand the setup to Claude Code, Cursor, Codex, or any coding agent that can fetch a URL.
 ---
 
-pg-workflows publishes an install skill: instructions written for coding agents. The agent reads your codebase, picks a layout, installs and verifies the engine, mounts the dashboard for your stack, and offers to add tracing. It asks before touching your database.
+pg-workflows publishes an install skill: instructions written for coding agents. The agent reads your codebase, picks an architecture, installs and verifies the engine, mounts the dashboard for your stack, and offers to add tracing. It asks before touching your database.
 
 ## Copy the prompt
 
@@ -26,9 +26,9 @@ Then ask the agent to "add pg-workflows to this project". The skill's source is 
 ## What the agent does
 
 1. **Inspects the project**: package manager, services and their frameworks, hosting, the Postgres connection, React and Tailwind, and any existing OpenTelemetry setup.
-2. **Picks a layout** and tells you why:
+2. **Picks an architecture** and tells you why:
 
-   | Layout | When |
+   | Architecture | When |
    |--------|------|
    | Monolith | One long-running service starts and executes workflows. |
    | Web app plus worker | One codebase whose web tier is serverless or shouldn't carry heavy workflow dependencies. A worker process joins it. |
@@ -39,7 +39,7 @@ Then ask the agent to "add pg-workflows to this project". The skill's source is 
 5. **Offers tracing** with `@pg-workflows/otel`, reusing your OpenTelemetry SDK if you have one.
 6. **Reports** every file it changed and what each process needs in production.
 
-The same steps are documented for people in [Deployment layouts](/docs/layouts), [Dashboard](/docs/ui), and [Tracing](/docs/observability/tracing).
+The same steps are documented for people in [Architectures](/docs/architectures), [UI components](/docs/ui), and [Tracing](/docs/observability/tracing).
 
 ## For agents
 

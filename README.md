@@ -182,7 +182,7 @@ Full docs are at **[pgworkflows.dev](https://pgworkflows.dev)**.
 | Guide | Covers |
 |-------|--------|
 | [Core concepts](https://pgworkflows.dev/docs/concepts/workflows) | Steps, events, timers, polling, child workflows, schedules, retries, priorities, singletons, idempotency, input validation |
-| [Deployment layouts](https://pgworkflows.dev/docs/layouts) | Single-service and API/worker deployments |
+| [Architectures](https://pgworkflows.dev/docs/architectures) | Single service, or microservices with web and worker services |
 | [Examples](https://pgworkflows.dev/docs/guides/examples) | Conditional steps, fan-out loops, reminders, polling, retries, progress |
 | [AI and agent workflows](https://pgworkflows.dev/docs/guides/ai-agents) | Durable LLM pipelines, human review, retrieval |
 | [API reference](https://pgworkflows.dev/docs/reference/api) | `WorkflowEngine`, `WorkflowClient`, `WorkflowRef`, `workflow()`, types |
@@ -202,7 +202,7 @@ Runnable scripts live in [`examples/`](https://github.com/SokratisVidros/pg-work
 
 - Node.js >= 18
 - PostgreSQL >= 10
-- `pg` >= 8 (peer dependency). `pg-boss` ships with the engine and needs no setup.
+- `pg` >= 8 (peer dependency). [`pg-boss`](https://pgboss.io/) ships with the engine and needs no setup.
 
 ## Acknowledgments
 

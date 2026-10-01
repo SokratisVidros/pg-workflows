@@ -1,5 +1,5 @@
 ---
-title: Dashboard API reference
+title: API reference
 description: Entry points, CLI, components, hooks, server adapters, HTTP API, and styling.
 ---
 
@@ -135,7 +135,7 @@ Style state: `{ hasPrev, hasNext, fetching }`.
 
 ### `LiveToggle`
 
-A Base UI `Toggle`.
+A [Base UI](https://base-ui.com/) `Toggle`.
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
@@ -144,7 +144,7 @@ A Base UI `Toggle`.
 | `onToggle` | `() => void` | | Called on press. Pass `pollIntervalMs={isLive ? 5000 : 0}` to the provider. |
 | `nativeButton` | `boolean` | `true` | Set to `false` when `render` is not a `<button>`. |
 
-Style state: Base UI toggle state (`pressed`, `disabled`). Also sets `data-pressed` and `data-fetching`.
+Style state: [Base UI](https://base-ui.com/) toggle state (`pressed`, `disabled`). Also sets `data-pressed` and `data-fetching`.
 
 ### `StatusBadge`
 
@@ -426,7 +426,7 @@ createWorkflowRunsApi({
 
 ## Styling & customization
 
-The components are [Base UI](https://base-ui.com/react/components) parts with a default theme: square corners, a 1px ink border, neutral surfaces, and a hard offset shadow. Status color is the only chroma.
+The components are [Base UI](https://base-ui.com/) parts with a default theme: square corners, a 1px ink border, neutral surfaces, and a hard offset shadow. Status color is the only chroma.
 
 - `className` and `style` take a value, or a function of the component's state (listed with each component above).
 - `render` replaces the root element instead of wrapping it. The part's props and behavior move to the element you pass.

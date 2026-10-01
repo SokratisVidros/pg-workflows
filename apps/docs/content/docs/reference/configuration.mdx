@@ -33,16 +33,16 @@ const engine = new WorkflowEngine({
 | `workflow_runs.resource_id` index | Lookups by [resource ID](/docs/concepts/resource-id-and-idempotency#resource-id). |
 | `workflow_runs.idempotency_key` unique partial index | [Idempotent starts](/docs/concepts/resource-id-and-idempotency#idempotency-key). |
 | Unique partial index on `workflow_id` for pending and running singleton runs | [Singleton workflows](/docs/concepts/singleton-workflows). |
-| `pgboss_v12_pgworkflow` schema | pg-boss job queue tables. The schema is isolated so it does not collide with another pg-boss installation in the same database. |
+| `pgboss_v12_pgworkflow` schema | [pg-boss](https://pgboss.io/) job queue tables. The schema is isolated so it does not collide with another [pg-boss](https://pgboss.io/) installation in the same database. |
 
 ## Retries
 
-Retries are scheduled by pg-boss with exponential backoff: `2^retryCount` seconds (about 1s, 2s, 4s, 8s), with up to ±50% jitter. A failed attempt includes a thrown error, an execution that passes `WORKFLOW_RUN_EXPIRE_IN_SECONDS`, and a worker that stops sending heartbeats. When the last attempt fails, the run is marked `failed`. See [Retries and timeouts](/docs/concepts/retries-and-timeouts).
+Retries are scheduled by [pg-boss](https://pgboss.io/) with exponential backoff: `2^retryCount` seconds (about 1s, 2s, 4s, 8s), with up to ±50% jitter. A failed attempt includes a thrown error, an execution that passes `WORKFLOW_RUN_EXPIRE_IN_SECONDS`, and a worker that stops sending heartbeats. When the last attempt fails, the run is marked `failed`. See [Retries and timeouts](/docs/concepts/retries-and-timeouts).
 
 ## Dependencies
 
 - `pg` is a peer dependency. Install it alongside `pg-workflows`.
-- `pg-boss` is a regular dependency. It is installed with the engine and needs no setup. To use your own pg-boss configuration, pass a `boss` instance to the `WorkflowEngine` or `WorkflowClient` constructor.
+- [`pg-boss`](https://pgboss.io/) is a regular dependency. It is installed with the engine and needs no setup. To use your own [pg-boss](https://pgboss.io/) configuration, pass a `boss` instance to the `WorkflowEngine` or `WorkflowClient` constructor.
 
 ## Requirements
 
