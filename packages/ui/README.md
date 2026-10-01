@@ -28,7 +28,7 @@ The CLI connects to `postgres://localhost:5432/postgres`. To use another databas
 npx @pg-workflows/ui --database-url=postgres://user:pass@localhost:5432/mydb
 ```
 
-The dashboard lists runs and sends lifecycle actions (cancel, pause, resume, fast-forward, trigger). It registers no workflows of its own. On start it runs the engine migrations, so it creates the pg-workflows tables and pg-boss schema in the target database if they are missing. See [CLI](#cli) for every flag and caveat.
+The dashboard lists runs and sends lifecycle actions (cancel, pause, resume, fast-forward, trigger). It registers no workflows of its own. On start it runs the engine migrations, so it creates the pg-workflows tables and [pg-boss](https://pgboss.io/) schema in the target database if they are missing. See [CLI](#cli) for every flag and caveat.
 
 ---
 
@@ -595,7 +595,7 @@ Style state: `{ hasPrev, hasNext, fetching }`.
 
 #### `LiveToggle`
 
-A Base UI `Toggle`.
+A [Base UI](https://base-ui.com/) `Toggle`.
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
@@ -604,7 +604,7 @@ A Base UI `Toggle`.
 | `onToggle` | `() => void` | | Called on press. Pass `pollIntervalMs={isLive ? 5000 : 0}` to the provider. |
 | `nativeButton` | `boolean` | `true` | Set to `false` when `render` is not a `<button>`. |
 
-Style state: Base UI toggle state (`pressed`, `disabled`). Also sets `data-pressed` and `data-fetching`.
+Style state: [Base UI](https://base-ui.com/) toggle state (`pressed`, `disabled`). Also sets `data-pressed` and `data-fetching`.
 
 #### `StatusBadge`
 
@@ -886,7 +886,7 @@ createWorkflowRunsApi({
 
 ### Styling & customization
 
-The components are [Base UI](https://base-ui.com/react/components) parts with a default theme: square corners, a 1px ink border, neutral surfaces, and a hard offset shadow. Status color is the only chroma.
+The components are [Base UI](https://base-ui.com/) parts with a default theme: square corners, a 1px ink border, neutral surfaces, and a hard offset shadow. Status color is the only chroma.
 
 - `className` and `style` take a value, or a function of the component's state (listed with each component above).
 - `render` replaces the root element instead of wrapping it. The part's props and behavior move to the element you pass.

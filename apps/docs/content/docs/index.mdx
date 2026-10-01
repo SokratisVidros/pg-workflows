@@ -12,8 +12,8 @@ pg-workflows runs durable workflows on the PostgreSQL you already have. Each ste
 <Cards>
   <Card title="Quickstart" href="/docs/quickstart" description="Run your first durable workflow in about two minutes." />
   <Card title="Install with an agent" href="/docs/install-with-agent" description="Let Claude Code, Cursor, or Codex wire pg-workflows into your project." />
-  <Card title="Deployment layouts" href="/docs/layouts" description="One service, or API services plus workers." />
-  <Card title="Dashboard" href="/docs/ui" description="Browse and control runs with @pg-workflows/ui." />
+  <Card title="Architectures" href="/docs/architectures" description="One service, or API services plus workers." />
+  <Card title="UI components" href="/docs/ui" description="Browse and control runs with @pg-workflows/ui." />
 </Cards>
 
 ## Features
@@ -33,7 +33,7 @@ pg-workflows runs durable workflows on the PostgreSQL you already have. Each ste
 | [Deduplicated starts](/docs/concepts/resource-id-and-idempotency#idempotency-key) | `startWorkflow({ idempotencyKey })` |
 | [Tenant scoping](/docs/concepts/resource-id-and-idempotency#resource-id) | `resourceId` on every run and every API call |
 | [Typed input](/docs/concepts/input-validation) | Any [Standard Schema](https://github.com/standard-schema/standard-schema) library (Zod, Valibot, ArkType) |
-| [API/worker split](/docs/layouts#api-and-worker) | `WorkflowClient` from `pg-workflows/client` |
+| [Microservices (web and worker)](/docs/architectures#microservices-web-and-worker) | `WorkflowClient` from `pg-workflows/client` |
 
 ## Packages
 
@@ -47,7 +47,7 @@ pg-workflows runs durable workflows on the PostgreSQL you already have. Each ste
 
 - Node.js >= 18
 - PostgreSQL >= 10
-- `pg` >= 8 (peer dependency). `pg-boss` ships with the engine and needs no setup.
+- `pg` >= 8 (peer dependency). [`pg-boss`](https://pgboss.io/) ships with the engine and needs no setup.
 
 ## Acknowledgments
 

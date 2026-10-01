@@ -1,14 +1,14 @@
 ---
-title: Deployment layouts
-description: Run pg-workflows in a single service, or split API services from workers.
+title: Architectures
+description: Run pg-workflows in a single service, or as microservices with web and worker services.
 ---
 
-pg-workflows runs in one of two layouts:
+pg-workflows runs in one of two architectures:
 
 - **Single service.** One process starts runs and executes them.
-- **API and worker.** API services start and manage runs with a lightweight client. Worker services load the handlers and execute steps.
+- **Microservices (web and worker).** Web or API services start and manage runs with a lightweight client. Worker services load the handlers and execute steps.
 
-Both layouts use the same database, and you can move from one to the other without migrating data.
+Both architectures use the same database, and you can move from one to the other without migrating data.
 
 ## Single service
 
@@ -48,9 +48,9 @@ const run = await engine.startWorkflow({
 
 To scale, run more copies of the process. Every engine that has called `start()` pulls runs from the same queue. Each engine runs [`WORKFLOW_RUN_WORKERS`](/docs/reference/configuration#environment-variables) workers (default 3).
 
-## API and worker
+## Microservices (web and worker)
 
-Use this layout when the API service shouldn't load worker dependencies such as LLM SDKs or heavy processing libraries. Both services share a file of **workflow refs**: an ID and input schema, with no handler code.
+Use this architecture when the web or API service shouldn't load worker dependencies such as LLM SDKs or heavy processing libraries. Both services share a file of **workflow refs**: an ID and input schema, with no handler code.
 
 ```
          shared/workflows.ts
@@ -131,7 +131,7 @@ The client doesn't load definitions, which has two consequences:
 - **Singleton.** Set `singleton: true` on the ref, not only on the worker's definition. See [Singleton workflows](/docs/concepts/singleton-workflows).
 - **Progress.** `client.checkProgress` can't report `totalSteps` or a percentage for an in-progress run. Use `getRun` and read `status` and `currentStepId`, or call `checkProgress` on an engine that has the workflow registered.
 
-A runnable version of this layout is in [`examples/node/microservices`](https://github.com/SokratisVidros/pg-workflows/tree/main/examples/node/microservices).
+A runnable version of this architecture is in [`examples/node/microservices`](https://github.com/SokratisVidros/pg-workflows/tree/main/examples/node/microservices).
 
 ## Dashboard
 

@@ -26,9 +26,9 @@ const sections: { title: string; description: string; href: string; icon: Lucide
     icon: Sparkles,
   },
   {
-    title: 'Deployment layouts',
+    title: 'Architectures',
     description: 'One service, a web app plus a worker, or many services.',
-    href: '/docs/layouts',
+    href: '/docs/architectures',
     icon: Boxes,
   },
   {
@@ -44,7 +44,7 @@ const sections: { title: string; description: string; href: string; icon: Lucide
     icon: Clock,
   },
   {
-    title: 'Dashboard',
+    title: 'UI components',
     description: 'Browse, inspect, and control runs with @pg-workflows/ui.',
     href: '/docs/ui',
     icon: LayoutDashboard,

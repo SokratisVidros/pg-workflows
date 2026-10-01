@@ -5,7 +5,7 @@ description: How failed runs are retried, and what timeouts do.
 
 When a handler throws, the run is retried up to `retries` times (default `0`). Each retry runs the handler from the top, and completed steps return their saved result, so only the failed step and the steps after it run again. The number of the current attempt is `attempt` on the handler context and `retryCount` on the run.
 
-Retries are scheduled by pg-boss with exponential backoff: roughly 1s, 2s, 4s, 8s, and so on, with up to ±50% jitter. After the last attempt fails, the run's status is `failed` and `error` holds the message.
+Retries are scheduled by [pg-boss](https://pgboss.io/) with exponential backoff: roughly 1s, 2s, 4s, 8s, and so on, with up to ±50% jitter. After the last attempt fails, the run's status is `failed` and `error` holds the message.
 
 ```typescript
 const syncCustomer = workflow(

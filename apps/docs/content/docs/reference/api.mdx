@@ -26,7 +26,7 @@ const engine = new WorkflowEngine({
 | `pool` | `pg.Pool` | Use an existing pool. You own its lifecycle. |
 | `workflows` | `WorkflowDefinition[]` | Registered when `start()` runs. |
 | `logger` | [`WorkflowLogger`](/docs/reference/api#workflowlogger) | Defaults to `console.warn` and `console.error`. |
-| `boss` | `PgBoss` | Your own pg-boss instance. When omitted, the engine creates one in the `pgboss_v12_pgworkflow` schema. |
+| `boss` | `PgBoss` | Your own [pg-boss](https://pgboss.io/) instance. When omitted, the engine creates one in the `pgboss_v12_pgworkflow` schema. |
 
 Pass exactly one of `connectionString` and `pool`.
 
@@ -34,8 +34,8 @@ Pass exactly one of `connectionString` and `pool`.
 
 | Method | Description |
 |--------|-------------|
-| `start(asEngine = true, { batchSize = 1, heartbeatSeconds = 30 }?)` | Starts pg-boss, runs migrations, registers `workflows`, starts [`WORKFLOW_RUN_WORKERS`](/docs/reference/configuration#environment-variables) workers, and registers schedules. With `asEngine: false`, it does everything except start workers and schedules. Calling it again is a no-op. |
-| `stop()` | Unschedules recurring workflows, stops pg-boss, and closes the pool if the engine created it. |
+| `start(asEngine = true, { batchSize = 1, heartbeatSeconds = 30 }?)` | Starts [pg-boss](https://pgboss.io/), runs migrations, registers `workflows`, starts [`WORKFLOW_RUN_WORKERS`](/docs/reference/configuration#environment-variables) workers, and registers schedules. With `asEngine: false`, it does everything except start workers and schedules. Calling it again is a no-op. |
+| `stop()` | Unschedules recurring workflows, stops [pg-boss](https://pgboss.io/), and closes the pool if the engine created it. |
 | `registerWorkflow(definition)` | Parses the handler's steps and registers it. Throws if the ID is already registered or the schedule is invalid. |
 | `unregisterWorkflow(workflowId)` | Removes a definition and its schedule. |
 | `unregisterAllWorkflows()` | Removes every definition and schedule. |
@@ -220,7 +220,7 @@ A `duration` is a string (`'90s'`, `'2h'`, `'3 days'`) or `{ weeks?, days?, hour
 | `singleton` | `boolean` | |
 | `idempotencyKey` | `string \| null` | |
 | `parentRunId`, `parentStepId`, `parentResourceId` | `string \| null` | Set on child runs. |
-| `jobId` | `string \| null` | The pg-boss job ID. |
+| `jobId` | `string \| null` | The [pg-boss](https://pgboss.io/) job ID. |
 | `createdAt`, `updatedAt` | `Date` | |
 | `pausedAt`, `resumedAt`, `completedAt`, `timeoutAt`, `scheduledAt` | `Date \| null` | |
 
