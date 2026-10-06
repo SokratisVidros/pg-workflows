@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## @pg-workflows/otel@0.1.2 - 2026-10-06
+
+### Fixed
+
+- Republish after unpublishing 0.1.0 so npm can reindex the package for search.
+
+[@pg-workflows/otel@0.1.2]: https://github.com/SokratisVidros/pg-workflows/compare/%40pg-workflows/otel%400.1.1...%40pg-workflows/otel%400.1.2
+
+## @pg-workflows/ui@0.1.2 - 2026-10-06
+
+### Fixed
+
+- Republish after unpublishing 0.1.0 so npm can reindex the package for search.
+
+### Changed
+
+- Add keywords, author, bugs, homepage, and registry publishConfig so the package metadata matches `@pg-workflows/otel` and `pg-workflows`.
+
+[@pg-workflows/ui@0.1.2]: https://github.com/SokratisVidros/pg-workflows/compare/%40pg-workflows/ui%400.1.1...%40pg-workflows/ui%400.1.2
+
 ## @pg-workflows/otel@0.1.1 - 2026-09-30
 
 ### Fixed

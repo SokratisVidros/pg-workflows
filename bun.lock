@@ -76,7 +76,7 @@
     },
     "packages/otel": {
       "name": "@pg-workflows/otel",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "devDependencies": {
         "@opentelemetry/api": "^1.9.1",
         "@opentelemetry/context-async-hooks": "^2.11.0",
@@ -122,7 +122,7 @@
     },
     "packages/ui": {
       "name": "@pg-workflows/ui",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "bin": {
         "pg-workflows-ui": "./bin/pg-workflows-ui.mjs",
       },

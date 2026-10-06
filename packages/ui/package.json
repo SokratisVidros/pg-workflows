@@ -1,7 +1,17 @@
 {
   "name": "@pg-workflows/ui",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "React UI for pg-workflows: browse runs and inspect step timelines.",
+  "keywords": [
+    "pg-workflows",
+    "workflow",
+    "workflow-engine",
+    "dashboard",
+    "react",
+    "durable-execution",
+    "postgresql"
+  ],
+  "author": "sokratisvidros<sokratis.vidros@gmail.com>",
   "license": "MIT",
   "type": "module",
   "sideEffects": [
@@ -86,8 +96,13 @@
     "url": "https://github.com/SokratisVidros/pg-workflows.git",
     "directory": "packages/ui"
   },
+  "bugs": {
+    "url": "https://github.com/SokratisVidros/pg-workflows/issues"
+  },
+  "homepage": "https://github.com/SokratisVidros/pg-workflows/tree/main/packages/ui#readme",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "bin": {
     "pg-workflows-ui": "./bin/pg-workflows-ui.mjs"
