@@ -16,6 +16,7 @@ const MAIN_EXPORTS = [
   'FilterBar',
   'useWorkflowRuns',
   'useWorkflowRun',
+  'useWorkflowIds',
   'useWorkflowRunStats',
   'useRunFilters',
   'useWorkflowRunsClient',

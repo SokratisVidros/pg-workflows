@@ -56,6 +56,7 @@ export {
   type UseRunFiltersResult,
   useRunActions,
   useRunFilters,
+  useWorkflowIds,
   useWorkflowRun,
   useWorkflowRunStats,
   useWorkflowRuns,

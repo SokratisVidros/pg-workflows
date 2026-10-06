@@ -9,6 +9,7 @@ function makeClient(): WorkflowRunsClient {
   return {
     listRuns: vi.fn(),
     getRun: vi.fn(),
+    listWorkflowIds: vi.fn().mockResolvedValue([]),
     getStats: vi.fn().mockResolvedValue({
       pending: 0,
       running: 2,

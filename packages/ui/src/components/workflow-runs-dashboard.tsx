@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { forwardRef, useMemo, useState } from 'react';
 import { createFetchClient, type WorkflowRunsClient } from '../client';
 import { useRunFilters } from '../hooks/use-run-filters';
+import { useWorkflowIds } from '../hooks/use-workflow-ids';
 import { useWorkflowRunStats } from '../hooks/use-workflow-run-stats';
 import { useWorkflowRuns } from '../hooks/use-workflow-runs';
 import { applyClientFilters, sortRuns } from '../lib/filters';
@@ -73,6 +74,7 @@ const DashboardInner = forwardRef<
   const { filters, setFilters, clearFilters, hasActiveFilters, serverParams } = useRunFilters();
   const runsQuery = useWorkflowRuns(serverParams);
   const statsQuery = useWorkflowRunStats({ workflowId: filters.workflowId });
+  const workflowIdsQuery = useWorkflowIds();
 
   const [internalSelected, setInternalSelected] = useState<string | null>(null);
   const selected = selectedRunId !== undefined ? selectedRunId : internalSelected;
@@ -82,11 +84,7 @@ const DashboardInner = forwardRef<
   };
 
   const items = runsQuery.data?.items ?? [];
-
-  const workflowIds = useMemo(() => {
-    const ids = new Set(items.map((r) => r.workflowId));
-    return [...ids].sort();
-  }, [items]);
+  const workflowIds = workflowIdsQuery.data ?? [];
 
   const rows = useMemo(() => {
     const clientFiltered = applyClientFilters(items, {

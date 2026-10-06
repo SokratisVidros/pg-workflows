@@ -128,7 +128,7 @@ import { helloRef } from '@/workflows/refs'
 const run = await getWorkflowClient().startWorkflow(helloRef, { name: 'Ada' })
 ```
 
-The client connects and runs migrations on first use. It has the engine's run and query methods: `getRun`, `getRuns`, `getStats`, `pauseWorkflow`, `resumeWorkflow`, `cancelWorkflow`, `triggerEvent`, and `fastForwardWorkflow`. `checkProgress` on the client reports `completedSteps` accurately, but `totalSteps` stays `0` until the run completes.
+The client connects and runs migrations on first use. It has the engine's run and query methods: `getRun`, `getRuns`, `getStats`, `listWorkflowIds`, `pauseWorkflow`, `resumeWorkflow`, `cancelWorkflow`, `triggerEvent`, and `fastForwardWorkflow`. `listWorkflowIds` on the client returns distinct workflow IDs from runs only. `checkProgress` on the client reports `completedSteps` accurately, but `totalSteps` stays `0` until the run completes.
 
 On serverless hosts, the web app keeps working this way. Only the worker needs a long-running host.
 

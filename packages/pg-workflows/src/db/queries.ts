@@ -573,6 +573,23 @@ export async function getWorkflowRunStats(
   return stats;
 }
 
+export async function getWorkflowIds(
+  { resourceId }: { resourceId?: string },
+  db: Db,
+): Promise<string[]> {
+  const result = resourceId
+    ? await db.executeSql(
+        'SELECT DISTINCT workflow_id FROM workflow_runs WHERE resource_id = $1 ORDER BY workflow_id',
+        [resourceId],
+      )
+    : await db.executeSql(
+        'SELECT DISTINCT workflow_id FROM workflow_runs ORDER BY workflow_id',
+        [],
+      );
+
+  return (result.rows as { workflow_id: string }[]).map((row) => row.workflow_id);
+}
+
 /**
  * Run a callback inside a PostgreSQL transaction using a dedicated client.
  *

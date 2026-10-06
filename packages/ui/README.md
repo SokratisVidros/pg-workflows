@@ -235,6 +235,7 @@ import {
   StatusSummary,
   sortRuns,
   useRunFilters,
+  useWorkflowIds,
   useWorkflowRunStats,
   useWorkflowRuns,
   WorkflowRunsProvider,
@@ -263,6 +264,7 @@ function Runs({ live, onToggleLive }: { live: boolean; onToggleLive: () => void 
   const { filters, setFilters, clearFilters, hasActiveFilters, serverParams } = useRunFilters()
   const runs = useWorkflowRuns(serverParams)
   const stats = useWorkflowRunStats({ workflowId: filters.workflowId })
+  const workflowIds = useWorkflowIds()
   const [runId, setRunId] = useState<string | null>(null)
 
   const filter = (partial: Partial<RunFilters>) =>
@@ -286,7 +288,7 @@ function Runs({ live, onToggleLive }: { live: boolean; onToggleLive: () => void 
       <FilterBar
         filters={filters}
         hasActiveFilters={hasActiveFilters}
-        workflowIds={['nightly-report', 'order-fulfillment']}
+        workflowIds={workflowIds.data ?? []}
         onFiltersChange={filter}
         onClear={clearFilters}
       />
@@ -392,6 +394,26 @@ export function RunCounts() {
 }
 ```
 
+### `useWorkflowIds()`: workflow filter options
+
+The registered workflow IDs on the engine, plus every workflow ID that has a run. `<WorkflowRunsDashboard/>` uses this for the workflow filter, so the options are not limited to the current page.
+
+```tsx
+import { useWorkflowIds } from '@pg-workflows/ui'
+
+export function WorkflowOptions() {
+  const { data: workflowIds } = useWorkflowIds()
+
+  return (
+    <ul>
+      {workflowIds?.map((id) => (
+        <li key={id}>{id}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
 ### `useRunActions()`: control a run
 
 ```tsx
@@ -467,7 +489,7 @@ export function RunsByWorkflow() {
 - [CLI](#cli)
 - Components: [`WorkflowRunsDashboard`](#workflowrunsdashboard-1) · [`RunsTable`](#runstable-1) · [`RunDetail`](#rundetail-1) · [`StatusSummary`](#statussummary-1) · [`FilterBar`](#filterbar-1) · [`Pagination`](#pagination-1) · [`LiveToggle`](#livetoggle-1) · [`StatusBadge`](#statusbadge-1)
 - [`WorkflowRunsProvider`](#workflowrunsprovider)
-- Hooks: [`useWorkflowRuns`](#useworkflowrunsparams) · [`useWorkflowRun`](#useworkflowrunid) · [`useWorkflowRunStats`](#useworkflowrunstatsparams) · [`useRunActions`](#userunactions) · [`useRunFilters`](#userunfiltersinitial) · [`useWorkflowRunsClient`](#useworkflowrunsclient)
+- Hooks: [`useWorkflowRuns`](#useworkflowrunsparams) · [`useWorkflowRun`](#useworkflowrunid) · [`useWorkflowRunStats`](#useworkflowrunstatsparams) · [`useWorkflowIds`](#useworkflowids-workflow-filter-options) · [`useRunActions`](#userunactions) · [`useRunFilters`](#userunfiltersinitial) · [`useWorkflowRunsClient`](#useworkflowrunsclient)
 - [Helpers](#helpers)
 - [`createFetchClient`](#createfetchclientoptions)
 - [Server adapters](#server-adapters)
@@ -575,7 +597,7 @@ Renders one button per status with a count above zero. When every count is `0`, 
 |------|------|-------------|
 | `filters` | `RunFilters` | Current filters, from `useRunFilters`. |
 | `hasActiveFilters` | `boolean` | Enables the Clear control. |
-| `workflowIds` | `string[]` | Options for the workflow filter. |
+| `workflowIds` | `string[]` | Options for the workflow filter. `<WorkflowRunsDashboard/>` fills this from `useWorkflowIds()`. |
 | `onFiltersChange` | `(partial: Partial<RunFilters>) => void` | Called with the changed fields. Reset `startingAfter` and `endingBefore` here, or the next request stays on a cursor from the previous filter. |
 | `onClear` | `() => void` | Called by the Clear control. |
 
@@ -649,6 +671,10 @@ Single run. Returns `UseQueryResult<WorkflowRun>`. The query is disabled while `
 #### `useWorkflowRunStats(params?)`
 
 Counts by status. Returns `UseQueryResult<Record<WorkflowRunStatus, number>>`. `params` is `{ workflowId?: string }`. Polls on the provider interval.
+
+#### `useWorkflowIds()`
+
+Workflow filter options. Returns `UseQueryResult<string[]>`. The list is the union of workflow IDs registered on the engine and distinct workflow IDs that have runs. Polls on the provider interval.
 
 #### `useRunActions()`
 
@@ -740,6 +766,7 @@ interface WorkflowRunsClient {
   listRuns(params: ListRunsParams): Promise<ListRunsResult>
   getRun(id: string): Promise<WorkflowRun>
   getStats(params?: { workflowId?: string }): Promise<WorkflowRunStats>
+  listWorkflowIds(): Promise<string[]>
   cancelRun(id: string): Promise<WorkflowRun>
   pauseRun(id: string): Promise<WorkflowRun>
   resumeRun(id: string): Promise<WorkflowRun>
@@ -762,7 +789,7 @@ Any non-2xx response throws an `Error` with the status code in its message. To b
 | `createPagesApiHandler(source)` | `/next` | Default export for a Pages Router catch-all. Takes the same `source` and starts the engine the same way. |
 | `createRouteHandlers(source)` | `/next` | `{ list, detail, cancel, pause, resume, fastForward, trigger }` for a `route.ts` per path, for example to wrap mutations in extra auth. Takes the same `source`. Each entry is the same path-based dispatcher, so each file must sit at the path it serves. |
 
-`engine` only needs the methods the API calls (`getRuns`, `getRun`, `getStats`, `cancelWorkflow`, `pauseWorkflow`, `resumeWorkflow`, `fastForwardWorkflow`, `triggerEvent`) and optionally `workflows`, which supplies `totalSteps`. A `WorkflowEngine` has all of them.
+`engine` only needs the methods the API calls (`getRuns`, `getRun`, `getStats`, `listWorkflowIds`, `cancelWorkflow`, `pauseWorkflow`, `resumeWorkflow`, `fastForwardWorkflow`, `triggerEvent`) and optionally `workflows`, which supplies `totalSteps`. A `WorkflowEngine` has all of them. `listWorkflowIds` on the engine is the union of registered workflow IDs and distinct IDs from runs.
 
 The adapters use Web `Request` / `Response` and send no CORS headers. Serve the dashboard and the API from the same origin, for example with a Vite dev-server proxy.
 
@@ -847,6 +874,7 @@ All paths are under `basePath` (default `/workflow-runs`). Responses are JSON.
 |-----------------|-------------|
 | `GET /` | `getRuns` (query: `starting_after`, `ending_before`, `limit` up to `100`, `workflow_id`, `statuses`, repeatable) |
 | `GET /stats` | `getStats` (query: `workflow_id`) |
+| `GET /workflows` | `listWorkflowIds` |
 | `GET /:id` | `getRun` |
 | `POST /:id/cancel` | `cancelWorkflow` |
 | `POST /:id/pause` | `pauseWorkflow` |

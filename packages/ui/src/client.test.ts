@@ -24,6 +24,22 @@ describe('createFetchClient', () => {
     expect(url.searchParams.getAll('statuses')).toEqual(['running']);
   });
 
+  it('loads workflow ids from GET {baseUrl}/workflows', async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(['billing', 'ingest']), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const client = createFetchClient({ baseUrl: '/api/wfr', fetch });
+    const ids = await client.listWorkflowIds();
+    expect(ids).toEqual(['billing', 'ingest']);
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/wfr/workflows',
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
   it('loads stats from GET {baseUrl}/stats', async () => {
     const fetch = vi.fn().mockResolvedValue(
       new Response(

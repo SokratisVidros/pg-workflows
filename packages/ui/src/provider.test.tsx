@@ -22,6 +22,7 @@ const stubClient: WorkflowRunsClient = {
     failed: 0,
     cancelled: 0,
   }),
+  listWorkflowIds: async () => [],
   cancelRun: async () => ({ id: 'x' }) as never,
   pauseRun: async () => ({ id: 'x' }) as never,
   resumeRun: async () => ({ id: 'x' }) as never,

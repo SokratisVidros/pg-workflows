@@ -64,6 +64,7 @@ If you call `startWorkflow` before `start()`, the engine calls `start(false)`: t
 | `getRuns({ resourceId?, workflowId?, statuses?, limit?, startingAfter?, endingBefore? })` | `{ items, nextCursor, prevCursor, hasMore, hasPrev }` | Lists runs, newest first. `limit` defaults to `20`. Pass `nextCursor` as `startingAfter` for the next page, and `prevCursor` as `endingBefore` for the previous one. |
 | `getWorkflowLastRun({ workflowId, resourceId? })` | `WorkflowRun \| null` | The most recently created run of any status. |
 | `getStats({ resourceId?, workflowId? })` | `WorkflowRunStats` | Run counts per status. |
+| `listWorkflowIds({ resourceId? })` | `string[]` | Registered workflow IDs, plus distinct workflow IDs that have runs. With `resourceId`, run IDs are limited to that resource. Registered workflows are always included. Sorted. |
 | `checkProgress({ runId, resourceId? })` | `WorkflowRunProgress` | The run plus `completedSteps`, `totalSteps`, and `completionPercentage`. Throws if the workflow is not registered on this engine. |
 
 Every method that takes `resourceId` also matches on it. See [Resource ID](/docs/concepts/resource-id-and-idempotency#resource-id).
@@ -87,6 +88,7 @@ The client has the same run and query methods as the engine, except `getWorkflow
 Differences from the engine:
 
 - **`checkProgress`** can't count a workflow's steps without the definition. It returns `totalSteps: 0` and `completionPercentage: 0` until the run completes, then `100`. `completedSteps` is accurate.
+- **`listWorkflowIds`** returns distinct workflow IDs from runs only. Registered workflows that have never run are omitted, because the client does not load definitions.
 - **`singleton`** must be set on the ref or in `startWorkflow` options, because the client can't read it from the definition. See [Singleton workflows](/docs/concepts/singleton-workflows).
 
 ## workflow()

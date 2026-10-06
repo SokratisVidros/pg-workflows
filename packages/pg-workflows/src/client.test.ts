@@ -230,4 +230,34 @@ describe('WorkflowClient', () => {
       expect(current.timeline).not.toHaveProperty('call-child.output');
     });
   });
+
+  describe('listWorkflowIds()', () => {
+    it('returns distinct workflow ids from runs for the resource', async () => {
+      await client.startWorkflow({
+        resourceId: 'client-wf-ids-a',
+        workflowId: 'billing',
+        input: {},
+      });
+      await client.startWorkflow({
+        resourceId: 'client-wf-ids-a',
+        workflowId: 'billing',
+        input: {},
+      });
+      await client.startWorkflow({
+        resourceId: 'client-wf-ids-a',
+        workflowId: 'ingest',
+        input: {},
+      });
+      await client.startWorkflow({
+        resourceId: 'client-wf-ids-b',
+        workflowId: 'other',
+        input: {},
+      });
+
+      expect(await client.listWorkflowIds({ resourceId: 'client-wf-ids-a' })).toEqual([
+        'billing',
+        'ingest',
+      ]);
+    });
+  });
 });
