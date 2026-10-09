@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## pg-workflows@0.17.0 - 2026-10-09
+
+### Added
+
+- Added `listWorkflowIds({ resourceId? })` on `WorkflowEngine` and `WorkflowClient`. The engine returns registered workflow IDs plus every workflow ID that has a run. The client returns distinct workflow IDs from runs.
+
+### Fixed
+
+- `typescript` is a runtime dependency again. The AST parser imports it at runtime, and keeping it as a devDependency made the bundler inline the compiler, growing `dist/index.js` from about 50 KB to 8.9 MB.
+
+[pg-workflows@0.17.0]: https://github.com/SokratisVidros/pg-workflows/compare/pg-workflows%400.16.0...pg-workflows%400.17.0
+
+## @pg-workflows/ui@0.2.0 - 2026-10-09
+
+### Added
+
+- Added `useWorkflowIds()` and `GET /workflows`. The dashboard workflow filter lists registered workflow IDs and every workflow ID that has a run, so the options are not limited to the current page.
+
+### Changed
+
+- Requires `pg-workflows` >= 0.17.0 for `listWorkflowIds`.
+
+[@pg-workflows/ui@0.2.0]: https://github.com/SokratisVidros/pg-workflows/compare/%40pg-workflows/ui%400.1.2...%40pg-workflows/ui%400.2.0
+
 ## @pg-workflows/otel@0.1.2 - 2026-10-06
 
 ### Fixed
