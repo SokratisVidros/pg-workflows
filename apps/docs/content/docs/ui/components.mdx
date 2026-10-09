@@ -131,6 +131,7 @@ import {
   StatusSummary,
   sortRuns,
   useRunFilters,
+  useWorkflowIds,
   useWorkflowRunStats,
   useWorkflowRuns,
   WorkflowRunsProvider,
@@ -159,6 +160,7 @@ function Runs({ live, onToggleLive }: { live: boolean; onToggleLive: () => void 
   const { filters, setFilters, clearFilters, hasActiveFilters, serverParams } = useRunFilters()
   const runs = useWorkflowRuns(serverParams)
   const stats = useWorkflowRunStats({ workflowId: filters.workflowId })
+  const workflowIds = useWorkflowIds()
   const [runId, setRunId] = useState<string | null>(null)
 
   const filter = (partial: Partial<RunFilters>) =>
@@ -182,7 +184,7 @@ function Runs({ live, onToggleLive }: { live: boolean; onToggleLive: () => void 
       <FilterBar
         filters={filters}
         hasActiveFilters={hasActiveFilters}
-        workflowIds={['nightly-report', 'order-fulfillment']}
+        workflowIds={workflowIds.data ?? []}
         onFiltersChange={filter}
         onClear={clearFilters}
       />

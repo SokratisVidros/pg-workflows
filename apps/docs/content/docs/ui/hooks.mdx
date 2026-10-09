@@ -114,6 +114,26 @@ export function RunControls({ runId }: { runId: string }) {
 
 After each successful action, the run and every runs list refetch.
 
+## `useWorkflowIds()`: workflow filter options
+
+The registered workflow IDs on the engine, plus every workflow ID that has a run. `<WorkflowRunsDashboard/>` uses this for the workflow filter, so the options are not limited to the current page.
+
+```tsx
+import { useWorkflowIds } from '@pg-workflows/ui'
+
+export function WorkflowOptions() {
+  const { data: workflowIds } = useWorkflowIds()
+
+  return (
+    <ul>
+      {workflowIds?.map((id) => (
+        <li key={id}>{id}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
 ## `useRunFilters()`: filter state
 
 Holds the filter, sort, and cursor state. Pass `serverParams` to `useWorkflowRuns`.

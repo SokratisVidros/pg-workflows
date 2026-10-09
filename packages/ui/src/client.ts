@@ -41,6 +41,7 @@ export interface WorkflowRunsClient {
   listRuns(params: ListRunsParams): Promise<ListRunsResult>;
   getRun(id: string): Promise<WorkflowRun>;
   getStats(params?: GetStatsParams): Promise<WorkflowRunStats>;
+  listWorkflowIds(): Promise<string[]>;
   cancelRun(id: string): Promise<WorkflowRun>;
   pauseRun(id: string): Promise<WorkflowRun>;
   resumeRun(id: string): Promise<WorkflowRun>;
@@ -86,6 +87,12 @@ export function createFetchClient(opts: CreateFetchClientOptions): WorkflowRunsC
       const res = await fetchImpl(target, { method: 'GET' });
       if (!res.ok) throw new Error(`getRun failed: ${res.status}`);
       return (await res.json()) as WorkflowRun;
+    },
+    async listWorkflowIds() {
+      const target = `${trimmed}/workflows`;
+      const res = await fetchImpl(target, { method: 'GET' });
+      if (!res.ok) throw new Error(`listWorkflowIds failed: ${res.status}`);
+      return (await res.json()) as string[];
     },
     async getStats(params = {}) {
       const url = new URL(`${trimmed}/stats`, 'http://internal');

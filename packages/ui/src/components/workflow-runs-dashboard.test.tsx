@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkflowRun, WorkflowRunsClient } from '../client';
 import { WorkflowRunsDashboard } from './workflow-runs-dashboard';
@@ -34,6 +35,7 @@ function makeClient(): WorkflowRunsClient {
     }),
     getRun: vi.fn().mockResolvedValue(mkRun()),
     getStats: vi.fn().mockResolvedValue(stats),
+    listWorkflowIds: vi.fn().mockResolvedValue(['billing', 'email', 'ingest']),
     cancelRun: vi.fn(),
     pauseRun: vi.fn(),
     resumeRun: vi.fn(),
@@ -87,6 +89,7 @@ describe('WorkflowRunsDashboard', () => {
       }),
       getRun: vi.fn().mockResolvedValue(mkRun()),
       getStats: vi.fn().mockResolvedValue(stats),
+      listWorkflowIds: vi.fn().mockResolvedValue([]),
       cancelRun: vi.fn(),
       pauseRun: vi.fn(),
       resumeRun: vi.fn(),
@@ -122,6 +125,7 @@ describe('WorkflowRunsDashboard', () => {
       listRuns: vi.fn().mockRejectedValue(new Error('boom')),
       getRun: vi.fn().mockResolvedValue(mkRun()),
       getStats: vi.fn().mockResolvedValue(stats),
+      listWorkflowIds: vi.fn().mockResolvedValue([]),
       cancelRun: vi.fn(),
       pauseRun: vi.fn(),
       resumeRun: vi.fn(),
@@ -145,6 +149,23 @@ describe('WorkflowRunsDashboard', () => {
     const summary = screen.getByRole('button', { name: /1\s*running/i });
     expect(live.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(container.querySelector('.pgw-filters')?.contains(live)).toBe(false);
+  });
+
+  it('offers workflow ids from listWorkflowIds, including ones absent from the current page', async () => {
+    const client = makeClient();
+    render(<WorkflowRunsDashboard client={client} pollIntervalMs={0} />);
+    await waitFor(() => expect(screen.getByText('ingest')).toBeInTheDocument());
+
+    const [workflowFilter] = screen.getAllByRole('combobox');
+    expect(workflowFilter).toHaveTextContent('All workflows');
+    await userEvent.click(workflowFilter);
+    expect(await screen.findByRole('option', { name: 'billing' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('option', { name: 'billing' }));
+
+    await waitFor(() => {
+      const last = (client.listRuns as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+      expect(last).toMatchObject({ workflowId: 'billing' });
+    });
   });
 
   it('fetches the runs page once and loads status counts via getStats', async () => {

@@ -3339,6 +3339,64 @@ describe('WorkflowEngine', () => {
     });
   });
 
+  describe('listWorkflowIds()', () => {
+    let engine: WorkflowEngine;
+
+    beforeEach(async () => {
+      engine = new WorkflowEngine({
+        workflows: [testWorkflow],
+        pool: testPool,
+        boss: testBoss,
+      });
+      await engine.start(false);
+    });
+
+    afterEach(async () => {
+      await engine.stop();
+    });
+
+    it('returns registered workflow ids unioned with ids that have runs for the resource', async () => {
+      const retired = workflow('retired-sync', async ({ step }) => {
+        await step.run('step-1', async () => 'ok');
+      });
+      const neverRun = workflow('never-run', async ({ step }) => {
+        await step.run('step-1', async () => 'ok');
+      });
+      const otherTenantOnly = workflow('other-tenant-only', async ({ step }) => {
+        await step.run('step-1', async () => 'ok');
+      });
+
+      await engine.registerWorkflow(retired);
+      await engine.registerWorkflow(neverRun);
+      await engine.registerWorkflow(otherTenantOnly);
+
+      await engine.startWorkflow({
+        resourceId: 'wf-ids-a',
+        workflowId: 'retired-sync',
+        input: {},
+      });
+      await engine.startWorkflow({
+        resourceId: 'wf-ids-a',
+        workflowId: 'test-workflow',
+        input: { data: 'keep' },
+      });
+      await engine.startWorkflow({
+        resourceId: 'wf-ids-b',
+        workflowId: 'other-tenant-only',
+        input: {},
+      });
+
+      await engine.unregisterWorkflow('retired-sync');
+      await engine.unregisterWorkflow('other-tenant-only');
+
+      expect(await engine.listWorkflowIds({ resourceId: 'wf-ids-a' })).toEqual([
+        'never-run',
+        'retired-sync',
+        'test-workflow',
+      ]);
+    });
+  });
+
   describe('getStats()', () => {
     let engine: WorkflowEngine;
 

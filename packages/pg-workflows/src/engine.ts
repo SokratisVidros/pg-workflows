@@ -15,6 +15,7 @@ import {
 import { runMigrations } from './db/migration';
 import {
   assertSingletonSlotAvailable,
+  getWorkflowIds,
   getWorkflowLastRun,
   getWorkflowRun,
   getWorkflowRunStats,
@@ -2137,6 +2138,14 @@ export class WorkflowEngine {
       },
       this.db,
     );
+  }
+
+  async listWorkflowIds({ resourceId }: { resourceId?: string } = {}): Promise<string[]> {
+    validateResourceId(resourceId);
+
+    const fromRuns = await getWorkflowIds({ resourceId }, this.db);
+    const ids = new Set<string>([...this.workflows.keys(), ...fromRuns]);
+    return [...ids].sort((a, b) => a.localeCompare(b));
   }
 
   async getStats({

@@ -20,6 +20,7 @@ function makeClient(run: Partial<WorkflowRun>): WorkflowRunsClient {
     listRuns: vi.fn(),
     getRun: vi.fn().mockResolvedValue(full),
     getStats: vi.fn(),
+    listWorkflowIds: vi.fn().mockResolvedValue([]),
     cancelRun: vi.fn().mockResolvedValue(full),
     pauseRun: vi.fn().mockResolvedValue(full),
     resumeRun: vi.fn().mockResolvedValue(full),

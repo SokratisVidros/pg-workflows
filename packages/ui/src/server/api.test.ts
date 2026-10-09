@@ -186,6 +186,21 @@ describe('createWorkflowRunsApi — fetch dispatcher', () => {
     expect(engine.getRun).toHaveBeenCalledWith({ runId: 'run_1', resourceId: undefined });
   });
 
+  it('routes GET /workflow-runs/workflows to listWorkflowIds', async () => {
+    const engine = mockEngine({
+      listWorkflowIds: vi.fn().mockResolvedValue(['billing', 'ingest']),
+    });
+    const api = createWorkflowRunsApi({
+      engine,
+      resolveContext: () => ({ resourceId: 'tenant_a' }),
+    });
+    const res = await api.fetch(new Request('http://x/workflow-runs/workflows'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(['billing', 'ingest']);
+    expect(engine.listWorkflowIds).toHaveBeenCalledWith({ resourceId: 'tenant_a' });
+    expect(engine.getRun).not.toHaveBeenCalled();
+  });
+
   it('routes GET /workflow-runs/stats to getStats', async () => {
     const engine = mockEngine();
     const api = createWorkflowRunsApi({ engine });

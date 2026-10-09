@@ -115,7 +115,7 @@ Renders one button per status with a count above zero. When every count is `0`, 
 |------|------|-------------|
 | `filters` | `RunFilters` | Current filters, from `useRunFilters`. |
 | `hasActiveFilters` | `boolean` | Enables the Clear control. |
-| `workflowIds` | `string[]` | Options for the workflow filter. |
+| `workflowIds` | `string[]` | Options for the workflow filter. `<WorkflowRunsDashboard/>` fills this from [`useWorkflowIds()`](/docs/ui/hooks#useworkflowids-workflow-filter-options). |
 | `onFiltersChange` | `(partial: Partial<RunFilters>) => void` | Called with the changed fields. Reset `startingAfter` and `endingBefore` here, or the next request stays on a cursor from the previous filter. |
 | `onClear` | `() => void` | Called by the Clear control. |
 
@@ -280,6 +280,7 @@ interface WorkflowRunsClient {
   listRuns(params: ListRunsParams): Promise<ListRunsResult>
   getRun(id: string): Promise<WorkflowRun>
   getStats(params?: { workflowId?: string }): Promise<WorkflowRunStats>
+  listWorkflowIds(): Promise<string[]>
   cancelRun(id: string): Promise<WorkflowRun>
   pauseRun(id: string): Promise<WorkflowRun>
   resumeRun(id: string): Promise<WorkflowRun>
@@ -302,7 +303,7 @@ Any non-2xx response throws an `Error` with the status code in its message. To b
 | `createPagesApiHandler(source)` | `/next` | Default export for a Pages Router catch-all. Takes the same `source` and starts the engine the same way. |
 | `createRouteHandlers(source)` | `/next` | `{ list, detail, cancel, pause, resume, fastForward, trigger }` for a `route.ts` per path, for example to wrap mutations in extra auth. Takes the same `source`. Each entry is the same path-based dispatcher, so each file must sit at the path it serves. |
 
-`engine` only needs the methods the API calls (`getRuns`, `getRun`, `getStats`, `cancelWorkflow`, `pauseWorkflow`, `resumeWorkflow`, `fastForwardWorkflow`, `triggerEvent`) and optionally `workflows`, which supplies `totalSteps`. A `WorkflowEngine` has all of them.
+`engine` only needs the methods the API calls (`getRuns`, `getRun`, `getStats`, `listWorkflowIds`, `cancelWorkflow`, `pauseWorkflow`, `resumeWorkflow`, `fastForwardWorkflow`, `triggerEvent`) and optionally `workflows`, which supplies `totalSteps`. A `WorkflowEngine` has all of them. `listWorkflowIds` on the engine is the union of registered workflow IDs and distinct IDs from runs.
 
 The adapters use Web `Request` / `Response` and send no CORS headers. Serve the dashboard and the API from the same origin, for example with a Vite dev-server proxy.
 
@@ -387,6 +388,7 @@ All paths are under `basePath` (default `/workflow-runs`). Responses are JSON.
 |-----------------|-------------|
 | `GET /` | `getRuns` (query: `starting_after`, `ending_before`, `limit` up to `100`, `workflow_id`, `statuses`, repeatable) |
 | `GET /stats` | `getStats` (query: `workflow_id`) |
+| `GET /workflows` | `listWorkflowIds` |
 | `GET /:id` | `getRun` |
 | `POST /:id/cancel` | `cancelWorkflow` |
 | `POST /:id/pause` | `pauseWorkflow` |
