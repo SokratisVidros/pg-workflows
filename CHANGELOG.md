@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## @pg-workflows/ui@0.2.1 - 2026-10-10
+
+### Fixed
+
+- npm refused to publish 0.2.0 because that version was already staged (`Cannot publish over previously staged version`). 0.2.1 ships the same package.
+
+[@pg-workflows/ui@0.2.1]: https://github.com/SokratisVidros/pg-workflows/compare/%40pg-workflows/ui%400.2.0...%40pg-workflows/ui%400.2.1
+
 ## pg-workflows@0.17.0 - 2026-10-09
 
 ### Added
