@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## pg-workflows@0.17.2 - 2026-10-18
+
+### Fixed
+
+- npm refused to publish 0.17.1 because that version was already staged (`Cannot publish over previously staged version`). 0.17.2 ships the same package.
+
+[pg-workflows@0.17.2]: https://github.com/SokratisVidros/pg-workflows/compare/pg-workflows%400.17.1...pg-workflows%400.17.2
+
 ## pg-workflows@0.17.1 - 2026-10-18
 
 ### Fixed
