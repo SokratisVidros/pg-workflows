@@ -1,7 +1,7 @@
 {
   "name": "pg-workflows",
   "description": "The simplest Postgres workflow engine for TypeScript - durable execution, event-driven orchestration, and automatic retries powered entirely by PostgreSQL",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "type": "module",
   "files": [
     "dist",
@@ -42,7 +42,9 @@
     "test:watch": "vitest watch --config vitest.unit.config.ts",
     "check-types": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "prepublishOnly": "node ../../scripts/assert-bun-publish.mjs && bun run clean && bun run build"
+    "prepublishOnly": "node ../../scripts/assert-bun-publish.mjs && bun run clean && bun run build",
+    "prepack": "node ../../scripts/package-readme.mjs materialize",
+    "postpack": "node ../../scripts/package-readme.mjs restore"
   },
   "keywords": [
     "postgres-workflow",
@@ -71,7 +73,7 @@
   "bugs": {
     "url": "https://github.com/SokratisVidros/pg-workflows/issues"
   },
-  "homepage": "https://github.com/SokratisVidros/pg-workflows#readme",
+  "homepage": "https://pgworkflows.dev/",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"

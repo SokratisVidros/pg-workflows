@@ -193,8 +193,8 @@ Full docs are at **[pgworkflows.dev](https://pgworkflows.dev)**.
 | Package | Purpose |
 |---------|---------|
 | [`pg-workflows`](https://www.npmjs.com/package/pg-workflows) | The engine and client |
-| [`@pg-workflows/otel`](packages/otel/README.md) | OpenTelemetry spans for workflow runs and steps |
-| [`@pg-workflows/ui`](packages/ui/README.md) | React dashboard, components, and hooks. Try it with `npx @pg-workflows/ui` |
+| [`@pg-workflows/otel`](https://github.com/SokratisVidros/pg-workflows/blob/main/packages/otel/README.md) | OpenTelemetry spans for workflow runs and steps |
+| [`@pg-workflows/ui`](https://github.com/SokratisVidros/pg-workflows/blob/main/packages/ui/README.md) | React dashboard, components, and hooks. Try it with `npx @pg-workflows/ui` |
 
 Runnable scripts live in [`examples/`](https://github.com/SokratisVidros/pg-workflows/tree/main/examples).
 

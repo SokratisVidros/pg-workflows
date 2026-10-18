@@ -1,6 +1,6 @@
 {
   "name": "@pg-workflows/ui",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "React UI for pg-workflows: browse runs and inspect step timelines.",
   "keywords": [
     "pg-workflows",
@@ -99,7 +99,7 @@
   "bugs": {
     "url": "https://github.com/SokratisVidros/pg-workflows/issues"
   },
-  "homepage": "https://github.com/SokratisVidros/pg-workflows/tree/main/packages/ui#readme",
+  "homepage": "https://pgworkflows.dev/",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"

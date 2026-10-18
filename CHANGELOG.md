@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## pg-workflows@0.17.1 - 2026-10-18
+
+### Fixed
+
+- The published package includes the README. bun pack was skipping the symlink to the repo README, so the npm page had no readme.
+
+### Documentation
+
+- Homepage is [pgworkflows.dev](https://pgworkflows.dev/).
+
+[pg-workflows@0.17.1]: https://github.com/SokratisVidros/pg-workflows/compare/pg-workflows%400.17.0...pg-workflows%400.17.1
+
+## @pg-workflows/otel@0.1.3 - 2026-10-18
+
+### Documentation
+
+- Homepage is [pgworkflows.dev](https://pgworkflows.dev/).
+
+[@pg-workflows/otel@0.1.3]: https://github.com/SokratisVidros/pg-workflows/compare/%40pg-workflows/otel%400.1.2...%40pg-workflows/otel%400.1.3
+
+## @pg-workflows/ui@0.2.2 - 2026-10-18
+
+### Documentation
+
+- Homepage is [pgworkflows.dev](https://pgworkflows.dev/).
+
+[@pg-workflows/ui@0.2.2]: https://github.com/SokratisVidros/pg-workflows/compare/%40pg-workflows/ui%400.2.1...%40pg-workflows/ui%400.2.2
+
 ## @pg-workflows/ui@0.2.1 - 2026-10-10
 
 ### Fixed
