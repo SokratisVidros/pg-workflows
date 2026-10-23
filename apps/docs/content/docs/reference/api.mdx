@@ -103,7 +103,7 @@ const definition = workflow(id, handler, options)
 |-----------|------|-------------|
 | `id` | `string` | Unique workflow ID, up to 256 characters. |
 | `handler` | `(context: WorkflowContext) => Promise<unknown>` | The workflow body. Its return value becomes `run.output`. |
-| `options` | `WorkflowOptions` | `inputSchema`, `retries`, `timeout`, `priority`, `singleton`, `schedule`, `timezone`. See the [options table](/docs/concepts/workflows). |
+| `options` | `WorkflowOptions` | `inputSchema`, `retries`, `timeout`, `priority`, `singleton`, `schedule`, `timezone`, `onFailure`. See the [options table](/docs/concepts/workflows). |
 
 ### workflow.use(plugin)
 
@@ -258,6 +258,10 @@ enum WorkflowStatus {
 ### WorkflowPriority
 
 `'high' | 'normal' | 'low' | number`. Named levels map to `100`, `0`, and `-100`.
+
+### WorkflowFailureContext
+
+The object passed to a workflow's [`onFailure`](/docs/concepts/retries-and-timeouts#run-code-when-a-run-fails) hook: `input`, `workflowId`, `runId`, `resourceId`, and `error`, the last attempt's error.
 
 ### WorkflowLogger
 

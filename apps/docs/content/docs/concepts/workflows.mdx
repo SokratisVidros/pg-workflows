@@ -35,6 +35,7 @@ export const sendInvoice = workflow(
 | `singleton` | `boolean` | `false` | At most one pending or running run. See [Singleton workflows](/docs/concepts/singleton-workflows). |
 | `schedule` | cron string, duration string, or duration object | none | Starts runs on a recurring schedule. See [Recurring schedules](/docs/concepts/recurring-schedules). |
 | `timezone` | IANA zone | `'UTC'` | Time zone for cron schedules. |
+| `onFailure` | `(context) => Promise<void>` | none | Runs when the last attempt fails, before the run is `failed`. See [Retries and timeouts](/docs/concepts/retries-and-timeouts#run-code-when-a-run-fails). |
 
 The handler receives `input`, `step`, `runId`, `workflowId`, `resourceId`, `attempt` (zero-based retry count), `timeline`, `logger`, and `schedule`. The full type is in the [API reference](/docs/reference/api#workflowcontext).
 

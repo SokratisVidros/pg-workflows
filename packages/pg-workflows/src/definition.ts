@@ -35,6 +35,7 @@ export function createWorkflowRef<
     singleton: defineOptions?.singleton ?? options?.singleton,
     schedule: defineOptions?.schedule,
     timezone: defineOptions?.timezone,
+    onFailure: defineOptions?.onFailure,
   })) as WorkflowRef<TInput, TOutput>;
 
   Object.defineProperty(ref, 'id', { value: id, enumerable: true });
@@ -64,6 +65,7 @@ function createWorkflowFactory<TStepExt extends object = object>(
       singleton,
       schedule,
       timezone,
+      onFailure,
     }: WorkflowOptions<I> = {},
   ): WorkflowDefinition<I> => ({
     id,
@@ -78,6 +80,7 @@ function createWorkflowFactory<TStepExt extends object = object>(
     schedule,
     timezone,
     plugins: plugins.length > 0 ? (plugins as WorkflowPlugin[]) : undefined,
+    onFailure,
   })) as WorkflowFactory<TStepExt>;
 
   factory.use = <TNewExt>(

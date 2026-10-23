@@ -18,6 +18,7 @@ export type {
   StepBaseContext,
   WorkflowContext,
   WorkflowDefinition,
+  WorkflowFailureContext,
   WorkflowLogger,
   WorkflowOptions,
   WorkflowPlugin,

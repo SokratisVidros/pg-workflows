@@ -134,6 +134,8 @@ const retrySendOptions = (maxRetries: number) => ({
   retryDelay: 1,
 });
 
+const deadLetterQueueOptions = retrySendOptions(3);
+
 const getInvokeChildWorkflowEventName = (childRunId: string) =>
   `__invoke_child_workflow_completed:${childRunId}`;
 
@@ -223,10 +225,11 @@ export class WorkflowEngine {
       deadLetter: WORKFLOW_RUN_DLQ_QUEUE_NAME,
       heartbeatSeconds,
     };
-    await this.boss.createQueue(WORKFLOW_RUN_DLQ_QUEUE_NAME, { retryLimit: 0 });
+    await this.boss.createQueue(WORKFLOW_RUN_DLQ_QUEUE_NAME, deadLetterQueueOptions);
     await this.boss.createQueue(WORKFLOW_RUN_QUEUE_NAME, mainQueueOptions);
     // createQueue is a no-op for existing queues; updateQueue ensures
     // installations that predate the DLQ adopt these settings on next start.
+    await this.boss.updateQueue(WORKFLOW_RUN_DLQ_QUEUE_NAME, deadLetterQueueOptions);
     await this.boss.updateQueue(WORKFLOW_RUN_QUEUE_NAME, mainQueueOptions);
 
     const numWorkers: number = +(process.env.WORKFLOW_RUN_WORKERS ?? 3);
@@ -250,10 +253,10 @@ export class WorkflowEngine {
         ),
       );
 
-      await this.boss.work<WorkflowRunJobParameters>(
+      await this.boss.work(
         WORKFLOW_RUN_DLQ_QUEUE_NAME,
-        { pollingIntervalSeconds: 0.5, batchSize: 1 },
-        (jobs) => this.handleWorkflowRunDlq(jobs),
+        { pollingIntervalSeconds: 0.5, batchSize: 1, includeMetadata: true as const },
+        (jobs: JobWithMetadata<WorkflowRunJobParameters>[]) => this.handleWorkflowRunDlq(jobs),
       );
       this.logger.log(`Worker started for queue ${WORKFLOW_RUN_DLQ_QUEUE_NAME}`);
     }
@@ -1258,19 +1261,40 @@ export class WorkflowEngine {
    * we mark it FAILED with whatever error message the catch block last
    * persisted, falling back to a worker-death message.
    */
-  private async handleWorkflowRunDlq([job]: { data?: WorkflowRunJobParameters }[]) {
+  private async handleWorkflowRunDlq([job]: JobWithMetadata<WorkflowRunJobParameters>[]) {
     const { runId } = job?.data ?? {};
-    if (!runId) return;
+    if (!job || !runId) return;
 
     const run = await getWorkflowRun({ runId }, { db: this.db });
     if (!run || run.status !== WorkflowStatus.RUNNING) return;
+
+    const error = run.error ?? 'Workflow run worker died or job expired before completion';
+    const onFailure = this.workflows.get(run.workflowId)?.onFailure;
+    if (onFailure) {
+      try {
+        await onFailure({
+          input: run.input,
+          workflowId: run.workflowId,
+          runId,
+          resourceId: run.resourceId ?? undefined,
+          error,
+        });
+      } catch (hookError) {
+        if (job.retryCount < job.retryLimit) throw hookError;
+        this.logger.error(
+          'onFailure hook failed, marking the run as failed',
+          hookError instanceof Error ? hookError : new Error(String(hookError)),
+          { runId, workflowId: run.workflowId },
+        );
+      }
+    }
 
     const failedRun = await this.updateRun({
       runId,
       resourceId: run.resourceId ?? undefined,
       data: {
         status: WorkflowStatus.FAILED,
-        error: run.error ?? 'Workflow run worker died or job expired before completion',
+        error,
       },
     });
     await this.notifyParentOfChildTerminalRun(failedRun);

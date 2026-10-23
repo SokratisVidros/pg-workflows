@@ -61,6 +61,15 @@ export type WorkflowOptions<I extends InputParameters> = {
   schedule?: Schedule;
   /** IANA timezone for cron expressions. Defaults to UTC. Ignored for duration-based schedules. */
   timezone?: string;
+  onFailure?: (context: WorkflowFailureContext<I>) => Promise<void>;
+};
+
+export type WorkflowFailureContext<TInput extends InputParameters = InputParameters> = {
+  input: InferInputParameters<TInput>;
+  workflowId: string;
+  runId: string;
+  resourceId?: string;
+  error: string;
 };
 
 /** Metadata about a scheduled fire, exposed on `ctx.schedule` for runs triggered by a schedule. */
@@ -166,6 +175,7 @@ export type WorkflowDefinition<TInput extends InputParameters = InputParameters>
   schedule?: Schedule;
   timezone?: string;
   plugins?: WorkflowPlugin[];
+  onFailure?(context: WorkflowFailureContext): Promise<void>;
 };
 
 export type StepInternalDefinition = {
