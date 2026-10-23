@@ -52,6 +52,7 @@ const user = await step.run('create-user', async () => {
 
 - **IDs must be unique within a workflow.** In loops, build the ID from the item: `` step.run(`charge-$\{order.id\}`, ...) ``.
 - **Return JSON-serializable values.** Results are stored as `jsonb`. A `Date` comes back as an ISO string when the step is replayed, and class instances lose their prototype. Return plain objects, and use `toISOString()` for dates.
+- **Pass `{ input }` to show what a step works on.** `step.run('fetch-page', fn, { input: { url } })` saves the input on the step's timeline entry, and the dashboard shows it as the step's input. Without it the dashboard shows the previous step's output there. The input must be JSON-serializable and does not change what the step does.
 - **A step can run more than once if the process crashes mid-step**, before its result is saved. Make external side effects idempotent, for example by passing an idempotency key to your payment provider.
 
 ## How a run executes

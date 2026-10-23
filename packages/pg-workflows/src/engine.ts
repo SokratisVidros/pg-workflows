@@ -41,6 +41,7 @@ import {
   type InputParameters,
   type StartWorkflowOptions,
   type StepBaseContext,
+  type StepRunOptions,
   StepType,
   type WorkflowContext,
   type WorkflowDefinition,
@@ -1283,8 +1284,8 @@ export class WorkflowEngine {
 
   private createBaseStep(run: WorkflowRun, workflowId: string, runId: string): StepBaseContext {
     return {
-      run: async <T>(stepId: string, handler: () => Promise<T>) => {
-        return this.runStep({ stepId, run, handler }) as Promise<T>;
+      run: async <T>(stepId: string, handler: () => Promise<T>, options?: StepRunOptions) => {
+        return this.runStep({ stepId, run, handler, input: options?.input }) as Promise<T>;
       },
       waitFor: async <T extends InputParameters>(
         stepId: string,
@@ -1706,10 +1707,12 @@ export class WorkflowEngine {
     stepId,
     run,
     handler,
+    input,
   }: {
     stepId: string;
     run: WorkflowRun;
     handler: () => Promise<unknown>;
+    input?: unknown;
   }) {
     return withPostgresTransaction(
       this.db,
@@ -1770,6 +1773,7 @@ export class WorkflowEngine {
               data: {
                 timeline: merge(persistedRun.timeline, {
                   [stepId]: {
+                    ...(input === undefined ? {} : { input }),
                     output,
                     timestamp: new Date(),
                   },
