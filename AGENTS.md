@@ -242,12 +242,15 @@ const tracedWorkflow = workflow.use(otelPlugin({
 
 ### Step Types (available on `context.step`)
 
-#### `step.run(stepId, handler)` - Execute a durable step
+#### `step.run(stepId, handler, options?)` - Execute a durable step
 ```typescript
 const result = await step.run('step-name', async () => {
   // Runs exactly once; result is persisted in PostgreSQL
   return { data: 'value' };
 });
+
+// Optional input: saved on the timeline entry and shown as the step's input in the dashboard
+await step.run('fetch-page', async () => fetchPage(url), { input: { url } });
 ```
 
 #### `step.waitFor(stepId, { eventName, timeout?, schema? })` - Wait for external event

@@ -189,7 +189,7 @@ The object passed to a handler.
 
 | Method | Returns | Guide |
 |--------|---------|-------|
-| `step.run(stepId, fn)` | `Promise<T>` | [Steps](/docs/concepts/workflows#steps) |
+| `step.run(stepId, fn, options?)` | `Promise<T>` | [Steps](/docs/concepts/workflows#steps). `options.input` is shown as the step's input in the dashboard |
 | `step.waitFor(stepId, { eventName, schema? })` | `Promise<T>` | [Events](/docs/concepts/events) |
 | `step.waitFor(stepId, { eventName, timeout, schema? })` | `Promise<T \| undefined>` | [Events](/docs/concepts/events) |
 | `step.waitUntil(stepId, date \| isoString \| { date })` | `Promise<void>` | [Timers](/docs/concepts/timers) |

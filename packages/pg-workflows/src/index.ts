@@ -16,6 +16,7 @@ export type {
   ScheduleContext,
   StartWorkflowOptions,
   StepBaseContext,
+  StepRunOptions,
   WorkflowContext,
   WorkflowDefinition,
   WorkflowLogger,

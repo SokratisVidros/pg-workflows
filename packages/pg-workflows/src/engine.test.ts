@@ -567,6 +567,27 @@ describe('WorkflowEngine', () => {
       });
     });
 
+    it('saves a step input on its timeline entry, and none when none is given', async () => {
+      const inputWorkflow = workflow('step-input-workflow', async ({ step }) => {
+        await step.run('with-input', async () => 'done', { input: { page: 3 } });
+        return step.run('without-input', async () => 'done');
+      });
+      await engine.registerWorkflow(inputWorkflow);
+
+      const run = await engine.startWorkflow({
+        resourceId,
+        workflowId: 'step-input-workflow',
+        input: {},
+      });
+      await expect
+        .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status)
+        .toBe(WorkflowStatus.COMPLETED);
+
+      const { timeline } = await engine.getRun({ runId: run.id, resourceId });
+      expect(timeline['with-input']).toMatchObject({ input: { page: 3 }, output: 'done' });
+      expect(timeline['without-input']).not.toHaveProperty('input');
+    });
+
     it('should start and complete without resourceId', async () => {
       const run = await engine.startWorkflow({
         workflowId: 'test-workflow',

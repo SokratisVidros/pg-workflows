@@ -69,8 +69,14 @@ export type ScheduleContext = {
   timestamp: Date;
 };
 
+/** Options for `step.run`. */
+export type StepRunOptions = {
+  /** Saved on the step's timeline entry and shown as the step's input in the dashboard; must be JSON-serializable. */
+  input?: unknown;
+};
+
 export type StepBaseContext = {
-  run: <T>(stepId: string, handler: () => Promise<T>) => Promise<T>;
+  run: <T>(stepId: string, handler: () => Promise<T>, options?: StepRunOptions) => Promise<T>;
   waitFor: {
     <T extends InputParameters>(
       stepId: string,
