@@ -423,6 +423,10 @@ describe('WorkflowEngine Integration (real PostgreSQL)', () => {
       expect(queue?.retryLimit).toBe(0);
       expect(queue?.deadLetter).toBe(WORKFLOW_RUN_DLQ_QUEUE_NAME);
       expect(queue?.heartbeatSeconds).toBe(30);
+
+      const deadLetterQueue = await boss.getQueue(WORKFLOW_RUN_DLQ_QUEUE_NAME);
+      expect(deadLetterQueue?.retryLimit).toBe(3);
+      expect(deadLetterQueue?.retryBackoff).toBe(true);
     });
 
     it('should route a real failed job to the DLQ via pg-boss when handler re-throws', async () => {

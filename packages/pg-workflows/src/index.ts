@@ -19,6 +19,7 @@ export type {
   StepRunOptions,
   WorkflowContext,
   WorkflowDefinition,
+  WorkflowFailureContext,
   WorkflowLogger,
   WorkflowOptions,
   WorkflowPlugin,

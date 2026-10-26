@@ -97,6 +97,7 @@ const myWorkflow = workflow(
     singleton: true,                           // optional, one pending/running run per workflow ID
     schedule: '*/5 * * * *',                   // optional, recurring schedule (cron or duration)
     timezone: 'America/New_York',              // optional, only meaningful for cron (default: UTC)
+    onFailure: async ({ input, error }) => {}, // optional, runs when the last attempt fails
   }
 );
 ```

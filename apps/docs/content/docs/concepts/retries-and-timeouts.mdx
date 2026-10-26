@@ -26,6 +26,28 @@ const syncCustomer = workflow(
 
 Override `retries` for a single run with `startWorkflow({ options: { retries } })`.
 
+## Run code when a run fails
+
+`onFailure` runs when the last attempt fails, before the run's status is `failed`. It also runs when the last attempt's worker died or its job expired, so no code of the handler could run. Use it to save the failure in your own tables.
+
+```typescript
+const importFile = workflow(
+  'import-file',
+  async ({ step, input }) => {
+    return step.run('import', async () => importRows(input.fileId))
+  },
+  {
+    inputSchema: z.object({ fileId: z.string() }),
+    retries: 3,
+    onFailure: async ({ input, error }) => {
+      await markImportFailed(input.fileId, error)
+    },
+  },
+)
+```
+
+The hook receives `input`, `workflowId`, `runId`, `resourceId`, and `error`, the last attempt's error. If the hook throws, it's retried up to 3 times with backoff. After that, the run is marked `failed` without the hook. A retried hook can run more than once, so make it safe to repeat.
+
 `timeout` (milliseconds, on the workflow or in `startWorkflow` options) is saved on the run as `timeoutAt`. The engine does not currently fail a run that passes `timeoutAt`. To bound a wait, use the `timeout` option of `step.waitFor` or `step.poll`.
 
 A single execution of the handler is also bounded by the job expiry, `WORKFLOW_RUN_EXPIRE_IN_SECONDS` (default 300). Split work that takes longer into several steps. See [Configuration](/docs/reference/configuration#environment-variables).

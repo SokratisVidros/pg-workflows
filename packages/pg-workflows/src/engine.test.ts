@@ -10,7 +10,7 @@ import { WorkflowEngine } from './engine';
 import { WorkflowEngineError, WorkflowRunInProgressError, WorkflowRunNotFoundError } from './error';
 import { getBoss } from './tests/pgboss';
 import { closeTestDatabase, createTestDatabase } from './tests/test-db';
-import type { StepBaseContext, WorkflowPlugin } from './types';
+import type { StepBaseContext, WorkflowFailureContext, WorkflowPlugin } from './types';
 import { WorkflowStatus } from './types';
 
 let testBoss: PgBoss;
@@ -2647,6 +2647,127 @@ describe('WorkflowEngine', () => {
         const completed = await engine.getRun({ runId: completedRunId, resourceId });
         expect(completed.status).toBe(WorkflowStatus.COMPLETED);
         expect(completed.retryCount).toBe(0);
+      });
+
+      it('should call onFailure after the last attempt fails, before marking the run failed', async () => {
+        const statusesInHook: WorkflowStatus[] = [];
+        const onFailure = vi.fn(async ({ runId }: WorkflowFailureContext) => {
+          statusesInHook.push((await engine.getRun({ runId, resourceId })).status);
+        });
+        await engine.registerWorkflow(
+          workflow(
+            'on-failure-workflow',
+            async ({ step }) => {
+              await step.run('step-1', async () => {
+                throw new Error('always fails');
+              });
+            },
+            { inputSchema: z.object({ data: z.string() }), retries: 1, onFailure },
+          ),
+        );
+
+        const run = await engine.startWorkflow({
+          resourceId,
+          workflowId: 'on-failure-workflow',
+          input: { data: 'import' },
+        });
+
+        await expect
+          .poll(async () => (await engine.getRun({ runId: run.id, resourceId })).status, {
+            timeout: 10000,
+          })
+          .toBe(WorkflowStatus.FAILED);
+
+        expect(onFailure).toHaveBeenCalledOnce();
+        expect(onFailure).toHaveBeenCalledWith({
+          input: { data: 'import' },
+          workflowId: 'on-failure-workflow',
+          runId: run.id,
+          resourceId,
+          error: 'always fails',
+        });
+        expect(statusesInHook).toEqual([WorkflowStatus.RUNNING]);
+      });
+
+      it('should call onFailure for a run whose worker died', async () => {
+        const onFailure = vi.fn(async () => {});
+        await engine.registerWorkflow(
+          workflow.ref('died-workflow')(
+            async ({ step }) => {
+              await step.run('step-1', async () => 'never runs');
+            },
+            { onFailure },
+          ),
+        );
+        const runId = await insertStuckRun({
+          workflowId: 'died-workflow',
+          retryCount: 2,
+          maxRetries: 2,
+          status: WorkflowStatus.RUNNING,
+        });
+
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, { runId });
+
+        await expect
+          .poll(async () => (await engine.getRun({ runId, resourceId })).status, {
+            timeout: 5000,
+          })
+          .toBe(WorkflowStatus.FAILED);
+
+        expect(onFailure).toHaveBeenCalledWith({
+          input: { data: 'stuck' },
+          workflowId: 'died-workflow',
+          runId,
+          resourceId,
+          error: 'Workflow run worker died or job expired before completion',
+        });
+      });
+
+      it('should retry an onFailure hook that throws', async () => {
+        const onFailure = vi
+          .fn()
+          .mockRejectedValueOnce(new Error('database unavailable'))
+          .mockResolvedValue(undefined);
+        await engine.registerWorkflow(
+          workflow('retried-hook-workflow', async () => {}, { onFailure }),
+        );
+        const runId = await insertStuckRun({
+          workflowId: 'retried-hook-workflow',
+          retryCount: 2,
+          maxRetries: 2,
+          status: WorkflowStatus.RUNNING,
+        });
+
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, { runId });
+
+        await expect
+          .poll(async () => (await engine.getRun({ runId, resourceId })).status, {
+            timeout: 10000,
+          })
+          .toBe(WorkflowStatus.FAILED);
+        expect(onFailure).toHaveBeenCalledTimes(2);
+      });
+
+      it('should mark the run failed when onFailure throws on the last attempt', async () => {
+        const onFailure = vi.fn().mockRejectedValue(new Error('database unavailable'));
+        await engine.registerWorkflow(
+          workflow('failing-hook-workflow', async () => {}, { onFailure }),
+        );
+        const runId = await insertStuckRun({
+          workflowId: 'failing-hook-workflow',
+          retryCount: 2,
+          maxRetries: 2,
+          status: WorkflowStatus.RUNNING,
+        });
+
+        await testBoss.send(WORKFLOW_RUN_DLQ_QUEUE_NAME, { runId }, { retryLimit: 0 });
+
+        await expect
+          .poll(async () => (await engine.getRun({ runId, resourceId })).status, {
+            timeout: 5000,
+          })
+          .toBe(WorkflowStatus.FAILED);
+        expect(onFailure).toHaveBeenCalledOnce();
       });
     });
 
