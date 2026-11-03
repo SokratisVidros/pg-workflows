@@ -35,6 +35,7 @@ import {
   WorkflowRunNotFoundError,
 } from './error';
 import { resolvePriority } from './priority';
+import { retrySendOptions } from './retry';
 import { resolveSchedule } from './schedule';
 import {
   type InferInputParameters,
@@ -125,15 +126,6 @@ const defaultLogger: WorkflowLogger = {
 const defaultExpireInSeconds = process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS
   ? Number.parseInt(process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS, 10)
   : 5 * 60; // 5 minutes
-
-// retryDelay is the base for pg-boss's exponential backoff:
-// `retryDelay * 2^retryCount` seconds (with up to ±50% jitter), so a base
-// of 1 second yields ~1s, ~2s, ~4s, ~8s, … between attempts.
-const retrySendOptions = (maxRetries: number) => ({
-  retryLimit: maxRetries,
-  retryBackoff: true,
-  retryDelay: 1,
-});
 
 const getInvokeChildWorkflowEventName = (childRunId: string) =>
   `__invoke_child_workflow_completed:${childRunId}`;
