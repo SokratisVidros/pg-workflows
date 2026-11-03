@@ -21,7 +21,9 @@ export const defaultExpireInSeconds: number = process.env.WORKFLOW_RUN_EXPIRE_IN
   ? Number.parseInt(process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS, 10)
   : 5 * 60; // 5 minutes
 
-/** Resolves maxRetries / retryLimit: explicit retryLimit, then retries alias, then fallback. */
+/**
+ * Resolves maxRetries / retryLimit: explicit `retryLimit`, then deprecated `retries` alias, then fallback.
+ */
 export const resolveMaxRetries = (
   options?: Pick<WorkflowJobSendOptions, 'retryLimit'> & { retries?: number },
   fallback = 0,

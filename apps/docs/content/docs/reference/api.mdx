@@ -232,14 +232,14 @@ A `duration` is a string (`'90s'`, `'2h'`, `'3 days'`) or `{ weeks?, days?, hour
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `retries` | `number` | Alias for `retryLimit` / run `maxRetries` when `retryLimit` is omitted. Overrides the definition's `retries`. |
+| `retries` | `number` | **Deprecated.** Use `retryLimit`. Still accepted as an alias when `retryLimit` is omitted. |
 | `timeout` | `number` (ms) | Saved as `run.timeoutAt`. Not enforced. See [Retries and timeouts](/docs/concepts/retries-and-timeouts). |
 | `priority` | `WorkflowPriority` | Overrides the definition's `priority`. |
 | `singleton` | `boolean` | For `WorkflowClient`, which can't read the definition. |
 | `resourceId` | `string` | Alternative to the top-level `resourceId`. |
 | `idempotencyKey` | `string` | Alternative to the top-level `idempotencyKey`. |
 
-Also accepts every [`WorkflowJobSendOptions`](/docs/reference/api#workflowjobsendoptions) field. Those are forwarded to [pg-boss `send()`](https://pgboss.io/api/jobs#send) for this enqueue.
+Also accepts every [`WorkflowJobSendOptions`](/docs/reference/api#workflowjobsendoptions) field. Those are forwarded to [pg-boss `send()`](https://pgboss.io/api/jobs#send) for this enqueue. Prefer `retryLimit` over `retries`.
 
 ### WorkflowJobSendOptions
 
@@ -247,7 +247,7 @@ Picked from pg-boss `SendOptions`. Defaults match the library today unless you o
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `retryLimit` | `number` | run `maxRetries` / `retries` / `0` | Retries before the job fails. |
+| `retryLimit` | `number` | run `maxRetries` / deprecated `retries` / `0` | Retries before the job fails. Prefer this over `retries`. |
 | `retryDelay` | `number` | `1` | Base delay between retries, in seconds. |
 | `retryBackoff` | `boolean` | `true` | Exponential backoff from `retryDelay`. |
 | `retryDelayMax` | `number` | none | Cap on backoff delay, in seconds. |

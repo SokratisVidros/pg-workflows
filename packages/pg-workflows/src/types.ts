@@ -33,8 +33,8 @@ export type StartWorkflowOptions = {
   resourceId?: string;
   timeout?: number;
   /**
-   * Alias for pg-boss `retryLimit` / run `maxRetries` when `retryLimit` is omitted.
-   * Prefer `retryLimit` when setting other {@link WorkflowJobSendOptions}.
+   * @deprecated Use {@link WorkflowJobSendOptions.retryLimit} instead.
+   * Still accepted as an alias for `retryLimit` / run `maxRetries` when `retryLimit` is omitted.
    */
   retries?: number;
   idempotencyKey?: string;

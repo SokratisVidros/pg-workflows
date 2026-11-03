@@ -24,7 +24,7 @@ const syncCustomer = workflow(
 )
 ```
 
-Override `retries` for a single run with `startWorkflow({ options: { retries } })`, or pass pg-boss names directly (`retryLimit`, `retryDelay`, `retryBackoff`, `retryDelayMax`). The same [job send options](/docs/reference/api#workflowjobsendoptions) apply on `resumeWorkflow` and `triggerEvent`, including `expireInSeconds`, `retentionSeconds`, `deleteAfterSeconds`, and `heartbeatSeconds`.
+Override the limit for a single run with `startWorkflow({ options: { retryLimit } })`. `options.retries` still works but is deprecated; use `retryLimit`. The same [job send options](/docs/reference/api#workflowjobsendoptions) apply on `resumeWorkflow` and `triggerEvent` (`retryDelay`, `retryBackoff`, `retryDelayMax`, `expireInSeconds`, `retentionSeconds`, `deleteAfterSeconds`, `heartbeatSeconds`).
 
 `timeout` (milliseconds, on the workflow or in `startWorkflow` options) is saved on the run as `timeoutAt`. The engine does not currently fail a run that passes `timeoutAt`. To bound a wait, use the `timeout` option of `step.waitFor` or `step.poll`.
 
