@@ -1,4 +1,4 @@
-import type { SendOptions } from 'pg-boss'
+import type { SendOptions } from 'pg-boss';
 
 /**
  * Per-job pg-boss send options we expose on start/resume/trigger.
@@ -15,17 +15,17 @@ export type WorkflowJobSendOptions = Pick<
   | 'retentionSeconds'
   | 'deleteAfterSeconds'
   | 'heartbeatSeconds'
->
+>;
 
 export const defaultExpireInSeconds: number = process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS
   ? Number.parseInt(process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS, 10)
-  : 5 * 60 // 5 minutes
+  : 5 * 60; // 5 minutes
 
 /** Resolves maxRetries / retryLimit: explicit retryLimit, then retries alias, then fallback. */
 export const resolveMaxRetries = (
   options?: Pick<WorkflowJobSendOptions, 'retryLimit'> & { retries?: number },
   fallback = 0,
-): number => options?.retryLimit ?? options?.retries ?? fallback
+): number => options?.retryLimit ?? options?.retries ?? fallback;
 
 /**
  * Builds pg-boss send options for a workflow-run job.
@@ -41,20 +41,20 @@ export const resolveJobSendOptions = (
     retryLimit: resolveMaxRetries(options, maxRetries),
     retryBackoff: options?.retryBackoff ?? true,
     retryDelay: options?.retryDelay ?? 1,
-  }
+  };
 
   if (options?.retryDelayMax !== undefined) {
-    resolved.retryDelayMax = options.retryDelayMax
+    resolved.retryDelayMax = options.retryDelayMax;
   }
   if (options?.retentionSeconds !== undefined) {
-    resolved.retentionSeconds = options.retentionSeconds
+    resolved.retentionSeconds = options.retentionSeconds;
   }
   if (options?.deleteAfterSeconds !== undefined) {
-    resolved.deleteAfterSeconds = options.deleteAfterSeconds
+    resolved.deleteAfterSeconds = options.deleteAfterSeconds;
   }
   if (options?.heartbeatSeconds !== undefined) {
-    resolved.heartbeatSeconds = options.heartbeatSeconds
+    resolved.heartbeatSeconds = options.heartbeatSeconds;
   }
 
-  return resolved
-}
+  return resolved;
+};

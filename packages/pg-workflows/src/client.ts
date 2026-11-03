@@ -28,9 +28,9 @@ import {
   WorkflowRunNotFoundError,
 } from './error';
 import {
-  type WorkflowJobSendOptions,
   resolveJobSendOptions,
   resolveMaxRetries,
+  type WorkflowJobSendOptions,
 } from './job-options';
 import { resolvePriority } from './priority';
 import {

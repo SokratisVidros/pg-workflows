@@ -163,8 +163,7 @@ describe('WorkflowClient', () => {
 
         const sentCalls = sendSpy.mock.calls.filter(
           ([queue, data]) =>
-            queue === WORKFLOW_RUN_QUEUE_NAME &&
-            (data as { runId: string }).runId === run.id,
+            queue === WORKFLOW_RUN_QUEUE_NAME && (data as { runId: string }).runId === run.id,
         );
         expect(sentCalls).toHaveLength(1);
         expect(sentCalls[0][2]).toMatchObject(resolveJobSendOptions(2));
@@ -227,8 +226,7 @@ describe('WorkflowClient', () => {
 
         const sentCalls = sendSpy.mock.calls.filter(
           ([queue, data]) =>
-            queue === WORKFLOW_RUN_QUEUE_NAME &&
-            (data as { runId: string }).runId === run.id,
+            queue === WORKFLOW_RUN_QUEUE_NAME && (data as { runId: string }).runId === run.id,
         );
         expect(sentCalls).toHaveLength(1);
         expect(sentCalls[0][2]).toMatchObject(
