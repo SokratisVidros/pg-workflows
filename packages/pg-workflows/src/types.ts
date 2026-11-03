@@ -1,6 +1,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { WorkflowRun } from './db/types';
 import type { Duration } from './duration';
+import type { WorkflowJobSendOptions } from './job-options';
 import type { WorkflowPriority } from './priority';
 import type { Schedule } from './schedule';
 
@@ -31,8 +32,11 @@ export type InferInputParameters<P extends InputParameters> = StandardSchemaV1.I
 export type StartWorkflowOptions = {
   resourceId?: string;
   timeout?: number;
+  /**
+   * Alias for pg-boss `retryLimit` / run `maxRetries` when `retryLimit` is omitted.
+   * Prefer `retryLimit` when setting other {@link WorkflowJobSendOptions}.
+   */
   retries?: number;
-  expireInSeconds?: number;
   idempotencyKey?: string;
   priority?: WorkflowPriority;
   /**
@@ -41,7 +45,7 @@ export type StartWorkflowOptions = {
    * starting from `WorkflowClient` so the uniqueness constraint applies.
    */
   singleton?: boolean;
-};
+} & WorkflowJobSendOptions;
 
 export type WorkflowOptions<I extends InputParameters> = {
   timeout?: number;

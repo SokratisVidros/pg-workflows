@@ -10,7 +10,7 @@ The engine reads these at startup. All are optional.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WORKFLOW_RUN_WORKERS` | `3` | Number of concurrent workers each `WorkflowEngine` runs in-process. Each worker handles one run execution at a time. |
-| `WORKFLOW_RUN_EXPIRE_IN_SECONDS` | `300` | Maximum time for a single handler execution. An execution that runs longer is failed and retried. Override per call with `options.expireInSeconds` on `startWorkflow`, `resumeWorkflow`, and `triggerEvent`. |
+| `WORKFLOW_RUN_EXPIRE_IN_SECONDS` | `300` | Maximum time for a single handler execution. An execution that runs longer is failed and retried. Override per call with [`WorkflowJobSendOptions`](/docs/reference/api#workflowjobsendoptions) on `startWorkflow`, `resumeWorkflow`, and `triggerEvent`. |
 | `WORKFLOW_RUN_HEARTBEAT_SECONDS` | `30` | How often workers report that an execution is alive. If a worker process dies, its run is detected and retried after roughly this interval plus 60 seconds, instead of waiting for the full expiry. Minimum `10`. |
 
 The engine does not read `DATABASE_URL`. Pass the connection string or a `pg.Pool` to the constructor:

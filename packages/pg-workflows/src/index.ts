@@ -8,6 +8,7 @@ export { createWorkflowRef, workflow } from './definition';
 export type { Duration } from './duration';
 export { WorkflowEngine, type WorkflowEngineOptions } from './engine';
 export { WorkflowEngineError, WorkflowRunInProgressError, WorkflowRunNotFoundError } from './error';
+export type { WorkflowJobSendOptions } from './job-options';
 export type { WorkflowPriority } from './priority';
 export type { Schedule } from './schedule';
 export type {

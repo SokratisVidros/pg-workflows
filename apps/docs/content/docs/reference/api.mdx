@@ -54,7 +54,7 @@ If you call `startWorkflow` before `start()`, the engine calls `start(false)`: t
 | `triggerEvent({ runId, eventName, data?, resourceId?, options? })` | `WorkflowRun` | Delivers an event to a run waiting in `step.waitFor`. |
 | `fastForwardWorkflow({ runId, data?, resourceId? })` | `WorkflowRun` | Completes the step the run is paused on. See [Fast-forward](/docs/concepts/pause-and-resume#fast-forward). |
 
-`options` on `startWorkflow` is a [`StartWorkflowOptions`](/docs/reference/api#startworkflowoptions). `options` on `resumeWorkflow` and `triggerEvent` accepts `{ expireInSeconds }`.
+`options` on `startWorkflow` is a [`StartWorkflowOptions`](/docs/reference/api#startworkflowoptions). `options` on `resumeWorkflow` and `triggerEvent` accepts the same [pg-boss job send fields](/docs/reference/api#workflowjobsendoptions) (`expireInSeconds`, retry, retention, heartbeat).
 
 ### Queries
 
@@ -232,13 +232,29 @@ A `duration` is a string (`'90s'`, `'2h'`, `'3 days'`) or `{ weeks?, days?, hour
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `retries` | `number` | Overrides the definition's `retries`. |
+| `retries` | `number` | Alias for `retryLimit` / run `maxRetries` when `retryLimit` is omitted. Overrides the definition's `retries`. |
 | `timeout` | `number` (ms) | Saved as `run.timeoutAt`. Not enforced. See [Retries and timeouts](/docs/concepts/retries-and-timeouts). |
 | `priority` | `WorkflowPriority` | Overrides the definition's `priority`. |
-| `expireInSeconds` | `number` | Per-execution limit for this run's first job. Defaults to `WORKFLOW_RUN_EXPIRE_IN_SECONDS`. |
 | `singleton` | `boolean` | For `WorkflowClient`, which can't read the definition. |
 | `resourceId` | `string` | Alternative to the top-level `resourceId`. |
 | `idempotencyKey` | `string` | Alternative to the top-level `idempotencyKey`. |
+
+Also accepts every [`WorkflowJobSendOptions`](/docs/reference/api#workflowjobsendoptions) field. Those are forwarded to [pg-boss `send()`](https://pgboss.io/api/jobs#send) for this enqueue.
+
+### WorkflowJobSendOptions
+
+Picked from pg-boss `SendOptions`. Defaults match the library today unless you override them.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `retryLimit` | `number` | run `maxRetries` / `retries` / `0` | Retries before the job fails. |
+| `retryDelay` | `number` | `1` | Base delay between retries, in seconds. |
+| `retryBackoff` | `boolean` | `true` | Exponential backoff from `retryDelay`. |
+| `retryDelayMax` | `number` | none | Cap on backoff delay, in seconds. |
+| `expireInSeconds` | `number` | `WORKFLOW_RUN_EXPIRE_IN_SECONDS` (`300`) | How long a job may stay active. |
+| `retentionSeconds` | `number` | pg-boss queue default | How long a created/retry job is kept. |
+| `deleteAfterSeconds` | `number` | pg-boss queue default | How long a completed job is kept. |
+| `heartbeatSeconds` | `number` | queue setting from `engine.start()` | Per-job heartbeat interval (min `10`). |
 
 ### WorkflowStatus
 

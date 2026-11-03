@@ -6,6 +6,7 @@ import { WorkflowClient } from './client';
 import { WORKFLOW_RUN_QUEUE_NAME } from './constants';
 import { createWorkflowRef } from './definition';
 import { WorkflowRunInProgressError } from './error';
+import { resolveJobSendOptions } from './job-options';
 import { closeTestDatabase, createTestDatabase } from './tests/test-db';
 import { WorkflowStatus } from './types';
 
@@ -145,10 +146,10 @@ describe('WorkflowClient', () => {
   });
 
   describe('startWorkflow retries', () => {
+    const clientBoss = () => (client as unknown as { boss: PgBoss }).boss;
+
     it('passes retries to pg-boss as retryLimit with backoff', async () => {
-      await client.start();
-      const boss = (client as unknown as { boss: PgBoss }).boss;
-      const sendSpy = vi.spyOn(boss, 'send');
+      const sendSpy = vi.spyOn(clientBoss(), 'send');
 
       try {
         const run = await client.startWorkflow({
@@ -160,22 +161,13 @@ describe('WorkflowClient', () => {
 
         expect(run.maxRetries).toBe(2);
 
-        type JobData = { runId: string; workflowId: string };
         const sentCalls = sendSpy.mock.calls.filter(
           ([queue, data]) =>
             queue === WORKFLOW_RUN_QUEUE_NAME &&
-            (data as JobData).runId === run.id &&
-            (data as JobData).workflowId === 'client-retry-workflow',
+            (data as { runId: string }).runId === run.id,
         );
         expect(sentCalls).toHaveLength(1);
-        const opts = sentCalls[0][2] as {
-          retryLimit?: number;
-          retryBackoff?: boolean;
-          retryDelay?: number;
-        };
-        expect(opts.retryLimit).toBe(2);
-        expect(opts.retryBackoff).toBe(true);
-        expect(opts.retryDelay).toBe(1);
+        expect(sentCalls[0][2]).toMatchObject(resolveJobSendOptions(2));
       } finally {
         sendSpy.mockRestore();
       }
@@ -189,14 +181,7 @@ describe('WorkflowClient', () => {
         options: { retries: 3 },
       });
 
-      await testPool.query(`UPDATE workflow_runs SET status = $1, max_retries = $2 WHERE id = $3`, [
-        WorkflowStatus.PAUSED,
-        3,
-        run.id,
-      ]);
-
-      const boss = (client as unknown as { boss: PgBoss }).boss;
-      const sendSpy = vi.spyOn(boss, 'send');
+      const sendSpy = vi.spyOn(clientBoss(), 'send');
 
       try {
         await client.triggerEvent({
@@ -206,15 +191,58 @@ describe('WorkflowClient', () => {
           data: {},
         });
 
-        type JobData = { runId: string };
         const sentCalls = sendSpy.mock.calls.filter(
           ([queue, data]) =>
-            queue === WORKFLOW_RUN_QUEUE_NAME && (data as JobData).runId === run.id,
+            queue === WORKFLOW_RUN_QUEUE_NAME && (data as { runId: string }).runId === run.id,
         );
         expect(sentCalls).toHaveLength(1);
-        const opts = sentCalls[0][2] as { retryLimit?: number; retryBackoff?: boolean };
-        expect(opts.retryLimit).toBe(3);
-        expect(opts.retryBackoff).toBe(true);
+        expect(sentCalls[0][2]).toMatchObject(resolveJobSendOptions(3));
+      } finally {
+        sendSpy.mockRestore();
+      }
+    });
+
+    it('forwards pg-boss job options and prefers retryLimit over retries', async () => {
+      const sendSpy = vi.spyOn(clientBoss(), 'send');
+
+      try {
+        const run = await client.startWorkflow({
+          resourceId,
+          workflowId: 'client-job-options',
+          input: { data: 'x' },
+          options: {
+            retries: 9,
+            retryLimit: 4,
+            retryDelay: 5,
+            retryBackoff: true,
+            retryDelayMax: 60,
+            expireInSeconds: 120,
+            retentionSeconds: 3600,
+            deleteAfterSeconds: 1800,
+            heartbeatSeconds: 20,
+          },
+        });
+
+        expect(run.maxRetries).toBe(4);
+
+        const sentCalls = sendSpy.mock.calls.filter(
+          ([queue, data]) =>
+            queue === WORKFLOW_RUN_QUEUE_NAME &&
+            (data as { runId: string }).runId === run.id,
+        );
+        expect(sentCalls).toHaveLength(1);
+        expect(sentCalls[0][2]).toMatchObject(
+          resolveJobSendOptions(4, {
+            retryLimit: 4,
+            retryDelay: 5,
+            retryBackoff: true,
+            retryDelayMax: 60,
+            expireInSeconds: 120,
+            retentionSeconds: 3600,
+            deleteAfterSeconds: 1800,
+            heartbeatSeconds: 20,
+          }),
+        );
       } finally {
         sendSpy.mockRestore();
       }
