@@ -27,6 +27,11 @@ import {
   WorkflowEngineError,
   WorkflowRunNotFoundError,
 } from './error';
+import {
+  resolveJobSendOptions,
+  resolveMaxRetries,
+  type WorkflowJobSendOptions,
+} from './job-options';
 import { resolvePriority } from './priority';
 import {
   type InferInputParameters,
@@ -67,10 +72,6 @@ const defaultLogger: WorkflowLogger = {
   log: (_message: string) => console.warn(_message),
   error: (message: string, error: Error) => console.error(message, error),
 };
-
-const defaultExpireInSeconds = process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS
-  ? Number.parseInt(process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS, 10)
-  : 5 * 60;
 
 export class WorkflowClient {
   private boss: PgBoss;
@@ -218,7 +219,7 @@ export class WorkflowClient {
             currentStepId: '__start__',
             status: WorkflowStatus.RUNNING,
             input,
-            maxRetries: options?.retries ?? 0,
+            maxRetries: resolveMaxRetries(options),
             priority: resolvePriority(options?.priority),
             timeoutAt,
             idempotencyKey,
@@ -241,8 +242,8 @@ export class WorkflowClient {
           // orphan workflow_runs row when the queue insert fails.
           await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
             startAfter: new Date(),
-            expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
             priority: insertedRun.priority,
+            ...resolveJobSendOptions(insertedRun.maxRetries, options),
             db: _db,
           });
         }
@@ -268,7 +269,7 @@ export class WorkflowClient {
     resourceId?: string;
     eventName: string;
     data?: Record<string, unknown>;
-    options?: { expireInSeconds?: number };
+    options?: WorkflowJobSendOptions;
   }): Promise<WorkflowRun> {
     await this.ensureStarted();
 
@@ -293,8 +294,8 @@ export class WorkflowClient {
     };
 
     await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
-      expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
       priority: run.priority,
+      ...resolveJobSendOptions(run.maxRetries, options),
     });
 
     this.logger.log(`${LOG_PREFIX} Event ${eventName} sent for workflow run ${runId}`);
@@ -338,7 +339,7 @@ export class WorkflowClient {
   }: {
     runId: string;
     resourceId?: string;
-    options?: { expireInSeconds?: number };
+    options?: WorkflowJobSendOptions;
   }): Promise<WorkflowRun> {
     await this.ensureStarted();
 

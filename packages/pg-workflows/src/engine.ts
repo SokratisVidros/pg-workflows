@@ -34,6 +34,11 @@ import {
   WorkflowRunInProgressError,
   WorkflowRunNotFoundError,
 } from './error';
+import {
+  resolveJobSendOptions,
+  resolveMaxRetries,
+  type WorkflowJobSendOptions,
+} from './job-options';
 import { resolvePriority } from './priority';
 import { resolveSchedule } from './schedule';
 import {
@@ -121,19 +126,6 @@ const defaultLogger: WorkflowLogger = {
   log: (_message: string) => console.warn(_message),
   error: (message: string, error: Error) => console.error(message, error),
 };
-
-const defaultExpireInSeconds = process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS
-  ? Number.parseInt(process.env.WORKFLOW_RUN_EXPIRE_IN_SECONDS, 10)
-  : 5 * 60; // 5 minutes
-
-// retryDelay is the base for pg-boss's exponential backoff:
-// `retryDelay * 2^retryCount` seconds (with up to ±50% jitter), so a base
-// of 1 second yields ~1s, ~2s, ~4s, ~8s, … between attempts.
-const retrySendOptions = (maxRetries: number) => ({
-  retryLimit: maxRetries,
-  retryBackoff: true,
-  retryDelay: 1,
-});
 
 const getInvokeChildWorkflowEventName = (childRunId: string) =>
   `__invoke_child_workflow_completed:${childRunId}`;
@@ -589,7 +581,7 @@ export class WorkflowEngine {
           currentStepId: initialStepId,
           status: WorkflowStatus.RUNNING,
           input,
-          maxRetries: options?.retries ?? workflow.retries ?? 0,
+          maxRetries: resolveMaxRetries(options, workflow.retries ?? 0),
           priority: resolvePriority(options?.priority, workflow.priority, parentPriority),
           timeoutAt,
           idempotencyKey,
@@ -624,7 +616,7 @@ export class WorkflowEngine {
 
   private async enqueueWorkflowRun(
     run: WorkflowRun,
-    options?: { expireInSeconds?: number },
+    options?: WorkflowJobSendOptions & { retries?: number },
     db?: Db,
   ) {
     const job: WorkflowRunJobParameters = {
@@ -636,9 +628,8 @@ export class WorkflowEngine {
 
     await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
       startAfter: new Date(),
-      expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
       priority: run.priority,
-      ...retrySendOptions(run.maxRetries),
+      ...resolveJobSendOptions(run.maxRetries, options),
       ...(db ? { db } : {}),
     });
   }
@@ -706,7 +697,7 @@ export class WorkflowEngine {
   }: {
     runId: string;
     resourceId?: string;
-    options?: { expireInSeconds?: number };
+    options?: WorkflowJobSendOptions;
   }): Promise<WorkflowRun> {
     await this.checkIfHasStarted();
 
@@ -844,9 +835,7 @@ export class WorkflowEngine {
     resourceId?: string;
     eventName: string;
     data?: Record<string, unknown>;
-    options?: {
-      expireInSeconds?: number;
-    };
+    options?: WorkflowJobSendOptions;
   }): Promise<WorkflowRun> {
     await this.checkIfHasStarted();
 
@@ -873,9 +862,8 @@ export class WorkflowEngine {
     };
 
     await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
-      expireInSeconds: options?.expireInSeconds ?? defaultExpireInSeconds,
       priority: run.priority,
-      ...retrySendOptions(run.maxRetries),
+      ...resolveJobSendOptions(run.maxRetries, options),
     });
 
     this.logger.log(`event ${eventName} sent for workflow run with id ${runId}`);
@@ -1867,9 +1855,8 @@ export class WorkflowEngine {
         };
         await this.boss.send(WORKFLOW_RUN_QUEUE_NAME, job, {
           startAfter: timeoutDate.getTime() <= Date.now() ? new Date() : timeoutDate,
-          expireInSeconds: defaultExpireInSeconds,
           priority: run.priority,
-          ...retrySendOptions(run.maxRetries),
+          ...resolveJobSendOptions(run.maxRetries),
         });
       } catch (error) {
         // Revert PAUSED status so the workflow can retry this step
@@ -2063,9 +2050,8 @@ export class WorkflowEngine {
         },
         {
           startAfter: new Date(Date.now() + intervalMs),
-          expireInSeconds: defaultExpireInSeconds,
           priority: run.priority,
-          ...retrySendOptions(run.maxRetries),
+          ...resolveJobSendOptions(run.maxRetries),
         },
       );
     } catch (error) {

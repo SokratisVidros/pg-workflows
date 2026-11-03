@@ -282,7 +282,7 @@ const run = await engine.startWorkflow({
   resourceId: 'user-123',            // optional, for scoping/multi-tenancy
   input: { email: 'user@example.com' },
   idempotencyKey: 'unique-key-123',  // optional, for deduplication
-  options: { timeout, retries, expireInSeconds, priority }, // all optional
+  options: { timeout, retries, expireInSeconds, priority, retentionSeconds, heartbeatSeconds }, // all optional; job send fields mirror pg-boss SendOptions
 });
 
 // Pause / Resume / Cancel

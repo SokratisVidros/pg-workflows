@@ -24,8 +24,8 @@ const syncCustomer = workflow(
 )
 ```
 
-Override `retries` for a single run with `startWorkflow({ options: { retries } })`.
+Override the limit for a single run with `startWorkflow({ options: { retryLimit } })`. `options.retries` still works but is deprecated; use `retryLimit`. The same [job send options](/docs/reference/api#workflowjobsendoptions) apply on `resumeWorkflow` and `triggerEvent` (`retryDelay`, `retryBackoff`, `retryDelayMax`, `expireInSeconds`, `retentionSeconds`, `deleteAfterSeconds`, `heartbeatSeconds`).
 
 `timeout` (milliseconds, on the workflow or in `startWorkflow` options) is saved on the run as `timeoutAt`. The engine does not currently fail a run that passes `timeoutAt`. To bound a wait, use the `timeout` option of `step.waitFor` or `step.poll`.
 
-A single execution of the handler is also bounded by the job expiry, `WORKFLOW_RUN_EXPIRE_IN_SECONDS` (default 300). Split work that takes longer into several steps. See [Configuration](/docs/reference/configuration#environment-variables).
+A single execution of the handler is also bounded by the job expiry, `WORKFLOW_RUN_EXPIRE_IN_SECONDS` (default 300). Override per enqueue with `options.expireInSeconds`. Split work that takes longer into several steps. See [Configuration](/docs/reference/configuration#environment-variables).
