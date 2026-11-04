@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## pg-workflows@0.18.0 - 2026-11-04
+
+### Added
+
+- `step.run` accepts optional `{ input }`, persisted on the timeline and shown in the dashboard.
+- Client and engine enqueue paths accept pg-boss send options: `retryLimit`, `retryDelay`, `retryBackoff`, `retryDelayMax`, `expireInSeconds`, `retentionSeconds`, `deleteAfterSeconds`, and `heartbeatSeconds`. Library defaults are unchanged.
+
+### Fixed
+
+- `WorkflowClient.startWorkflow` (and related enqueue paths) pass retry settings through to `boss.send`.
+
+### Changed
+
+- `StartWorkflowOptions.retries` is deprecated. Prefer `retryLimit`.
+
+### Documentation
+
+- Package README is a real file so `bun pack` / npm include it.
+- Docs cover the job send options and the `retries` → `retryLimit` deprecation.
+
+[pg-workflows@0.18.0]: https://github.com/SokratisVidros/pg-workflows/compare/pg-workflows%400.17.2...pg-workflows%400.18.0
+
 ## pg-workflows@0.17.2 - 2026-10-18
 
 ### Fixed
