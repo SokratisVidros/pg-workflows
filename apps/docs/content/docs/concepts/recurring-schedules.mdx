@@ -48,3 +48,17 @@ const syncOrders = workflow(
 Don't use `getWorkflowLastRun` for this. It returns the most recently created run of any status, which inside a scheduled run is the current run.
 
 **Overlap.** With `singleton: true`, a scheduled fire is skipped while a previous run is pending or running. Without it, scheduled runs can overlap.
+
+## Missed fires
+
+A fire that comes due while no engine is running, during an outage, a deploy, or between serverless invocations, is dropped by default. The `missed` option is passed straight through to pg-boss's [`missed` schedule option](https://pgboss.io/api/scheduling#catch-up-after-an-outage), with the same name and values. Set it to `'once'` to start one run for the most recent missed fire when an engine comes back:
+
+```typescript
+workflow('nightly-report', handler, {
+  schedule: '0 2 * * *',
+  missed: 'once',
+  singleton: true,
+})
+```
+
+pg-boss's [catch-up docs](https://pgboss.io/api/scheduling#catch-up-after-an-outage) describe how the gap is measured, what `'skip'` and `'once'` do, and the caveats.

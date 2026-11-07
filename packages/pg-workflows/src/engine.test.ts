@@ -3,7 +3,11 @@ import type { PgBoss } from 'pg-boss';
 import * as v from 'valibot';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { WORKFLOW_RUN_DLQ_QUEUE_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constants';
+import {
+  scheduleQueueNameFor,
+  WORKFLOW_RUN_DLQ_QUEUE_NAME,
+  WORKFLOW_RUN_QUEUE_NAME,
+} from './constants';
 import type { WorkflowRun } from './db/types';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
@@ -225,6 +229,75 @@ describe('WorkflowEngine', () => {
         const stored = engine.workflows.get('scheduled-via-ref');
         expect(stored?.schedule).toBe('5m');
         expect(stored?.timezone).toBe('America/New_York');
+      });
+    });
+
+    describe('missed option', () => {
+      const storedOptions = async (workflowId: string) => {
+        const schedules = await testBoss.getSchedules(scheduleQueueNameFor(workflowId));
+        return schedules[0]?.options;
+      };
+
+      it("stores missed: 'once' on the pg-boss schedule", async () => {
+        const wf = workflow(
+          'missed-once-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { schedule: '0 9 * * *', missed: 'once', singleton: true },
+        );
+
+        await engine.registerWorkflow(wf);
+
+        expect(engine.workflows.get('missed-once-wf')?.missed).toBe('once');
+        expect(await storedOptions('missed-once-wf')).toMatchObject({ missed: 'once' });
+      });
+
+      it('leaves missed unset by default, which pg-boss reads as skip', async () => {
+        const wf = workflow(
+          'missed-default-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { schedule: '5m' },
+        );
+
+        await engine.registerWorkflow(wf);
+
+        expect((await storedOptions('missed-default-wf'))?.missed).toBeUndefined();
+      });
+
+      it("resets a stored 'once' when the option is removed", async () => {
+        // A schedule row left by an earlier deploy that had `missed: 'once'`.
+        const queue = scheduleQueueNameFor('missed-reset-wf');
+        await testBoss.createQueue(queue);
+        await testBoss.schedule(queue, '*/5 * * * *', null, { missed: 'once' });
+        expect(await storedOptions('missed-reset-wf')).toMatchObject({ missed: 'once' });
+
+        await engine.registerWorkflow(
+          workflow('missed-reset-wf', async ({ step }) => step.run('s1', async () => 'ok'), {
+            schedule: '5m',
+          }),
+        );
+
+        expect((await storedOptions('missed-reset-wf'))?.missed).toBeUndefined();
+      });
+
+      it('forwards missed through workflow.ref() definitions', () => {
+        const ref = workflow.ref('missed-via-ref');
+        const wf = ref(async ({ step }) => step.run('s1', async () => 'ok'), {
+          schedule: '5m',
+          missed: 'once',
+        });
+
+        expect(wf.missed).toBe('once');
+      });
+
+      it('throws when missed is not a known policy', async () => {
+        const wf = workflow(
+          'missed-invalid-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { schedule: '5m', missed: 'all' as unknown as 'once' },
+        );
+
+        await expect(engine.registerWorkflow(wf)).rejects.toThrow(/Invalid missed/);
+        expect(engine.workflows.has('missed-invalid-wf')).toBe(false);
       });
     });
 

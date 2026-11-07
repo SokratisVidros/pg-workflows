@@ -1,4 +1,5 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { ScheduleOptions } from 'pg-boss';
 import type { WorkflowRun } from './db/types';
 import type { Duration } from './duration';
 import type { WorkflowJobSendOptions } from './job-options';
@@ -65,6 +66,15 @@ export type WorkflowOptions<I extends InputParameters> = {
   schedule?: Schedule;
   /** IANA timezone for cron expressions. Defaults to UTC. Ignored for duration-based schedules. */
   timezone?: string;
+  /**
+   * What to do about schedule fires that came due while no engine was running.
+   * Passed straight through as pg-boss's `missed` schedule option: `'skip'` (the
+   * default) drops them, `'once'` sends one fire for the most recent of them.
+   * Pair `'once'` with `singleton: true`, since the catch-up can arrive alongside
+   * the fire that is due now.
+   * @see https://pgboss.io/api/scheduling#catch-up-after-an-outage
+   */
+  missed?: ScheduleOptions['missed'];
 };
 
 /** Metadata about a scheduled fire, exposed on `ctx.schedule` for runs triggered by a schedule. */
@@ -175,6 +185,7 @@ export type WorkflowDefinition<TInput extends InputParameters = InputParameters>
   singleton?: boolean;
   schedule?: Schedule;
   timezone?: string;
+  missed?: ScheduleOptions['missed'];
   plugins?: WorkflowPlugin[];
 };
 

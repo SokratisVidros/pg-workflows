@@ -103,7 +103,7 @@ const definition = workflow(id, handler, options)
 |-----------|------|-------------|
 | `id` | `string` | Unique workflow ID, up to 256 characters. |
 | `handler` | `(context: WorkflowContext) => Promise<unknown>` | The workflow body. Its return value becomes `run.output`. |
-| `options` | `WorkflowOptions` | `inputSchema`, `retries`, `timeout`, `priority`, `singleton`, `schedule`, `timezone`. See the [options table](/docs/concepts/workflows). |
+| `options` | `WorkflowOptions` | `inputSchema`, `retries`, `timeout`, `priority`, `singleton`, `schedule`, `timezone`, `missed`. See the [options table](/docs/concepts/workflows). |
 
 ### workflow.use(plugin)
 
