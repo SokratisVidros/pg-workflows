@@ -61,10 +61,4 @@ workflow('nightly-report', handler, {
 })
 ```
 
-pg-boss's [catch-up docs](https://pgboss.io/api/scheduling#catch-up-after-an-outage) describe how the gap is measured, what `'skip'` and `'once'` do, and the caveats. What that means for a workflow:
-
-- **Pair it with `singleton: true`.** The catch-up can arrive together with the fire that is due now. With `singleton`, the second fire is skipped. Without it, both start a run.
-- **The run can't tell it is late.** `ctx.schedule.timestamp` is when the catch-up was sent, not when the missed fire was due. Work out what to process from your own data, such as the last completed run in the example above.
-- **Serverless: stay up until the run starts.** pg-boss checks schedules as soon as the engine starts, but the run is started in the background, after `engine.start()` returns. Keep the process alive until it is picked up.
-- **Removing the option turns catch-up off.** Each start saves the schedule's options again, so a definition without `missed` goes back to `'skip'`.
-- **Bring your own `boss`?** It must be a pg-boss version with the `missed` option. The bundled version has it.
+pg-boss's [catch-up docs](https://pgboss.io/api/scheduling#catch-up-after-an-outage) describe how the gap is measured, what `'skip'` and `'once'` do, and the caveats.
