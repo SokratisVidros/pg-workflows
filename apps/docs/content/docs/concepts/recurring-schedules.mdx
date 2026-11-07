@@ -48,3 +48,26 @@ const syncOrders = workflow(
 Don't use `getWorkflowLastRun` for this. It returns the most recently created run of any status, which inside a scheduled run is the current run.
 
 **Overlap.** With `singleton: true`, a scheduled fire is skipped while a previous run is pending or running. Without it, scheduled runs can overlap.
+
+## Missed fires
+
+By default, a fire that comes due while no engine is running is dropped. That happens during an outage or a deploy. It is also the normal case in a serverless setup, where no process runs between invocations. Set `missedSchedule: 'once'` to start one run for the most recent missed fire when an engine comes back:
+
+```typescript
+workflow('nightly-report', handler, {
+  schedule: '0 2 * * *',
+  missedSchedule: 'once',
+  singleton: true,
+})
+```
+
+- **`'skip'`** (default) drops missed fires.
+- **`'once'`** starts a single run for the most recent missed fire, however many were missed. Twelve missed hourly fires become one run, not twelve.
+- **Pair it with `singleton: true`.** The catch-up fire can arrive together with the fire that is due now. With `singleton`, the second one is skipped. Without it, both start a run.
+- **The run can't tell it is late.** `ctx.schedule.timestamp` is when the catch-up fire was sent, not when the missed fire was due. Work out what to process from your own data, such as the last completed run in the example above.
+- **The gap is measured from the last time any engine checked schedules.** Engines check every 30 seconds, so a deployment that is always running has no gap. A schedule never catches up on fires from before it was first registered.
+- **Serverless: stay up long enough.** An engine checks schedules as soon as it starts, but the catch-up run is started in the background, not inside `engine.start()`. Keep the process alive until the run is picked up. That usually takes a few seconds, or up to about 30 if another engine checked schedules just before.
+- **Takes effect from the next start.** The check that runs at startup can happen before the engine saves `missedSchedule` to the schedule, so the first start after you turn it on may not catch up.
+- **Bring your own `boss`?** Your pg-boss version must support the `missed` schedule option. The bundled version (12.38) does.
+
+This maps to pg-boss's [`missed` schedule option](https://pgboss.io/api/scheduling#catch-up-after-an-outage).

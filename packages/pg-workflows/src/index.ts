@@ -14,6 +14,7 @@ export type { Schedule } from './schedule';
 export type {
   InferInputParameters,
   InputParameters,
+  MissedSchedulePolicy,
   ScheduleContext,
   StartWorkflowOptions,
   StepBaseContext,

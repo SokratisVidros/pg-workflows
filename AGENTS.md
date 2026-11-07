@@ -97,6 +97,7 @@ const myWorkflow = workflow(
     singleton: true,                           // optional, one pending/running run per workflow ID
     schedule: '*/5 * * * *',                   // optional, recurring schedule (cron or duration)
     timezone: 'America/New_York',              // optional, only meaningful for cron (default: UTC)
+    missedSchedule: 'once',                    // optional, catch up one missed fire after downtime (default: 'skip')
   }
 );
 ```
@@ -166,6 +167,18 @@ async ({ step, schedule, workflowId }) => {
 **Overlap policy.** Scheduled fires skip when the workflow is `singleton: true`
 and a previous run is still pending or running. Paused runs release the slot.
 Without `singleton`, overlapping scheduled runs can execute concurrently.
+
+**Missed fires.** By default, fires that come due while no engine is running
+(outage, deploy, serverless with no long-lived process) are dropped.
+`missedSchedule: 'once'` maps to pg-boss's `schedule(..., { missed: 'once' })`:
+on the schedule check pg-boss runs right after `boss.start()` (then every ~30s),
+one run is started for the most recent missed fire, however many were missed.
+The run is started asynchronously, so serverless callers must keep the process
+alive until it is picked up. The engine
+always passes `missed` explicitly (`'skip'` when unset) so removing the option
+resets a stored `'once'`. Pair with `singleton: true` — the catch-up fire can
+land alongside the fire that is due now. `ctx.schedule.timestamp` on a catch-up
+run is the send time, not the missed fire's due time.
 
 ### Singleton workflows
 

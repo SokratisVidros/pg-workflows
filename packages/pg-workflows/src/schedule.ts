@@ -1,6 +1,7 @@
 import { CronExpressionParser } from 'cron-parser';
 import { type Duration, MS_PER_DAY, MS_PER_HOUR, MS_PER_MINUTE, parseDuration } from './duration';
 import { WorkflowEngineError } from './error';
+import type { MissedSchedulePolicy } from './types';
 
 const CRON_TOKEN = /^[0-9*/,?\-LW#]+$/;
 
@@ -74,4 +75,20 @@ export function resolveSchedule(schedule: Schedule, timezone?: string): Resolved
   // only ever emits cron expressions we construct ourselves, so no further validation needed.
   const ms = parseDuration(schedule);
   return { cron: durationMsToCron(ms, schedule), timezone: tz };
+}
+
+const MISSED_SCHEDULE_POLICIES: readonly MissedSchedulePolicy[] = ['skip', 'once'];
+
+/**
+ * Validate a `missedSchedule` option. Returns the policy to hand to pg-boss, or
+ * `undefined` to leave pg-boss's default (`'skip'`) in place.
+ */
+export function resolveMissedSchedule(missed: unknown): MissedSchedulePolicy | undefined {
+  if (missed == null) return undefined;
+  if (!MISSED_SCHEDULE_POLICIES.includes(missed as MissedSchedulePolicy)) {
+    throw new WorkflowEngineError(
+      `Invalid missedSchedule ${JSON.stringify(missed)}; expected one of ${MISSED_SCHEDULE_POLICIES.map((p) => `'${p}'`).join(', ')}`,
+    );
+  }
+  return missed as MissedSchedulePolicy;
 }

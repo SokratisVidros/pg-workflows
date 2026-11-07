@@ -228,6 +228,74 @@ describe('WorkflowEngine', () => {
       });
     });
 
+    describe('missedSchedule option', () => {
+      it("passes missed: 'once' to the pg-boss schedule", async () => {
+        const scheduleSpy = vi.spyOn(testBoss, 'schedule');
+        const wf = workflow(
+          'missed-once-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { schedule: '0 9 * * *', missedSchedule: 'once', singleton: true },
+        );
+
+        try {
+          await engine.registerWorkflow(wf);
+
+          expect(engine.workflows.get('missed-once-wf')?.missedSchedule).toBe('once');
+          expect(scheduleSpy).toHaveBeenCalledWith(
+            expect.stringContaining('missed-once-wf'),
+            '0 9 * * *',
+            null,
+            expect.objectContaining({ missed: 'once' }),
+          );
+        } finally {
+          scheduleSpy.mockRestore();
+        }
+      });
+
+      it("defaults to missed: 'skip' so a removed option resets the stored policy", async () => {
+        const scheduleSpy = vi.spyOn(testBoss, 'schedule');
+        const wf = workflow(
+          'missed-default-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { schedule: '5m' },
+        );
+
+        try {
+          await engine.registerWorkflow(wf);
+
+          expect(scheduleSpy).toHaveBeenCalledWith(
+            expect.stringContaining('missed-default-wf'),
+            '*/5 * * * *',
+            null,
+            expect.objectContaining({ missed: 'skip' }),
+          );
+        } finally {
+          scheduleSpy.mockRestore();
+        }
+      });
+
+      it('forwards missedSchedule through workflow.ref() definitions', () => {
+        const ref = workflow.ref('missed-via-ref');
+        const wf = ref(async ({ step }) => step.run('s1', async () => 'ok'), {
+          schedule: '5m',
+          missedSchedule: 'once',
+        });
+
+        expect(wf.missedSchedule).toBe('once');
+      });
+
+      it('throws when missedSchedule is not a known policy', async () => {
+        const wf = workflow(
+          'missed-invalid-wf',
+          async ({ step }) => step.run('s1', async () => 'ok'),
+          { schedule: '5m', missedSchedule: 'all' as unknown as 'once' },
+        );
+
+        await expect(engine.registerWorkflow(wf)).rejects.toThrow(/Invalid missedSchedule/);
+        expect(engine.workflows.has('missed-invalid-wf')).toBe(false);
+      });
+    });
+
     describe('singleton option', () => {
       it('stores singleton on the registered definition', async () => {
         const wf = workflow(

@@ -40,10 +40,11 @@ import {
   type WorkflowJobSendOptions,
 } from './job-options';
 import { resolvePriority } from './priority';
-import { resolveSchedule } from './schedule';
+import { resolveMissedSchedule, resolveSchedule } from './schedule';
 import {
   type InferInputParameters,
   type InputParameters,
+  type MissedSchedulePolicy,
   type StartWorkflowOptions,
   type StepBaseContext,
   type StepRunOptions,
@@ -255,11 +256,17 @@ export class WorkflowEngine {
       const scheduled = Array.from(this.workflows.values()).flatMap((wf) =>
         wf.schedule == null
           ? []
-          : [{ id: wf.id, resolved: resolveSchedule(wf.schedule, wf.timezone) }],
+          : [
+              {
+                id: wf.id,
+                resolved: resolveSchedule(wf.schedule, wf.timezone),
+                missed: resolveMissedSchedule(wf.missedSchedule),
+              },
+            ],
       );
       await Promise.allSettled(
-        scheduled.map(({ id, resolved }) =>
-          this.registerWorkflowSchedule(id, resolved).catch((error: unknown) => {
+        scheduled.map(({ id, resolved, missed }) =>
+          this.registerWorkflowSchedule(id, resolved, missed).catch((error: unknown) => {
             this.logger.error(
               `Failed to register schedule for "${id}", skipping`,
               error instanceof Error ? error : new Error(String(error)),
@@ -278,11 +285,15 @@ export class WorkflowEngine {
   private async registerWorkflowSchedule(
     workflowId: string,
     resolvedSchedule: { cron: string; timezone: string },
+    missed?: MissedSchedulePolicy,
   ): Promise<void> {
     const scheduleQueueName = scheduleQueueNameFor(workflowId);
     await this.boss.createQueue(scheduleQueueName);
+    // Always pass `missed` (pg-boss treats null as "not given", i.e. 'skip') so removing
+    // `missedSchedule` from a definition resets a previously stored 'once'.
     await this.boss.schedule(scheduleQueueName, resolvedSchedule.cron, null, {
       tz: resolvedSchedule.timezone,
+      missed: missed ?? 'skip',
     });
     await this.boss.work(
       scheduleQueueName,
@@ -360,6 +371,7 @@ export class WorkflowEngine {
     const resolvedSchedule = definition.schedule
       ? resolveSchedule(definition.schedule, definition.timezone)
       : undefined;
+    const missedSchedule = resolveMissedSchedule(definition.missedSchedule);
 
     this.workflows.set(definition.id, {
       ...definition,
@@ -367,7 +379,7 @@ export class WorkflowEngine {
     });
 
     if (this._started && resolvedSchedule) {
-      await this.registerWorkflowSchedule(definition.id, resolvedSchedule);
+      await this.registerWorkflowSchedule(definition.id, resolvedSchedule, missedSchedule);
     }
 
     this.logger.log(`Registered workflow "${definition.id}" with steps:`);
