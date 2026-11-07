@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## pg-workflows@0.19.0 - 2026-11-07
+
+### Added
+
+- `missed` workflow option catches up schedule fires that came due while no engine was running. It is passed straight through as pg-boss's `missed` schedule option: `'skip'` (default) or `'once'`. Invalid values throw at registration.
+
+### Documentation
+
+- Recurring schedules docs cover `missed` and recommend pairing `'once'` with `singleton: true`.
+
+[pg-workflows@0.19.0]: https://github.com/SokratisVidros/pg-workflows/compare/pg-workflows%400.18.0...pg-workflows%400.19.0
+
 ## pg-workflows@0.18.0 - 2026-11-04
 
 ### Added
