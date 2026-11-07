@@ -74,7 +74,7 @@ export type WorkflowOptions<I extends InputParameters> = {
    * the fire that is due now.
    * @see https://pgboss.io/api/scheduling#catch-up-after-an-outage
    */
-  missedSchedule?: ScheduleOptions['missed'];
+  missed?: ScheduleOptions['missed'];
 };
 
 /** Metadata about a scheduled fire, exposed on `ctx.schedule` for runs triggered by a schedule. */
@@ -185,7 +185,7 @@ export type WorkflowDefinition<TInput extends InputParameters = InputParameters>
   singleton?: boolean;
   schedule?: Schedule;
   timezone?: string;
-  missedSchedule?: ScheduleOptions['missed'];
+  missed?: ScheduleOptions['missed'];
   plugins?: WorkflowPlugin[];
 };
 

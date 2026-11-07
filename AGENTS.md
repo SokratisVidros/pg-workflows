@@ -97,7 +97,7 @@ const myWorkflow = workflow(
     singleton: true,                           // optional, one pending/running run per workflow ID
     schedule: '*/5 * * * *',                   // optional, recurring schedule (cron or duration)
     timezone: 'America/New_York',              // optional, only meaningful for cron (default: UTC)
-    missedSchedule: 'once',                    // optional, catch up one missed fire after downtime (default: 'skip')
+    missed: 'once',                            // optional, catch up one missed fire after downtime (default: 'skip')
   }
 );
 ```
@@ -168,9 +168,9 @@ async ({ step, schedule, workflowId }) => {
 and a previous run is still pending or running. Paused runs release the slot.
 Without `singleton`, overlapping scheduled runs can execute concurrently.
 
-**Missed fires.** `missedSchedule` is passed straight through to pg-boss's
-`schedule(..., { missed })` option, typed as pg-boss's `ScheduleOptions['missed']`
-(`'skip'` default, or `'once'`). Semantics and caveats live in the pg-boss docs:
+**Missed fires.** `missed` has the same name and values as pg-boss's
+`schedule(..., { missed })` option and is passed straight through. It is typed
+as pg-boss's `ScheduleOptions['missed']` (`'skip'` default, or `'once'`). Semantics and caveats live in the pg-boss docs:
 https://pgboss.io/api/scheduling#catch-up-after-an-outage. The engine validates it
 at registration against pg-boss's exported `scheduleMissedPolicies`. Leaving it
 unset resets a stored `'once'`, because `schedule()` replaces the stored options.

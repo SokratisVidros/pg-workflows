@@ -51,12 +51,12 @@ Don't use `getWorkflowLastRun` for this. It returns the most recently created ru
 
 ## Missed fires
 
-A fire that comes due while no engine is running, during an outage, a deploy, or between serverless invocations, is dropped by default. `missedSchedule` is passed straight through to pg-boss as its [`missed` schedule option](https://pgboss.io/api/scheduling#catch-up-after-an-outage). Set it to `'once'` to start one run for the most recent missed fire when an engine comes back:
+A fire that comes due while no engine is running, during an outage, a deploy, or between serverless invocations, is dropped by default. The `missed` option is passed straight through to pg-boss's [`missed` schedule option](https://pgboss.io/api/scheduling#catch-up-after-an-outage), with the same name and values. Set it to `'once'` to start one run for the most recent missed fire when an engine comes back:
 
 ```typescript
 workflow('nightly-report', handler, {
   schedule: '0 2 * * *',
-  missedSchedule: 'once',
+  missed: 'once',
   singleton: true,
 })
 ```
@@ -66,5 +66,5 @@ pg-boss's [catch-up docs](https://pgboss.io/api/scheduling#catch-up-after-an-out
 - **Pair it with `singleton: true`.** The catch-up can arrive together with the fire that is due now. With `singleton`, the second fire is skipped. Without it, both start a run.
 - **The run can't tell it is late.** `ctx.schedule.timestamp` is when the catch-up was sent, not when the missed fire was due. Work out what to process from your own data, such as the last completed run in the example above.
 - **Serverless: stay up until the run starts.** pg-boss checks schedules as soon as the engine starts, but the run is started in the background, after `engine.start()` returns. Keep the process alive until it is picked up.
-- **Removing the option turns catch-up off.** Each start saves the schedule's options again, so a definition without `missedSchedule` goes back to `'skip'`.
+- **Removing the option turns catch-up off.** Each start saves the schedule's options again, so a definition without `missed` goes back to `'skip'`.
 - **Bring your own `boss`?** It must be a pg-boss version with the `missed` option. The bundled version has it.

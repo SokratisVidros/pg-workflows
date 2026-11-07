@@ -40,7 +40,7 @@ import {
   type WorkflowJobSendOptions,
 } from './job-options';
 import { resolvePriority } from './priority';
-import { assertMissedSchedule, resolveSchedule } from './schedule';
+import { assertMissedPolicy, resolveSchedule } from './schedule';
 import {
   type InferInputParameters,
   type InputParameters,
@@ -259,7 +259,7 @@ export class WorkflowEngine {
               {
                 id: wf.id,
                 resolved: resolveSchedule(wf.schedule, wf.timezone),
-                missed: wf.missedSchedule,
+                missed: wf.missed,
               },
             ],
       );
@@ -370,7 +370,7 @@ export class WorkflowEngine {
     const resolvedSchedule = definition.schedule
       ? resolveSchedule(definition.schedule, definition.timezone)
       : undefined;
-    assertMissedSchedule(definition.missedSchedule);
+    assertMissedPolicy(definition.missed);
 
     this.workflows.set(definition.id, {
       ...definition,
@@ -378,11 +378,7 @@ export class WorkflowEngine {
     });
 
     if (this._started && resolvedSchedule) {
-      await this.registerWorkflowSchedule(
-        definition.id,
-        resolvedSchedule,
-        definition.missedSchedule,
-      );
+      await this.registerWorkflowSchedule(definition.id, resolvedSchedule, definition.missed);
     }
 
     this.logger.log(`Registered workflow "${definition.id}" with steps:`);

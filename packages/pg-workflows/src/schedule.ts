@@ -80,14 +80,14 @@ export function resolveSchedule(schedule: Schedule, timezone?: string): Resolved
 const MISSED_POLICIES: readonly string[] = Object.values(scheduleMissedPolicies);
 
 /**
- * Check a `missedSchedule` option the way pg-boss's `schedule()` checks `missed`
+ * Check the `missed` schedule option the way pg-boss's `schedule()` does
  * (nullish means "use the default"), but at registration time, before the engine
  * has started and before any schedule is written.
  * @see https://pgboss.io/api/scheduling#catch-up-after-an-outage
  */
-export function assertMissedSchedule(missed: unknown): asserts missed is ScheduleOptions['missed'] {
+export function assertMissedPolicy(missed: unknown): asserts missed is ScheduleOptions['missed'] {
   if (missed == null || MISSED_POLICIES.includes(missed as string)) return;
   throw new WorkflowEngineError(
-    `Invalid missedSchedule ${JSON.stringify(missed)}: must be one of ${MISSED_POLICIES.join(', ')}`,
+    `Invalid missed ${JSON.stringify(missed)}: missed must be one of ${MISSED_POLICIES.join(', ')}`,
   );
 }
