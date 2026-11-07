@@ -35,7 +35,7 @@ export const sendInvoice = workflow(
 | `singleton` | `boolean` | `false` | At most one pending or running run. See [Singleton workflows](/docs/concepts/singleton-workflows). |
 | `schedule` | cron string, duration string, or duration object | none | Starts runs on a recurring schedule. See [Recurring schedules](/docs/concepts/recurring-schedules). |
 | `timezone` | IANA zone | `'UTC'` | Time zone for cron schedules. |
-| `missedSchedule` | `'skip'` \| `'once'` | `'skip'` | What to do about fires missed while no engine was running. See [missed fires](/docs/concepts/recurring-schedules#missed-fires). |
+| `missedSchedule` | `'skip'` \| `'once'` | `'skip'` | pg-boss's [`missed`](https://pgboss.io/api/scheduling#catch-up-after-an-outage) schedule option: what to do about fires missed while no engine was running. See [missed fires](/docs/concepts/recurring-schedules#missed-fires). |
 
 The handler receives `input`, `step`, `runId`, `workflowId`, `resourceId`, `attempt` (zero-based retry count), `timeline`, `logger`, and `schedule`. The full type is in the [API reference](/docs/reference/api#workflowcontext).
 

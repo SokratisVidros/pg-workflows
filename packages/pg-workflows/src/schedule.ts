@@ -1,7 +1,7 @@
 import { CronExpressionParser } from 'cron-parser';
+import { type ScheduleOptions, scheduleMissedPolicies } from 'pg-boss';
 import { type Duration, MS_PER_DAY, MS_PER_HOUR, MS_PER_MINUTE, parseDuration } from './duration';
 import { WorkflowEngineError } from './error';
-import type { MissedSchedulePolicy } from './types';
 
 const CRON_TOKEN = /^[0-9*/,?\-LW#]+$/;
 
@@ -77,18 +77,17 @@ export function resolveSchedule(schedule: Schedule, timezone?: string): Resolved
   return { cron: durationMsToCron(ms, schedule), timezone: tz };
 }
 
-const MISSED_SCHEDULE_POLICIES: readonly MissedSchedulePolicy[] = ['skip', 'once'];
+const MISSED_POLICIES: readonly string[] = Object.values(scheduleMissedPolicies);
 
 /**
- * Validate a `missedSchedule` option. Returns the policy to hand to pg-boss, or
- * `undefined` to leave pg-boss's default (`'skip'`) in place.
+ * Check a `missedSchedule` option the way pg-boss's `schedule()` checks `missed`
+ * (nullish means "use the default"), but at registration time, before the engine
+ * has started and before any schedule is written.
+ * @see https://pgboss.io/api/scheduling#catch-up-after-an-outage
  */
-export function resolveMissedSchedule(missed: unknown): MissedSchedulePolicy | undefined {
-  if (missed == null) return undefined;
-  if (!MISSED_SCHEDULE_POLICIES.includes(missed as MissedSchedulePolicy)) {
-    throw new WorkflowEngineError(
-      `Invalid missedSchedule ${JSON.stringify(missed)}; expected one of ${MISSED_SCHEDULE_POLICIES.map((p) => `'${p}'`).join(', ')}`,
-    );
-  }
-  return missed as MissedSchedulePolicy;
+export function assertMissedSchedule(missed: unknown): asserts missed is ScheduleOptions['missed'] {
+  if (missed == null || MISSED_POLICIES.includes(missed as string)) return;
+  throw new WorkflowEngineError(
+    `Invalid missedSchedule ${JSON.stringify(missed)}: must be one of ${MISSED_POLICIES.join(', ')}`,
+  );
 }

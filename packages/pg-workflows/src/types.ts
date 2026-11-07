@@ -1,4 +1,5 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { ScheduleOptions } from 'pg-boss';
 import type { WorkflowRun } from './db/types';
 import type { Duration } from './duration';
 import type { WorkflowJobSendOptions } from './job-options';
@@ -66,20 +67,15 @@ export type WorkflowOptions<I extends InputParameters> = {
   /** IANA timezone for cron expressions. Defaults to UTC. Ignored for duration-based schedules. */
   timezone?: string;
   /**
-   * What to do about schedule fires missed while no engine was running (an outage,
-   * a deploy, or a serverless setup with no long-lived process).
-   *
-   * - `'skip'` (default): missed fires are dropped.
-   * - `'once'`: one run is started for the most recent missed fire, however many were missed.
-   *
-   * Pair `'once'` with `singleton: true` so a catch-up fire and the fire that is due
-   * now cannot start two runs. Maps to pg-boss's `schedule(..., { missed })` option.
+   * What to do about schedule fires that came due while no engine was running.
+   * Passed straight through as pg-boss's `missed` schedule option: `'skip'` (the
+   * default) drops them, `'once'` sends one fire for the most recent of them.
+   * Pair `'once'` with `singleton: true`, since the catch-up can arrive alongside
+   * the fire that is due now.
+   * @see https://pgboss.io/api/scheduling#catch-up-after-an-outage
    */
-  missedSchedule?: MissedSchedulePolicy;
+  missedSchedule?: ScheduleOptions['missed'];
 };
-
-/** Policy for schedule fires missed while no engine was running. See `WorkflowOptions.missedSchedule`. */
-export type MissedSchedulePolicy = 'skip' | 'once';
 
 /** Metadata about a scheduled fire, exposed on `ctx.schedule` for runs triggered by a schedule. */
 export type ScheduleContext = {
@@ -189,7 +185,7 @@ export type WorkflowDefinition<TInput extends InputParameters = InputParameters>
   singleton?: boolean;
   schedule?: Schedule;
   timezone?: string;
-  missedSchedule?: MissedSchedulePolicy;
+  missedSchedule?: ScheduleOptions['missed'];
   plugins?: WorkflowPlugin[];
 };
 

@@ -168,17 +168,14 @@ async ({ step, schedule, workflowId }) => {
 and a previous run is still pending or running. Paused runs release the slot.
 Without `singleton`, overlapping scheduled runs can execute concurrently.
 
-**Missed fires.** By default, fires that come due while no engine is running
-(outage, deploy, serverless with no long-lived process) are dropped.
-`missedSchedule: 'once'` maps to pg-boss's `schedule(..., { missed: 'once' })`:
-on the schedule check pg-boss runs right after `boss.start()` (then every ~30s),
-one run is started for the most recent missed fire, however many were missed.
-The run is started asynchronously, so serverless callers must keep the process
-alive until it is picked up. The engine
-always passes `missed` explicitly (`'skip'` when unset) so removing the option
-resets a stored `'once'`. Pair with `singleton: true` — the catch-up fire can
-land alongside the fire that is due now. `ctx.schedule.timestamp` on a catch-up
-run is the send time, not the missed fire's due time.
+**Missed fires.** `missedSchedule` is passed straight through to pg-boss's
+`schedule(..., { missed })` option, typed as pg-boss's `ScheduleOptions['missed']`
+(`'skip'` default, or `'once'`). Semantics and caveats live in the pg-boss docs:
+https://pgboss.io/api/scheduling#catch-up-after-an-outage. The engine validates it
+at registration against pg-boss's exported `scheduleMissedPolicies`. Leaving it
+unset resets a stored `'once'`, because `schedule()` replaces the stored options.
+Pair it with `singleton: true`, since the catch-up can land alongside the fire that
+is due now. `ctx.schedule.timestamp` on a catch-up run is the send time.
 
 ### Singleton workflows
 

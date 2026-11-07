@@ -3,7 +3,11 @@ import type { PgBoss } from 'pg-boss';
 import * as v from 'valibot';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { WORKFLOW_RUN_DLQ_QUEUE_NAME, WORKFLOW_RUN_QUEUE_NAME } from './constants';
+import {
+  scheduleQueueNameFor,
+  WORKFLOW_RUN_DLQ_QUEUE_NAME,
+  WORKFLOW_RUN_QUEUE_NAME,
+} from './constants';
 import type { WorkflowRun } from './db/types';
 import { workflow } from './definition';
 import { WorkflowEngine } from './engine';
@@ -229,49 +233,50 @@ describe('WorkflowEngine', () => {
     });
 
     describe('missedSchedule option', () => {
-      it("passes missed: 'once' to the pg-boss schedule", async () => {
-        const scheduleSpy = vi.spyOn(testBoss, 'schedule');
+      const storedOptions = async (workflowId: string) => {
+        const schedules = await testBoss.getSchedules(scheduleQueueNameFor(workflowId));
+        return schedules[0]?.options;
+      };
+
+      it("stores missed: 'once' on the pg-boss schedule", async () => {
         const wf = workflow(
           'missed-once-wf',
           async ({ step }) => step.run('s1', async () => 'ok'),
           { schedule: '0 9 * * *', missedSchedule: 'once', singleton: true },
         );
 
-        try {
-          await engine.registerWorkflow(wf);
+        await engine.registerWorkflow(wf);
 
-          expect(engine.workflows.get('missed-once-wf')?.missedSchedule).toBe('once');
-          expect(scheduleSpy).toHaveBeenCalledWith(
-            expect.stringContaining('missed-once-wf'),
-            '0 9 * * *',
-            null,
-            expect.objectContaining({ missed: 'once' }),
-          );
-        } finally {
-          scheduleSpy.mockRestore();
-        }
+        expect(engine.workflows.get('missed-once-wf')?.missedSchedule).toBe('once');
+        expect(await storedOptions('missed-once-wf')).toMatchObject({ missed: 'once' });
       });
 
-      it("defaults to missed: 'skip' so a removed option resets the stored policy", async () => {
-        const scheduleSpy = vi.spyOn(testBoss, 'schedule');
+      it('leaves missed unset by default, which pg-boss reads as skip', async () => {
         const wf = workflow(
           'missed-default-wf',
           async ({ step }) => step.run('s1', async () => 'ok'),
           { schedule: '5m' },
         );
 
-        try {
-          await engine.registerWorkflow(wf);
+        await engine.registerWorkflow(wf);
 
-          expect(scheduleSpy).toHaveBeenCalledWith(
-            expect.stringContaining('missed-default-wf'),
-            '*/5 * * * *',
-            null,
-            expect.objectContaining({ missed: 'skip' }),
-          );
-        } finally {
-          scheduleSpy.mockRestore();
-        }
+        expect((await storedOptions('missed-default-wf'))?.missed).toBeUndefined();
+      });
+
+      it("resets a stored 'once' when the option is removed", async () => {
+        // A schedule row left by an earlier deploy that had `missedSchedule: 'once'`.
+        const queue = scheduleQueueNameFor('missed-reset-wf');
+        await testBoss.createQueue(queue);
+        await testBoss.schedule(queue, '*/5 * * * *', null, { missed: 'once' });
+        expect(await storedOptions('missed-reset-wf')).toMatchObject({ missed: 'once' });
+
+        await engine.registerWorkflow(
+          workflow('missed-reset-wf', async ({ step }) => step.run('s1', async () => 'ok'), {
+            schedule: '5m',
+          }),
+        );
+
+        expect((await storedOptions('missed-reset-wf'))?.missed).toBeUndefined();
       });
 
       it('forwards missedSchedule through workflow.ref() definitions', () => {

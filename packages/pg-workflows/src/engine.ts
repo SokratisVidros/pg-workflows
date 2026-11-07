@@ -1,6 +1,6 @@
 import { merge } from 'es-toolkit';
 import pg from 'pg';
-import { type Db, type JobWithMetadata, PgBoss } from 'pg-boss';
+import { type Db, type JobWithMetadata, PgBoss, type ScheduleOptions } from 'pg-boss';
 import { parseWorkflowHandler } from './ast-parser';
 import {
   DEFAULT_PGBOSS_SCHEMA,
@@ -40,11 +40,10 @@ import {
   type WorkflowJobSendOptions,
 } from './job-options';
 import { resolvePriority } from './priority';
-import { resolveMissedSchedule, resolveSchedule } from './schedule';
+import { assertMissedSchedule, resolveSchedule } from './schedule';
 import {
   type InferInputParameters,
   type InputParameters,
-  type MissedSchedulePolicy,
   type StartWorkflowOptions,
   type StepBaseContext,
   type StepRunOptions,
@@ -260,7 +259,7 @@ export class WorkflowEngine {
               {
                 id: wf.id,
                 resolved: resolveSchedule(wf.schedule, wf.timezone),
-                missed: resolveMissedSchedule(wf.missedSchedule),
+                missed: wf.missedSchedule,
               },
             ],
       );
@@ -285,15 +284,15 @@ export class WorkflowEngine {
   private async registerWorkflowSchedule(
     workflowId: string,
     resolvedSchedule: { cron: string; timezone: string },
-    missed?: MissedSchedulePolicy,
+    missed?: ScheduleOptions['missed'],
   ): Promise<void> {
     const scheduleQueueName = scheduleQueueNameFor(workflowId);
     await this.boss.createQueue(scheduleQueueName);
-    // Always pass `missed` (pg-boss treats null as "not given", i.e. 'skip') so removing
-    // `missedSchedule` from a definition resets a previously stored 'once'.
+    // pg-boss replaces the stored options on every schedule() call, so leaving
+    // `missed` unset also resets a previously stored 'once' to the default 'skip'.
     await this.boss.schedule(scheduleQueueName, resolvedSchedule.cron, null, {
       tz: resolvedSchedule.timezone,
-      missed: missed ?? 'skip',
+      missed,
     });
     await this.boss.work(
       scheduleQueueName,
@@ -371,7 +370,7 @@ export class WorkflowEngine {
     const resolvedSchedule = definition.schedule
       ? resolveSchedule(definition.schedule, definition.timezone)
       : undefined;
-    const missedSchedule = resolveMissedSchedule(definition.missedSchedule);
+    assertMissedSchedule(definition.missedSchedule);
 
     this.workflows.set(definition.id, {
       ...definition,
@@ -379,7 +378,11 @@ export class WorkflowEngine {
     });
 
     if (this._started && resolvedSchedule) {
-      await this.registerWorkflowSchedule(definition.id, resolvedSchedule, missedSchedule);
+      await this.registerWorkflowSchedule(
+        definition.id,
+        resolvedSchedule,
+        definition.missedSchedule,
+      );
     }
 
     this.logger.log(`Registered workflow "${definition.id}" with steps:`);
